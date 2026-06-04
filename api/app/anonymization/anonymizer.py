@@ -1,0 +1,94 @@
+import re
+
+from app.detection.detector_registry import DetectorRegistry
+from app.detection.entities import PiiEntity, MappingEntry
+from app.detection.entity_merger import EntityMerger
+from app.detection.token_generator import TokenGenerator
+from app.anonymization.anonymization_result import AnonymizationResult
+
+_WORD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+
+
+_HONORIFIC_RE = re.compile(
+    r"(?:Dr\.?|Dott\.?(?:ssa)?|Avv\.?|Ing\.?|Prof\.?|Sig\.?(?:ra)?|Arch\.?|Rag\.?|Geom\.?)\s+$",
+    re.IGNORECASE,
+)
+
+
+def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
+    start, end = entity.start, entity.end
+
+    # Strip leading whitespace from entity (BPE tokens often include preceding space)
+    while start < end and text[start] in " \t":
+        start += 1
+
+    # Expand right if entity ends mid-word
+    while end < len(text) and text[end] in _WORD_CHARS:
+        end += 1
+
+    # Expand left only if entity starts mid-word (first char is a word char)
+    if start < len(text) and text[start] in _WORD_CHARS:
+        while start > 0 and text[start - 1] in _WORD_CHARS:
+            start -= 1
+
+    # For PERSON entities, absorb a preceding honorific (Dr., Avv., etc.)
+    if entity.pii_type == "PERSON" and start > 0:
+        prefix = text[max(0, start - 15):start]
+        m = _HONORIFIC_RE.search(prefix)
+        if m:
+            start = start - (len(prefix) - m.start())
+
+    if start >= end:
+        return entity
+    if start == entity.start and end == entity.end:
+        return entity
+    return PiiEntity(start=start, end=end, pii_type=entity.pii_type, text=text[start:end], score=entity.score)
+
+
+def _is_valid_entity(entity: PiiEntity, denylist: dict[str, set[str]]) -> bool:
+    # reject PERSON entities spanning multiple lines (model artifact)
+    if entity.pii_type == "PERSON":
+        if "\n" in entity.text or "\r" in entity.text:
+            return False
+        text = _HONORIFIC_RE.sub("", entity.text.strip()).strip()
+        words = text.lower().split()
+        denied = denylist.get("PERSON", set())
+        if len(words) == 1 and words[0].rstrip(".,:;") in denied:
+            return False
+    return True
+
+
+class PiiAnonymizer:
+    def __init__(self, registry: DetectorRegistry, denylist: dict[str, set[str]] | None = None) -> None:
+        self._registry = registry
+        self._merger = EntityMerger()
+        self._denylist = denylist or {}
+
+    def anonymize(self, text: str, context_id: str, context_type: str) -> AnonymizationResult:
+        all_entities: list[PiiEntity] = []
+
+        for detector in self._registry.get_ordered():
+            all_entities.extend(detector.detect(text))
+
+        merged = self._merger.merge(all_entities, text)
+        snapped = [_snap_to_word_boundary(text, e) for e in merged if _is_valid_entity(e, self._denylist)]
+        # Re-merge after snapping in case boundaries now overlap
+        snapped = self._merger.merge(snapped, text)
+
+        generator = TokenGenerator()
+        mappings: list[MappingEntry] = []
+
+        result = text
+        for entity in reversed(snapped):
+            token = generator.next_token(entity.pii_type)
+            result = result[:entity.start] + token + result[entity.end:]
+            mappings.append(MappingEntry(
+                token=token,
+                original=entity.text,
+                pii_type=entity.pii_type,
+                start=entity.start,
+                end=entity.end,
+                score=entity.score,
+            ))
+
+        return AnonymizationResult(anonymized_text=result, mappings=mappings)

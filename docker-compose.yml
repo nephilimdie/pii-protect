@@ -1,0 +1,55 @@
+name: pii-protect
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${PII_DB_NAME:-pii_protect}
+      POSTGRES_USER: ${PII_DB_USER:-pii_protect}
+      POSTGRES_PASSWORD: ${PII_DB_PASSWORD:-changeme_secret}
+    volumes:
+      - pii_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${PII_DB_PORT:-15433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PII_DB_USER:-pii_protect}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "${PII_API_PORT:-15500}:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
+      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-CHANGE_ME_generate_with_python_-c_from_cryptography.fernet_import_Fernet_print_Fernet.generate_key().decode()}
+      ADMIN_INITIAL_KEY: ${PII_ADMIN_INITIAL_KEY:-CHANGE_ME_initial_admin_key}
+      SPACY_MODEL: it_core_news_lg
+    volumes:
+      - pii_hf_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "${PII_UI_PORT:-15501}:80"
+    depends_on:
+      - api
+
+volumes:
+  pii_postgres_data:
+  pii_hf_cache:

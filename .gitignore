@@ -1,0 +1,60 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Alembic
+api/alembic/versions/__pycache__/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# Node / UI
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/.cache/
+
+# Docker volumes / data
+pgdata/
+docker/data/
+
+# HuggingFace / ML model cache
+*.onnx_data
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+.cache/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/

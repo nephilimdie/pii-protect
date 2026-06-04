@@ -1,0 +1,694 @@
+openapi: "3.1.0"
+
+info:
+  title: pii-protect API
+  version: "1.0.0"
+  description: |
+    PII pseudonymization microservice for Italian personal data.
+
+    ## Authentication
+
+    Every endpoint except `/health` requires an API key passed in the `X-Api-Key` header.
+
+    ```
+    X-Api-Key: your-api-key-here
+    ```
+
+    API keys are created by an `admin` user via `POST /v1/auth/api-keys`.
+
+    ## Roles
+
+    | Role | Description |
+    |------|-------------|
+    | `admin` | Full access including key management and cleanup |
+    | `service` | Can anonymize and deanonymize text |
+    | `auditor` | Read-only access to stats and audit log |
+
+servers:
+  - url: "{basePiiUrl}"
+    description: pii-protect API server
+    variables:
+      basePiiUrl:
+        default: "http://localhost:15500"
+        description: Base URL of the pii-protect service. Override with PII_PROTECT_URL in the caller's environment.
+
+security:
+  - apiPiiKey: []
+
+components:
+  securitySchemes:
+    apiPiiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: API key passed in the X-Api-Key header. Configure as PII_PROTECT_API_KEY in the caller's environment.
+
+  schemas:
+    AnonymizeRequest:
+      type: object
+      required: [text, context_id, context_type]
+      properties:
+        text:
+          type: string
+          description: Plain text containing PII to anonymize.
+          example: "Il sig. Mario Rossi, CF: RSSMRA80A01H501U, tel: 333-1234567"
+        context_id:
+          type: string
+          description: Opaque identifier grouping related mappings (e.g. a case file UUID). Used to deanonymize later.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        context_type:
+          type: string
+          description: Semantic type of the context. Stored alongside context_id for human-readable audit logs.
+          example: "case_file"
+
+    EntityDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "EMAIL"
+        value:
+          type: string
+          example: "mario.rossi@example.it"
+        start:
+          type: integer
+          example: 123
+        end:
+          type: integer
+          example: 145
+        confidence:
+          type: number
+          format: float
+          example: 0.99
+        replacement:
+          type: string
+          example: "[EMAIL_1]"
+
+    AnonymizeResponse:
+      type: object
+      properties:
+        anonymized_text:
+          type: string
+          example: "Il sig. [PERSON_1], CF: [FISCAL_CODE_1], tel: [PHONE_1]"
+        entity_count:
+          type: integer
+          example: 3
+        pii_types_found:
+          type: array
+          items:
+            type: string
+          example: ["PERSON", "FISCAL_CODE", "PHONE"]
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityDetail'
+          description: Detailed list of detected PII entities with position, value and replacement token.
+
+    DeanonymizeRequest:
+      type: object
+      required: [text, context_id, context_type]
+      properties:
+        text:
+          type: string
+          description: Anonymized text containing placeholders like [PERSON_1] to restore.
+          example: "Il sig. [PERSON_1], CF: [FISCAL_CODE_1]"
+        context_id:
+          type: string
+          description: Same context_id used during anonymization. Required to locate the correct mapping.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        context_type:
+          type: string
+          example: "case_file"
+
+    DeanonymizeResponse:
+      type: object
+      properties:
+        original_text:
+          type: string
+          example: "Il sig. Mario Rossi, CF: RSSMRA80A01H501U"
+
+    StatsResponse:
+      type: object
+      properties:
+        total_mappings:
+          type: integer
+          example: 1240
+        active_mappings:
+          type: integer
+          example: 980
+        expired_mappings:
+          type: integer
+          example: 260
+        entity_type_breakdown:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            PERSON: 420
+            FISCAL_CODE: 310
+            PHONE: 200
+            EMAIL: 150
+            IBAN: 100
+            TARGA: 60
+        layer_hit_rates:
+          type: object
+          additionalProperties:
+            type: number
+          example:
+            regex: 0.45
+            presidio: 0.38
+            privacy_filter: 0.17
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+          enum: [anonymize, deanonymize, cleanup, key_created, key_revoked]
+        context_id:
+          type: string
+        context_type:
+          type: string
+        entity_count:
+          type: integer
+        api_key_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    AuditLogResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    CreateApiKeyRequest:
+      type: object
+      required: [name, role]
+      properties:
+        name:
+          type: string
+          description: Human-readable label for this key. Appears in audit logs.
+          example: "lavvocato-backend"
+        role:
+          type: string
+          enum: [admin, service, auditor]
+          example: "service"
+        expires_at:
+          type: string
+          format: date-time
+          description: Optional expiry date. If omitted the key never expires.
+          example: "2027-01-01T00:00:00Z"
+
+    CreateApiKeyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        key:
+          type: string
+          description: The raw API key. Shown only once — store it immediately.
+          example: "pii_sk_a1b2c3d4e5f6..."
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ApiKeyListItem:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "Unauthorized"
+
+paths:
+
+  /health:
+    get:
+      summary: Health check
+      description: |
+        Returns service status. No authentication required.
+
+        **Use cases:** Docker health check, load balancer probe, readiness check.
+
+        **curl example:**
+        ```bash
+        curl http://localhost:15500/health
+        ```
+      operationId: health
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /v1/anonymize:
+    post:
+      summary: Anonymize text
+      description: |
+        Detects PII entities in the input text and replaces them with opaque placeholders
+        (e.g. `[PERSON_1]`, `[FISCAL_CODE_1]`). The original values are stored encrypted
+        in the database under the given `context_id` + `context_type` pair, so they can
+        be restored later via `/v1/deanonymize`.
+
+        Detection runs through the configured layer cascade in priority order:
+        1. **ItalianRegex** (priority 10) — deterministic patterns: CF, IBAN, P.IVA, targa, phone, email
+        2. **Presidio + spaCy** (priority 20) — NER: PERSON, ADDRESS, DATE
+        3. **PrivacyFilter** (priority 30) — ML: secrets, tokens, free-form sensitive text
+
+        Each entity is tagged with the layer that detected it, visible in audit logs.
+
+        **curl example:**
+        ```bash
+        curl -X POST http://localhost:15500/v1/anonymize \
+          -H "X-Api-Key: your-service-key" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "text": "Il sig. Mario Rossi, CF: RSSMRA80A01H501U, IBAN: IT60X054281110100000123456",
+            "context_id": "550e8400-e29b-41d4-a716-446655440000",
+            "context_type": "case_file"
+          }'
+        ```
+
+        **Parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>text</code></td><td>string</td><td>✓</td><td>Plain text to anonymize. Can be any length.</td></tr>
+            <tr><td><code>context_id</code></td><td>string</td><td>✓</td><td>Opaque identifier for the document or session. All mappings for this call are stored under this ID and reused across multiple calls with the same ID (idempotent for the same entity value).</td></tr>
+            <tr><td><code>context_type</code></td><td>string</td><td>✓</td><td>Semantic label for the context (e.g. <code>case_file</code>, <code>chat_message</code>). Stored for audit purposes and used together with <code>context_id</code> to scope mappings.</td></tr>
+          </tbody>
+        </table>
+      operationId: anonymize
+      tags: [Pseudonymization]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnonymizeRequest"
+      responses:
+        "200":
+          description: Anonymized text with placeholder substitutions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymizeResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+
+  /v1/deanonymize:
+    post:
+      summary: Deanonymize text
+      description: |
+        Restores original PII values in a previously anonymized text by looking up the
+        encrypted mappings stored under the given `context_id` + `context_type` pair.
+
+        Placeholders that have no matching mapping (e.g. from a different context) are
+        left as-is in the output.
+
+        **curl example:**
+        ```bash
+        curl -X POST http://localhost:15500/v1/deanonymize \
+          -H "X-Api-Key: your-service-key" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "text": "Il sig. [PERSON_1], CF: [FISCAL_CODE_1]",
+            "context_id": "550e8400-e29b-41d4-a716-446655440000",
+            "context_type": "case_file"
+          }'
+        ```
+
+        **Parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>text</code></td><td>string</td><td>✓</td><td>Text containing <code>[TYPE_N]</code> placeholders to restore.</td></tr>
+            <tr><td><code>context_id</code></td><td>string</td><td>✓</td><td>Must match the <code>context_id</code> used during the original anonymize call.</td></tr>
+            <tr><td><code>context_type</code></td><td>string</td><td>✓</td><td>Must match the <code>context_type</code> used during the original anonymize call.</td></tr>
+          </tbody>
+        </table>
+      operationId: deanonymize
+      tags: [Pseudonymization]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeanonymizeRequest"
+      responses:
+        "200":
+          description: Text with placeholders replaced by original values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeanonymizeResponse"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+        "422":
+          description: Validation error
+
+  /v1/admin/stats:
+    get:
+      summary: Anonymization statistics
+      description: |
+        Returns aggregate statistics: total mapping counts, breakdown by entity type,
+        and hit rate per detection layer.
+
+        Useful for understanding detection coverage and tuning layer configuration.
+
+        **curl example:**
+        ```bash
+        curl http://localhost:15500/v1/admin/stats \
+          -H "X-Api-Key: your-admin-or-auditor-key"
+        ```
+
+        **Parameters:** none — no query parameters.
+      operationId: getStats
+      tags: [Admin]
+      responses:
+        "200":
+          description: Aggregate statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+
+  /v1/admin/audit-log:
+    get:
+      summary: Audit log
+      description: |
+        Returns a paginated list of audit log entries. Each entry records one API call:
+        action type, number of entities processed, context, and which API key was used.
+
+        **curl example:**
+        ```bash
+        curl "http://localhost:15500/v1/admin/audit-log?page=1&page_size=20&context_type=case_file" \
+          -H "X-Api-Key: your-admin-or-auditor-key"
+        ```
+
+        **Query parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>page</code></td><td>integer</td><td>—</td><td>1</td><td>Page number (1-based).</td></tr>
+            <tr><td><code>page_size</code></td><td>integer</td><td>—</td><td>50</td><td>Results per page. Max 200.</td></tr>
+            <tr><td><code>context_id</code></td><td>string</td><td>—</td><td>—</td><td>Filter by a specific context ID.</td></tr>
+            <tr><td><code>context_type</code></td><td>string</td><td>—</td><td>—</td><td>Filter by context type (e.g. <code>case_file</code>).</td></tr>
+            <tr><td><code>action</code></td><td>string</td><td>—</td><td>—</td><td>Filter by action: <code>anonymize</code>, <code>deanonymize</code>, <code>cleanup</code>, <code>key_created</code>, <code>key_revoked</code>.</td></tr>
+            <tr><td><code>from_date</code></td><td>date-time</td><td>—</td><td>—</td><td>ISO 8601 lower bound (inclusive).</td></tr>
+            <tr><td><code>to_date</code></td><td>date-time</td><td>—</td><td>—</td><td>ISO 8601 upper bound (inclusive).</td></tr>
+          </tbody>
+        </table>
+      operationId: getAuditLog
+      tags: [Admin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: context_id
+          in: query
+          schema:
+            type: string
+        - name: context_type
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [anonymize, deanonymize, cleanup, key_created, key_revoked]
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Paginated audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogResponse"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+
+  /v1/admin/cleanup:
+    post:
+      summary: Delete expired mappings
+      description: |
+        Hard-deletes PII mappings whose `created_at` is older than `PII_MAPPING_TTL_DAYS` days
+        (default: 30). Once deleted, deanonymization for those context IDs is no longer possible.
+
+        Run periodically (e.g. via cron) to keep the database size under control and comply
+        with data retention policies.
+
+        **curl example:**
+        ```bash
+        curl -X POST http://localhost:15500/v1/admin/cleanup \
+          -H "X-Api-Key: your-admin-key"
+        ```
+
+        **Parameters:** none — no body or query parameters.
+
+        **Warning:** This operation is irreversible. Deleted mappings cannot be recovered.
+      operationId: cleanup
+      tags: [Admin]
+      responses:
+        "200":
+          description: Cleanup completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+                    example: 42
+                  cutoff_date:
+                    type: string
+                    format: date-time
+                    example: "2026-05-05T00:00:00Z"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
+  /v1/auth/api-keys:
+    post:
+      summary: Create API key
+      description: |
+        Creates a new API key. The raw key value is returned only in this response —
+        it is not stored in plain text and cannot be retrieved again. Store it immediately.
+
+        **curl example:**
+        ```bash
+        curl -X POST http://localhost:15500/v1/auth/api-keys \
+          -H "X-Api-Key: your-admin-key" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "name": "lavvocato-backend",
+            "role": "service",
+            "expires_at": "2027-01-01T00:00:00Z"
+          }'
+        ```
+
+        **Body parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>string</td><td>✓</td><td>Human-readable label. Appears in audit log entries. Must be unique.</td></tr>
+            <tr><td><code>role</code></td><td>string</td><td>✓</td><td>One of: <code>admin</code>, <code>service</code>, <code>auditor</code>.</td></tr>
+            <tr><td><code>expires_at</code></td><td>date-time</td><td>—</td><td>ISO 8601 expiry timestamp. If omitted, the key never expires.</td></tr>
+          </tbody>
+        </table>
+      operationId: createApiKey
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyRequest"
+      responses:
+        "201":
+          description: Key created. Raw key value shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateApiKeyResponse"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "409":
+          description: A key with this name already exists
+
+    get:
+      summary: List API keys
+      description: |
+        Returns all API keys. The raw key value is never included — only metadata.
+
+        **curl example:**
+        ```bash
+        curl http://localhost:15500/v1/auth/api-keys \
+          -H "X-Api-Key: your-admin-key"
+        ```
+
+        **Parameters:** none.
+      operationId: listApiKeys
+      tags: [Auth]
+      responses:
+        "200":
+          description: List of API key metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKeyListItem"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
+  /v1/auth/api-keys/{id}:
+    delete:
+      summary: Revoke API key
+      description: |
+        Permanently revokes an API key by ID. Any subsequent request using this key
+        will receive a 401 response.
+
+        **curl example:**
+        ```bash
+        curl -X DELETE http://localhost:15500/v1/auth/api-keys/550e8400-e29b-41d4-a716-446655440000 \
+          -H "X-Api-Key: your-admin-key"
+        ```
+
+        **Path parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>id</code></td><td>string (UUID)</td><td>✓</td><td>ID of the API key to revoke. Obtain from <code>GET /v1/auth/api-keys</code>.</td></tr>
+          </tbody>
+        </table>
+      operationId: revokeApiKey
+      tags: [Auth]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Key revoked successfully
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "404":
+          description: Key not found
+
+tags:
+  - name: Pseudonymization
+    description: Core anonymize / deanonymize operations
+  - name: Admin
+    description: Statistics, audit log, and data cleanup
+  - name: Auth
+    description: API key management
+  - name: System
+    description: Health check
