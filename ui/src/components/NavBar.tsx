@@ -27,15 +27,16 @@ export function NavBar({ isAdmin }: NavBarProps) {
       {isAdmin && <NavLink to="/api-keys" className={linkClass}>API Keys</NavLink>}
       {isAdmin && <NavLink to="/regex-patterns" className={linkClass}>Regex</NavLink>}
       {isAdmin && <NavLink to="/denylist" className={linkClass}>Denylist</NavLink>}
+      {isAdmin && <NavLink to="/languages" className={linkClass}>Lingue</NavLink>}
       <NavLink to="/audit-log" className={linkClass}>Audit Log</NavLink>
-      <NavLink to="/stats" className={linkClass}>Statistiche</NavLink>
+      <NavLink to="/stats" className={linkClass}>Stats</NavLink>
       <div className="ml-auto">
         <button
           onClick={handleLogout}
           className="flex items-center gap-1 text-slate-400 hover:text-white text-sm"
         >
           <LogOut size={16} />
-          Esci
+          Sign out
         </button>
       </div>
     </nav>

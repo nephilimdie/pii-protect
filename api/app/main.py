@@ -6,7 +6,9 @@ from app.routers import identity as identity_router
 from app.routers import reporting as reporting_router
 from app.routers import regex_patterns as regex_patterns_router
 from app.routers import denylist as denylist_router
+from app.routers import languages as languages_router
 from app.detection.layers.presidio_layer import PresidioDetector
+from app.settings_repository import SettingsRepository
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
 from app.detection.layers.ai4privacy_layer import Ai4PrivacyDetector
 from app.detection.layers.regex_layer import ItalianRegexDetector
@@ -40,13 +42,26 @@ async def _ensure_admin_key() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    PresidioDetector.preload(settings.spacy_model)
+    # Load Presidio with all installed spaCy models
+    from app.routers.languages import KNOWN_LANGUAGES, _is_installed
+    lang_models = [
+        {"lang_code": code, "model_name": info["model"]}
+        for code, info in KNOWN_LANGUAGES.items()
+        if _is_installed(info["model"])
+    ]
+    if not lang_models:
+        lang_models = [{"lang_code": "it", "model_name": settings.spacy_model}]
+    PresidioDetector.preload(lang_models)
+    app.state.installed_languages = [m["lang_code"] for m in lang_models]
+
     PrivacyFilterDetector.preload(settings.privacy_filter_model)
     Ai4PrivacyDetector.preload(settings.ai4privacy_model)
 
     async with AsyncSessionLocal() as db:
         patterns = await RegexPatternRepository(db).find_enabled()
         denylist_entries = await DenylistRepository(db).find_enabled()
+        default_lang = await SettingsRepository(db).get("default_language", "it")
+    app.state.default_language = default_lang
 
     provider = DetectorProvider(settings, patterns)
     registry = provider.build()
@@ -71,3 +86,4 @@ app.include_router(deanonymize.router, prefix="/v1")
 app.include_router(reporting_router.router, prefix="/v1/admin")
 app.include_router(regex_patterns_router.router, prefix="/v1/admin")
 app.include_router(denylist_router.router, prefix="/v1/admin")
+app.include_router(languages_router.router, prefix="/v1/admin")

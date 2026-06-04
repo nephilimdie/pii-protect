@@ -96,6 +96,24 @@ export interface CreateApiKeyResponse {
   key: string;
 }
 
+export interface LanguageInfo {
+  code: string;
+  name: string;
+  model: string;
+  size_mb: number;
+  installed: boolean;
+}
+
+export interface LanguageSettings {
+  default_language: string;
+}
+
+export interface InstallStatus {
+  code: string;
+  status: string;
+  log: string;
+}
+
 export interface DenylistEntryItem {
   id: string;
   pii_type: string;
@@ -189,4 +207,10 @@ export const api = {
     put<DenylistEntryItem>(`/v1/admin/denylist/${id}`, body),
 
   deleteDenylistEntry: (id: string) => del(`/v1/admin/denylist/${id}`),
+
+  listLanguages: () => get<LanguageInfo[]>("/v1/admin/languages"),
+  getSettings: () => get<LanguageSettings>("/v1/admin/settings"),
+  setSettings: (body: LanguageSettings) => put<LanguageSettings>("/v1/admin/settings", body),
+  installLanguage: (code: string) => post<InstallStatus>(`/v1/admin/languages/${code}/install`, {}),
+  getLanguageStatus: (code: string) => get<InstallStatus>(`/v1/admin/languages/${code}/status`),
 };

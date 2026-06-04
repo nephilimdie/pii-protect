@@ -99,7 +99,7 @@ class Ai4PrivacyDetector(DetectorContract):
         except Exception as exc:
             logger.warning("Ai4Privacy model unavailable: %s", exc)
 
-    def detect(self, text: str) -> list[PiiEntity]:
+    def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
         if self._pipeline is None:
             return []
         try:

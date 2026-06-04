@@ -17,13 +17,13 @@ export function LoginPage() {
     try {
       const res = await fetch("/health", { headers: { "X-Api-Key": apiKey } });
       if (!res.ok) {
-        setError("Chiave non valida o servizio non raggiungibile.");
+        setError("Invalid API key or service unreachable.");
         return;
       }
       saveKey(apiKey);
       window.location.href = "/dashboard";
     } catch {
-      setError("Impossibile connettersi al servizio.");
+      setError("Could not connect to the service.");
     } finally {
       setLoading(false);
     }
@@ -44,7 +44,7 @@ export function LoginPage() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-              placeholder="Inserisci la chiave API"
+              placeholder="Enter your API key"
               autoFocus
             />
           </label>
@@ -54,7 +54,7 @@ export function LoginPage() {
             disabled={loading}
             className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded px-4 py-2 text-sm font-medium transition-colors"
           >
-            {loading ? "Verifica..." : "Accedi"}
+            {loading ? "Verifying..." : "Sign in"}
           </button>
         </form>
       </div>

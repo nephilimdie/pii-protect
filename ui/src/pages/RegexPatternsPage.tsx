@@ -32,7 +32,7 @@ export function RegexPatternsPage({ isAdmin }: Props) {
     setLoading(true);
     api.listRegexPatterns()
       .then(setPatterns)
-      .catch(() => setError("Impossibile caricare i pattern."))
+      .catch(() => setError("Failed to load patterns."))
       .finally(() => setLoading(false));
   }
 
@@ -68,7 +68,7 @@ export function RegexPatternsPage({ isAdmin }: Props) {
       resetForm();
       load();
     } catch {
-      setError("Pattern non valido o errore di rete.");
+      setError("Invalid pattern or network error.");
     }
   }
 
@@ -77,22 +77,22 @@ export function RegexPatternsPage({ isAdmin }: Props) {
       await api.updateRegexPattern(p.id, { enabled: !p.enabled });
       load();
     } catch {
-      setError("Impossibile aggiornare il pattern.");
+      setError("Failed to update pattern.");
     }
   }
 
   async function handleDelete(p: RegexPatternItem) {
-    if (!confirm(`Eliminare il pattern "${p.pii_type}"?`)) return;
+    if (!confirm(`Delete pattern "${p.pii_type}"?`)) return;
     try {
       await api.deleteRegexPattern(p.id);
       load();
     } catch {
-      setError("Impossibile eliminare il pattern.");
+      setError("Failed to delete pattern.");
     }
   }
 
   if (!isAdmin) {
-    return <p className="text-slate-400">Accesso riservato agli amministratori.</p>;
+    return <p className="text-slate-400">Admin access required.</p>;
   }
 
   return (
@@ -101,7 +101,7 @@ export function RegexPatternsPage({ isAdmin }: Props) {
         <div>
           <h1 className="text-lg font-semibold">Regex Pattern</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Pattern regex usati dal layer di rilevamento deterministico. Le modifiche sono attive immediatamente.
+            Regex patterns used by the deterministic detection layer. Changes take effect immediately.
           </p>
         </div>
         <button
@@ -109,24 +109,24 @@ export function RegexPatternsPage({ isAdmin }: Props) {
           className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 rounded px-3 py-2 text-sm"
         >
           <Plus size={14} />
-          Nuovo pattern
+          New pattern
         </button>
       </div>
 
       {error && <p className="text-red-400 mb-4 text-sm">{error}</p>}
 
       {loading ? (
-        <p className="text-slate-400">Caricamento...</p>
+        <p className="text-slate-400">Loading...</p>
       ) : (
         <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-700">
-                <th className="px-4 py-3">Tipo PII</th>
+                <th className="px-4 py-3">PII Type</th>
                 <th className="px-4 py-3">Pattern</th>
                 <th className="px-4 py-3">Flag</th>
                 <th className="px-4 py-3">Gruppo</th>
-                <th className="px-4 py-3">Descrizione</th>
+                <th className="px-4 py-3">Description</th>
                 <th className="px-4 py-3">Stato</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -160,14 +160,14 @@ export function RegexPatternsPage({ isAdmin }: Props) {
                       <button
                         onClick={() => openEdit(p)}
                         className="text-slate-400 hover:text-white"
-                        title="Modifica"
+                        title="Edit"
                       >
                         <Pencil size={14} />
                       </button>
                       <button
                         onClick={() => handleDelete(p)}
                         className="text-red-400 hover:text-red-300"
-                        title="Elimina"
+                        title="Delete"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -177,7 +177,7 @@ export function RegexPatternsPage({ isAdmin }: Props) {
               ))}
               {patterns.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">Nessun pattern configurato</td>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">No patterns configured</td>
                 </tr>
               )}
             </tbody>
@@ -189,11 +189,11 @@ export function RegexPatternsPage({ isAdmin }: Props) {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-lg">
             <h2 className="font-semibold mb-4">
-              {editTarget ? "Modifica pattern" : "Nuovo pattern"}
+              {editTarget ? "Edit pattern" : "New pattern"}
             </h2>
             <form onSubmit={handleSubmit} className="flex flex-col gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-400">Tipo PII</span>
+                <span className="text-xs text-slate-400">PII Type</span>
                 <input
                   type="text"
                   value={form.pii_type}
@@ -228,7 +228,7 @@ export function RegexPatternsPage({ isAdmin }: Props) {
                   </select>
                 </label>
                 <label className="flex flex-col gap-1 w-28">
-                  <span className="text-xs text-slate-400">Gruppo cattura</span>
+                  <span className="text-xs text-slate-400">Capture group</span>
                   <input
                     type="number"
                     min={0}
@@ -239,12 +239,12 @@ export function RegexPatternsPage({ isAdmin }: Props) {
                 </label>
               </div>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-400">Descrizione</span>
+                <span className="text-xs text-slate-400">Description</span>
                 <input
                   type="text"
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Descrizione opzionale"
+                  placeholder="Optional description"
                   className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
                 />
               </label>
@@ -260,7 +260,7 @@ export function RegexPatternsPage({ isAdmin }: Props) {
                   onClick={() => { setShowModal(false); resetForm(); }}
                   className="flex-1 bg-slate-700 hover:bg-slate-600 rounded px-3 py-2 text-sm"
                 >
-                  Annulla
+                  Cancel
                 </button>
               </div>
             </form>

@@ -15,7 +15,7 @@ class DetectorContract(ABC):
         """Execution order — lower runs first. Regex=10, Presidio=20, PrivacyFilter=30."""
 
     @abstractmethod
-    def detect(self, text: str) -> list[PiiEntity]:
+    def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
         """Detect PII entities in text. Must not raise — return [] on failure."""
 
     def is_available(self) -> bool:

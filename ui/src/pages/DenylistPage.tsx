@@ -25,7 +25,7 @@ export function DenylistPage({ isAdmin }: Props) {
     setLoading(true);
     api.listDenylist()
       .then(setEntries)
-      .catch(() => setError("Impossibile caricare la denylist."))
+      .catch(() => setError("Failed to load denylist."))
       .finally(() => setLoading(false));
   }
 
@@ -52,7 +52,7 @@ export function DenylistPage({ isAdmin }: Props) {
       resetForm();
       load();
     } catch {
-      setError("Errore durante il salvataggio.");
+      setError("Save failed.");
     }
   }
 
@@ -61,17 +61,17 @@ export function DenylistPage({ isAdmin }: Props) {
       await api.updateDenylistEntry(entry.id, { enabled: !entry.enabled });
       load();
     } catch {
-      setError("Impossibile aggiornare l'entry.");
+      setError("Failed to update entry.");
     }
   }
 
   async function handleDelete(entry: DenylistEntryItem) {
-    if (!confirm(`Eliminare "${entry.value}" dalla denylist?`)) return;
+    if (!confirm(`Delete "${entry.value}" from denylist?`)) return;
     try {
       await api.deleteDenylistEntry(entry.id);
       load();
     } catch {
-      setError("Impossibile eliminare l'entry.");
+      setError("Failed to delete entry.");
     }
   }
 
@@ -82,7 +82,7 @@ export function DenylistPage({ isAdmin }: Props) {
   }, {});
 
   if (!isAdmin) {
-    return <p className="text-slate-400">Accesso riservato agli amministratori.</p>;
+    return <p className="text-slate-400">Admin access required.</p>;
   }
 
   return (
@@ -91,7 +91,7 @@ export function DenylistPage({ isAdmin }: Props) {
         <div>
           <h1 className="text-lg font-semibold">Entity Denylist</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Termini che non devono mai essere classificati come PII. Le modifiche sono attive immediatamente.
+            Terms that must never be classified as PII. Changes take effect immediately.
           </p>
         </div>
         <button
@@ -99,26 +99,26 @@ export function DenylistPage({ isAdmin }: Props) {
           className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 rounded px-3 py-2 text-sm"
         >
           <Plus size={14} />
-          Nuovo termine
+          New term
         </button>
       </div>
 
       {error && <p className="text-red-400 mb-4 text-sm">{error}</p>}
 
       {loading ? (
-        <p className="text-slate-400">Caricamento...</p>
+        <p className="text-slate-400">Loading...</p>
       ) : (
         <div className="flex flex-col gap-4">
           {Object.entries(grouped).map(([piiType, items]) => (
             <div key={piiType} className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
               <div className="px-4 py-2 bg-slate-700/50 border-b border-slate-700">
                 <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wide">{piiType}</span>
-                <span className="text-xs text-slate-500 ml-2">{items.length} termini</span>
+                <span className="text-xs text-slate-500 ml-2">{items.length} terms</span>
               </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-700">
-                    <th className="px-4 py-2">Valore</th>
+                    <th className="px-4 py-2">Value</th>
                     <th className="px-4 py-2">Descrizione</th>
                     <th className="px-4 py-2">Stato</th>
                     <th className="px-4 py-2"></th>
@@ -138,15 +138,15 @@ export function DenylistPage({ isAdmin }: Props) {
                               : "bg-slate-700 text-slate-400 hover:bg-slate-600"
                           }`}
                         >
-                          {entry.enabled ? <><Check size={10} /> attivo</> : <><X size={10} /> disabilitato</>}
+                          {entry.enabled ? <><Check size={10} /> active</> : <><X size={10} /> disabled</>}
                         </button>
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => openEdit(entry)} className="text-slate-400 hover:text-white" title="Modifica">
+                          <button onClick={() => openEdit(entry)} className="text-slate-400 hover:text-white" title="Edit">
                             <Pencil size={14} />
                           </button>
-                          <button onClick={() => handleDelete(entry)} className="text-red-400 hover:text-red-300" title="Elimina">
+                          <button onClick={() => handleDelete(entry)} className="text-red-400 hover:text-red-300" title="Delete">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -158,7 +158,7 @@ export function DenylistPage({ isAdmin }: Props) {
             </div>
           ))}
           {entries.length === 0 && (
-            <p className="text-center text-slate-500 py-8">Nessun termine configurato</p>
+            <p className="text-center text-slate-500 py-8">No terms configured</p>
           )}
         </div>
       )}
@@ -167,11 +167,11 @@ export function DenylistPage({ isAdmin }: Props) {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md">
             <h2 className="font-semibold mb-4">
-              {editTarget ? "Modifica termine" : "Nuovo termine denylist"}
+              {editTarget ? "Edit term" : "New term denylist"}
             </h2>
             <form onSubmit={handleSubmit} className="flex flex-col gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-400">Tipo PII</span>
+                <span className="text-xs text-slate-400">PII Type</span>
                 <select
                   value={form.pii_type}
                   onChange={(e) => setForm({ ...form, pii_type: e.target.value })}
@@ -181,7 +181,7 @@ export function DenylistPage({ isAdmin }: Props) {
                 </select>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-400">Valore (case-insensitive)</span>
+                <span className="text-xs text-slate-400">Value (case-insensitive)</span>
                 <input
                   type="text"
                   value={form.value}
@@ -197,20 +197,20 @@ export function DenylistPage({ isAdmin }: Props) {
                   type="text"
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Motivazione opzionale"
+                  placeholder="Optional reason"
                   className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
                 />
               </label>
               <div className="flex gap-2 mt-2">
                 <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 rounded px-3 py-2 text-sm">
-                  {editTarget ? "Salva" : "Aggiungi"}
+                  {editTarget ? "Salva" : "Add"}
                 </button>
                 <button
                   type="button"
                   onClick={() => { setShowModal(false); resetForm(); }}
                   className="flex-1 bg-slate-700 hover:bg-slate-600 rounded px-3 py-2 text-sm"
                 >
-                  Annulla
+                  Cancel
                 </button>
               </div>
             </form>

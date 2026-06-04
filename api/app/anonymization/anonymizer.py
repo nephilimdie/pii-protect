@@ -64,11 +64,11 @@ class PiiAnonymizer:
         self._merger = EntityMerger()
         self._denylist = denylist or {}
 
-    def anonymize(self, text: str, context_id: str, context_type: str) -> AnonymizationResult:
+    def anonymize(self, text: str, context_id: str, context_type: str, language: str = "it") -> AnonymizationResult:
         all_entities: list[PiiEntity] = []
 
         for detector in self._registry.get_ordered():
-            all_entities.extend(detector.detect(text))
+            all_entities.extend(detector.detect(text, language))
 
         merged = self._merger.merge(all_entities, text)
         snapped = [_snap_to_word_boundary(text, e) for e in merged if _is_valid_entity(e, self._denylist)]
@@ -76,11 +76,18 @@ class PiiAnonymizer:
         snapped = self._merger.merge(snapped, text)
 
         generator = TokenGenerator()
+        # stable_map: original_text (lowered) → token already assigned this run
+        stable_map: dict[str, str] = {}
         mappings: list[MappingEntry] = []
 
         result = text
         for entity in reversed(snapped):
-            token = generator.next_token(entity.pii_type)
+            key = entity.text.lower().strip()
+            if key in stable_map:
+                token = stable_map[key]
+            else:
+                token = generator.next_token(entity.pii_type)
+                stable_map[key] = token
             result = result[:entity.start] + token + result[entity.end:]
             mappings.append(MappingEntry(
                 token=token,

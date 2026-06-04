@@ -19,9 +19,14 @@ class EntityMerger:
                 continue
             last = deduped[-1]
             if entity.start < last.end:
+                same_span = entity.start == last.start and entity.end == last.end
                 last_contains_entity = last.start <= entity.start and entity.end <= last.end
                 entity_contains_last = entity.start <= last.start and last.end <= entity.end
-                if entity_contains_last:
+                if same_span:
+                    # identical span: keep higher score (regex at 1.0 must beat ML layers)
+                    if entity.score > last.score:
+                        deduped[-1] = entity
+                elif entity_contains_last:
                     deduped[-1] = entity  # wider span wins
                 elif not last_contains_entity and entity.score > last.score:
                     deduped[-1] = entity  # partial overlap: higher score wins

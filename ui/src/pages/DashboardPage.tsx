@@ -9,33 +9,28 @@ export function DashboardPage() {
   useEffect(() => {
     api.getStats()
       .then(setStats)
-      .catch(() => setError("Impossibile caricare le statistiche."));
+      .catch(() => setError("Failed to load statistics."));
   }, []);
 
-  if (error) {
-    return <p className="text-red-400">{error}</p>;
-  }
-
-  if (!stats) {
-    return <p className="text-slate-400">Caricamento...</p>;
-  }
+  if (error) return <p className="text-red-400">{error}</p>;
+  if (!stats) return <p className="text-slate-400">Loading...</p>;
 
   return (
     <div>
       <h1 className="text-lg font-semibold mb-6">Dashboard</h1>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Anonimizzazioni totali" value={stats.total_anonymizations} />
-        <StatCard label="Token creati" value={stats.total_tokens_created} />
-        <StatCard label="Richieste ultime 24h" value={stats.requests_last_24h} />
-        <StatCard label="Tipi PII distinti" value={Object.keys(stats.pii_types_breakdown).length} />
+        <StatCard label="Total anonymizations" value={stats.total_anonymizations} />
+        <StatCard label="Tokens created" value={stats.total_tokens_created} />
+        <StatCard label="Requests (24h)" value={stats.requests_last_24h} />
+        <StatCard label="Distinct PII types" value={Object.keys(stats.pii_types_breakdown).length} />
       </div>
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-        <h2 className="text-sm font-medium text-slate-400 mb-4">Breakdown tipi PII</h2>
+        <h2 className="text-sm font-medium text-slate-400 mb-4">PII type breakdown</h2>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-700">
-              <th className="pb-2">Tipo</th>
-              <th className="pb-2 text-right">Occorrenze</th>
+              <th className="pb-2">Type</th>
+              <th className="pb-2 text-right">Count</th>
             </tr>
           </thead>
           <tbody>
@@ -47,7 +42,7 @@ export function DashboardPage() {
             ))}
             {Object.keys(stats.pii_types_breakdown).length === 0 && (
               <tr>
-                <td colSpan={2} className="py-4 text-center text-slate-500">Nessun dato</td>
+                <td colSpan={2} className="py-4 text-center text-slate-500">No data yet</td>
               </tr>
             )}
           </tbody>

@@ -9,6 +9,7 @@ import { AuditLogPage } from "./pages/AuditLogPage";
 import { StatsPage } from "./pages/StatsPage";
 import { RegexPatternsPage } from "./pages/RegexPatternsPage";
 import { DenylistPage } from "./pages/DenylistPage";
+import { LanguagesPage } from "./pages/LanguagesPage";
 
 function useRole(): { ready: boolean; isAdmin: boolean; isAuthenticated: boolean } {
   const [ready, setReady] = useState(false);
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="stats" element={<StatsPage />} />
           <Route path="regex-patterns" element={<RegexPatternsPage isAdmin={isAdmin} />} />
           <Route path="denylist" element={<DenylistPage isAdmin={isAdmin} />} />
+          <Route path="languages" element={<LanguagesPage isAdmin={isAdmin} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

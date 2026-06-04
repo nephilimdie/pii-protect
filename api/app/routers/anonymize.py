@@ -16,6 +16,8 @@ class AnonymizeRequest(BaseModel):
     text: str
     context_id: str
     context_type: str
+    language: str | None = None
+    mode: str = "permissive"  # "permissive" | "strict"
 
 
 class EntityDetail(BaseModel):
@@ -52,11 +54,19 @@ def get_anonymizer(
 @router.post("/anonymize", response_model=AnonymizeResponse)
 async def anonymize(
     body: AnonymizeRequest,
+    request: Request,
     api_key: ApiKey = Depends(require_service),
     db: AsyncSession = Depends(get_db),
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
 ):
-    result = anonymizer.anonymize(body.text, body.context_id, body.context_type)
+    lang = body.language or getattr(request.app.state, "default_language", "it")
+    try:
+        result = anonymizer.anonymize(body.text, body.context_id, body.context_type, lang)
+    except Exception:
+        if body.mode == "strict":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail="detection_layer_failure")
+        raise
 
     repo = MappingRepository(db)
     await repo.save_many(result.mappings, body.context_id, body.context_type)

@@ -19,7 +19,7 @@ class DetectorProvider:
         lc = self._settings.detection_layers
 
         if lc.get("presidio", {}).get("enabled", True):
-            registry.register(PresidioDetector(model=self._settings.spacy_model))
+            registry.register(PresidioDetector())
 
         if lc.get("privacy_filter", {}).get("enabled", True):
             registry.register(PrivacyFilterDetector(model=self._settings.privacy_filter_model))

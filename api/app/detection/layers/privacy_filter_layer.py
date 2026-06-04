@@ -134,7 +134,7 @@ class PrivacyFilterDetector(DetectorContract):
         except Exception as exc:
             logger.warning("PrivacyFilter model unavailable: %s", exc)
 
-    def detect(self, text: str) -> list[PiiEntity]:
+    def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
         if not self.is_available():
             return []
         try:
