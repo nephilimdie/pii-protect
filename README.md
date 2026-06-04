@@ -280,19 +280,30 @@ No auth required. Returns `{"status": "ok"}`.
 ### Layer 3 — Isotonic/distilbert_finetuned_ai4privacy_v2
 | Type | Examples |
 |------|---------|
-| `SECRET` | password, username, numero conto, CVV, SSN |
-| `PIN` | 4821 |
+| `PASSWORD` | hunter2, ••••••• |
+| `USERNAME` | mario.rossi83 |
+| `ACCOUNT_NUMBER` | numero conto corrente |
+| `CREDIT_CARD` | 4111 1111 1111 1111 |
+| `CVV` | 123 (con prefisso) |
+| `PIN` | 4821 (con prefisso) |
+| `SSN` | Social Security Number |
 | `IBAN` | IT60X... |
+| `BIC` | BNLIITRR |
+| `CRYPTO_ADDRESS` | Bitcoin, Ethereum, Litecoin address |
 | `MAC_ADDRESS` | AA:BB:CC:DD:EE:FF |
 | `IP_ADDRESS` | 192.168.1.1, 2001:db8::1 |
+| `GPS_COORDINATE` | latitudine/longitudine (con prefisso) |
+| `URL` | https://example.com |
 | `TARGA` | AB123CD (vehicleVRM) |
+| `VEHICLE_ID` | numero telaio (VIN) |
+| `MASKED_NUMBER` | ****1234 |
 | `PERSON` | Mario Rossi |
 | `ADDRESS` | Via Roma 1, Milano, CAP |
 | `DATE` | data di nascita |
 | `EMAIL` | mario@example.com |
 | `PHONE` | 333 1234567 |
 
-### Layer 4 — Regex patterns (configurabili da UI)
+### Layer 4 — Regex patterns (configurable from UI)
 | Type | Examples |
 |------|---------|
 | `FISCAL_CODE` | RSSMRA80A01H501U |
@@ -301,11 +312,18 @@ No auth required. Returns `{"status": "ok"}`.
 | `PHONE` | 06-12345678, +39 333 1234567 |
 | `TARGA` | AB123CD |
 | `PIVA` | P.IVA 12345678901 |
+| `CREDIT_CARD` | 5555 5555 5555 4444 |
 | `MAC_ADDRESS` | AA:BB:CC:DD:EE:FF |
 | `UUID` | 550e8400-e29b-41d4-a716-446655440000 |
-| `CVV` | CVV: 123 |
-| `PIN` | PIN: 4821 |
+| `CVV` | CVV: 123 (contextual) |
+| `PIN` | PIN: 4821 (contextual) |
 | `IP_ADDRESS` | 192.168.1.1, 2001:db8::1 |
+| `GPS_COORDINATE` | Latitudine: 45.19, Longitudine: 9.19 (contextual) |
+| `HEALTH_CARD` | tessera sanitaria 8038001234567890 |
+| `EMPLOYEE_ID` | EMP-778899, matricola 12345 |
+| `TICKET_ID` | TCK-77889911 |
+| `PRACTICE_ID` | FIN-2026-00012345 |
+| `INSURANCE_ID` | polizza AX12345678 |
 
 Regex patterns are stored in PostgreSQL and reloaded immediately on change. Manage them from the admin UI at http://localhost:15501/regex-patterns.
 
@@ -495,4 +513,4 @@ Built to solve a real need: sending legal documents through AI pipelines without
 ## License
 
 MIT — see [LICENSE](./LICENSE).
-Free to use, modify, and distribute. Attribution to **Stefano Bassetto** must be retained in all copies.
+Copyright © 2026 Stefano Bassetto. Free to use, modify, and distribute as long as the copyright notice is retained.

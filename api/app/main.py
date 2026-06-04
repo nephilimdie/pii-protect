@@ -68,9 +68,13 @@ async def lifespan(app: FastAPI):
     app.state.registry = registry
     app.state.regex_detector = registry.get_by_name("regex")
 
-    denylist: dict[str, set[str]] = {}
+    denylist: dict[str, dict] = {}
     for e in denylist_entries:
-        denylist.setdefault(e.pii_type, set()).add(e.value.lower())
+        bucket = denylist.setdefault(e.pii_type, {"exact": set(), "contains": []})
+        if e.match_type == "contains":
+            bucket["contains"].append(e.value.lower())
+        else:
+            bucket["exact"].add(e.value.lower())
     app.state.denylist = denylist
 
     await _ensure_admin_key()

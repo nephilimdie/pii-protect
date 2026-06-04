@@ -15,8 +15,8 @@ _LABEL_MAP: dict[str, str] = {
     "IT_IDENTITY_CARD":  "IDENTITY_CARD",
     "IT_PASSPORT":       "PASSPORT",
     "CREDIT_CARD":       "CREDIT_CARD",
-    "NRP":               "SECRET",
-    "URL":               "SECRET",
+    "NRP":               "NRP",
+    "URL":               "URL",
     # LOCATION excluded: spaCy produces too many false positives on generic words
 }
 

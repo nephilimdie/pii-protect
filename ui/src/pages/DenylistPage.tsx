@@ -14,10 +14,10 @@ export function DenylistPage({ isAdmin }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<DenylistEntryItem | null>(null);
-  const [form, setForm] = useState({ pii_type: "PERSON", value: "", description: "" });
+  const [form, setForm] = useState({ pii_type: "PERSON", value: "", match_type: "exact_word", description: "" });
 
   function resetForm() {
-    setForm({ pii_type: "PERSON", value: "", description: "" });
+    setForm({ pii_type: "PERSON", value: "", match_type: "exact_word", description: "" });
     setEditTarget(null);
   }
 
@@ -34,7 +34,7 @@ export function DenylistPage({ isAdmin }: Props) {
   function openCreate() { resetForm(); setShowModal(true); }
 
   function openEdit(e: DenylistEntryItem) {
-    setForm({ pii_type: e.pii_type, value: e.value, description: e.description });
+    setForm({ pii_type: e.pii_type, value: e.value, match_type: e.match_type, description: e.description });
     setEditTarget(e);
     setShowModal(true);
   }
@@ -119,8 +119,9 @@ export function DenylistPage({ isAdmin }: Props) {
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-700">
                     <th className="px-4 py-2">Value</th>
-                    <th className="px-4 py-2">Descrizione</th>
-                    <th className="px-4 py-2">Stato</th>
+                    <th className="px-4 py-2">Match</th>
+                    <th className="px-4 py-2">Description</th>
+                    <th className="px-4 py-2">Status</th>
                     <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
@@ -128,6 +129,11 @@ export function DenylistPage({ isAdmin }: Props) {
                   {items.map((entry) => (
                     <tr key={entry.id} className="border-b border-slate-700/50 last:border-0">
                       <td className="px-4 py-2 font-mono text-slate-200">{entry.value}</td>
+                      <td className="px-4 py-2">
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${entry.match_type === "contains" ? "bg-amber-900/40 text-amber-400" : "bg-slate-700 text-slate-400"}`}>
+                          {entry.match_type === "contains" ? "contains" : "exact"}
+                        </span>
+                      </td>
                       <td className="px-4 py-2 text-slate-400 text-xs">{entry.description || "—"}</td>
                       <td className="px-4 py-2">
                         <button
@@ -178,6 +184,17 @@ export function DenylistPage({ isAdmin }: Props) {
                   className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
                 >
                   {PII_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-400">Match type</span>
+                <select
+                  value={form.match_type}
+                  onChange={(e) => setForm({ ...form, match_type: e.target.value })}
+                  className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+                >
+                  <option value="exact_word">exact word — single word, stripped of honorifics</option>
+                  <option value="contains">contains — entity text contains this phrase</option>
                 </select>
               </label>
               <label className="flex flex-col gap-1">

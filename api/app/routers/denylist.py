@@ -16,6 +16,7 @@ class DenylistEntryResponse(BaseModel):
     id: uuid.UUID
     pii_type: str
     value: str
+    match_type: str
     description: str
     enabled: bool
     created_at: datetime
@@ -28,12 +29,14 @@ class DenylistEntryResponse(BaseModel):
 class CreateDenylistEntryRequest(BaseModel):
     pii_type: str
     value: str
+    match_type: str = "exact_word"  # "exact_word" | "contains"
     description: str = ""
 
 
 class UpdateDenylistEntryRequest(BaseModel):
     pii_type: str | None = None
     value: str | None = None
+    match_type: str | None = None
     description: str | None = None
     enabled: bool | None = None
 
@@ -41,9 +44,14 @@ class UpdateDenylistEntryRequest(BaseModel):
 async def _reload(request: Request, db: AsyncSession) -> None:
     repo = DenylistRepository(db)
     entries = await repo.find_enabled()
-    denylist: dict[str, set[str]] = {}
+    # denylist structure: {pii_type: {"exact": set[str], "contains": list[str]}}
+    denylist: dict[str, dict] = {}
     for e in entries:
-        denylist.setdefault(e.pii_type, set()).add(e.value.lower())
+        bucket = denylist.setdefault(e.pii_type, {"exact": set(), "contains": []})
+        if e.match_type == "contains":
+            bucket["contains"].append(e.value.lower())
+        else:
+            bucket["exact"].add(e.value.lower())
     request.app.state.denylist = denylist
 
 
@@ -66,6 +74,7 @@ async def create_entry(
         id=uuid.uuid4(),
         pii_type=body.pii_type,
         value=body.value.lower().strip(),
+        match_type=body.match_type,
         description=body.description,
         enabled=True,
     )
@@ -90,6 +99,8 @@ async def update_entry(
         entry.pii_type = body.pii_type
     if body.value is not None:
         entry.value = body.value.lower().strip()
+    if body.match_type is not None:
+        entry.match_type = body.match_type
     if body.description is not None:
         entry.description = body.description
     if body.enabled is not None:

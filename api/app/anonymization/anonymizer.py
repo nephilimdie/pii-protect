@@ -45,21 +45,28 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
     return PiiEntity(start=start, end=end, pii_type=entity.pii_type, text=text[start:end], score=entity.score)
 
 
-def _is_valid_entity(entity: PiiEntity, denylist: dict[str, set[str]]) -> bool:
-    # reject PERSON entities spanning multiple lines (model artifact)
+def _is_valid_entity(entity: PiiEntity, denylist: dict[str, dict]) -> bool:
     if entity.pii_type == "PERSON":
         if "\n" in entity.text or "\r" in entity.text:
             return False
-        text = _HONORIFIC_RE.sub("", entity.text.strip()).strip()
-        words = text.lower().split()
-        denied = denylist.get("PERSON", set())
-        if len(words) == 1 and words[0].rstrip(".,:;") in denied:
+    bucket = denylist.get(entity.pii_type, {})
+    text_lower = entity.text.lower().strip()
+    # exact_word: strip honorifics, check single word
+    exact = bucket.get("exact", set())
+    if exact:
+        clean = _HONORIFIC_RE.sub("", entity.text.strip()).strip()
+        words = clean.lower().split()
+        if len(words) == 1 and words[0].rstrip(".,:;") in exact:
+            return False
+    # contains: reject if entity text contains any denied substring
+    for phrase in bucket.get("contains", []):
+        if phrase in text_lower:
             return False
     return True
 
 
 class PiiAnonymizer:
-    def __init__(self, registry: DetectorRegistry, denylist: dict[str, set[str]] | None = None) -> None:
+    def __init__(self, registry: DetectorRegistry, denylist: dict[str, dict] | None = None) -> None:
         self._registry = registry
         self._merger = EntityMerger()
         self._denylist = denylist or {}

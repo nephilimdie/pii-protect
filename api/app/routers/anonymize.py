@@ -40,13 +40,13 @@ def get_registry(request: Request) -> DetectorRegistry:
     return request.app.state.registry
 
 
-def get_denylist(request: Request) -> dict[str, set[str]]:
+def get_denylist(request: Request) -> dict[str, dict]:
     return getattr(request.app.state, "denylist", {})
 
 
 def get_anonymizer(
     registry: DetectorRegistry = Depends(get_registry),
-    denylist: dict[str, set[str]] = Depends(get_denylist),
+    denylist: dict[str, dict] = Depends(get_denylist),
 ) -> PiiAnonymizer:
     return PiiAnonymizer(registry, denylist)
 

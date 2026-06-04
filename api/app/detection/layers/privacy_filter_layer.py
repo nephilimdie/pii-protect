@@ -38,8 +38,8 @@ _LABEL_MAP: dict[str, str | None] = {
     "private_phone":   "PHONE",
     "private_address": "ADDRESS",
     "private_date":    "DATE",
-    "private_url":     "SECRET",
-    "account_number":  "SECRET",
+    "private_url":     "URL",
+    "account_number":  "ACCOUNT_NUMBER",
     "secret":          "SECRET",
 }
 

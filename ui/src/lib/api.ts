@@ -118,6 +118,7 @@ export interface DenylistEntryItem {
   id: string;
   pii_type: string;
   value: string;
+  match_type: string;
   description: string;
   enabled: boolean;
   created_at: string;
@@ -127,12 +128,14 @@ export interface DenylistEntryItem {
 export interface CreateDenylistEntryRequest {
   pii_type: string;
   value: string;
+  match_type?: string;
   description?: string;
 }
 
 export interface UpdateDenylistEntryRequest {
   pii_type?: string;
   value?: string;
+  match_type?: string;
   description?: string;
   enabled?: boolean;
 }
