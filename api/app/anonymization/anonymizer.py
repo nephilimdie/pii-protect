@@ -7,6 +7,8 @@ from app.detection.token_generator import TokenGenerator
 from app.anonymization.anonymization_result import AnonymizationResult
 
 _WORD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+_PASSWORD_EXTRA = frozenset("!@#$%^&*()+=[]{}|;:<>?/\\~`")
+_PASSWORD_TYPES = frozenset({"SECRET", "PASSWORD"})
 
 
 _HONORIFIC_RE = re.compile(
@@ -23,7 +25,8 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
         start += 1
 
     # Expand right if entity ends mid-word
-    while end < len(text) and text[end] in _WORD_CHARS:
+    extra = _PASSWORD_EXTRA if entity.pii_type in _PASSWORD_TYPES else frozenset()
+    while end < len(text) and (text[end] in _WORD_CHARS or text[end] in extra):
         end += 1
 
     # Expand left only if entity starts mid-word (first char is a word char)
