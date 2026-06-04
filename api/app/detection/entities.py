@@ -8,6 +8,7 @@ class PiiEntity:
     pii_type: str
     text: str
     score: float
+    source: str = ""  # "regex" for deterministic patterns, layer_name for ML
 
 
 @dataclass

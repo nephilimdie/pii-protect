@@ -43,6 +43,7 @@ class ItalianRegexDetector(DetectorContract):
                         pii_type=cp.pii_type,
                         text=matched_text,
                         score=1.0,
+                        source="regex",
                     ))
         return entities
 
