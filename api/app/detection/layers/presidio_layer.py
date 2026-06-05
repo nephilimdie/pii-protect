@@ -28,12 +28,20 @@ _DEFAULT_MODELS = [
 ]
 
 
+_CONTEXT_WINDOW = 60  # chars to look back for context words
+
+
 class PresidioDetector(DetectorContract):
     _analyzer = None
     _supported_languages: list[str] = ["it"]
+    _context_map: dict[str, list[str]] = {}
 
     def __init__(self) -> None:
         pass
+
+    @classmethod
+    def set_context(cls, context_map: dict[str, list[str]]) -> None:
+        cls._context_map = context_map
 
     @property
     def layer_name(self) -> str:
@@ -81,11 +89,33 @@ class PresidioDetector(DetectorContract):
         except Exception as exc:
             logger.warning("Presidio analyze error: %s", exc)
             return []
-        return [
+        entities = [
             self._to_entity(r, text)
             for r in results
-            if r.score >= _MIN_SCORE and r.entity_type in _LABEL_MAP
+            if r.entity_type in _LABEL_MAP
         ]
+        return self._apply_context_boost(entities, text)
+
+    def _apply_context_boost(self, entities: list[PiiEntity], text: str) -> list[PiiEntity]:
+        if not self._context_map:
+            return [e for e in entities if e.score >= _MIN_SCORE]
+        result = []
+        for entity in entities:
+            score = entity.score
+            words = self._context_map.get(entity.pii_type, [])
+            if words:
+                window = text[max(0, entity.start - _CONTEXT_WINDOW):entity.start].lower()
+                if any(w in window for w in words):
+                    score = max(score, 0.90)
+            if score >= _MIN_SCORE:
+                if score != entity.score:
+                    entity = PiiEntity(
+                        start=entity.start, end=entity.end,
+                        pii_type=entity.pii_type, text=entity.text,
+                        score=score,
+                    )
+                result.append(entity)
+        return result
 
     def _to_entity(self, result, text: str) -> PiiEntity:
         pii_type = _LABEL_MAP.get(result.entity_type, result.entity_type)

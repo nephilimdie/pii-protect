@@ -7,6 +7,7 @@ from app.routers import reporting as reporting_router
 from app.routers import regex_patterns as regex_patterns_router
 from app.routers import denylist as denylist_router
 from app.routers import languages as languages_router
+from app.routers import presidio_context as presidio_context_router
 from app.detection.layers.presidio_layer import PresidioDetector
 from app.settings_repository import SettingsRepository
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
@@ -15,6 +16,7 @@ from app.detection.layers.regex_layer import ItalianRegexDetector
 from app.detection.detector_provider import DetectorProvider
 from app.detection.regex_pattern_repository import RegexPatternRepository
 from app.detection.denylist_repository import DenylistRepository
+from app.detection.presidio_context_repository import PresidioContextRepository
 from app.database import AsyncSessionLocal
 from app.identity.api_key_service import ApiKeyService
 from app.config import settings
@@ -61,7 +63,14 @@ async def lifespan(app: FastAPI):
         patterns = await RegexPatternRepository(db).find_enabled()
         denylist_entries = await DenylistRepository(db).find_enabled()
         default_lang = await SettingsRepository(db).get("default_language", "it")
+        ctx_entries = await PresidioContextRepository(db).find_enabled()
     app.state.default_language = default_lang
+
+    context_map: dict[str, list[str]] = {}
+    for e in ctx_entries:
+        context_map.setdefault(e["entity_type"], []).append(e["word"])
+    app.state.presidio_context = context_map
+    PresidioDetector.set_context(context_map)
 
     provider = DetectorProvider(settings, patterns)
     registry = provider.build()
@@ -91,3 +100,4 @@ app.include_router(reporting_router.router, prefix="/v1/admin")
 app.include_router(regex_patterns_router.router, prefix="/v1/admin")
 app.include_router(denylist_router.router, prefix="/v1/admin")
 app.include_router(languages_router.router, prefix="/v1/admin")
+app.include_router(presidio_context_router.router, prefix="/v1/admin")

@@ -27,7 +27,8 @@ export function NavBar({ isAdmin }: NavBarProps) {
       {isAdmin && <NavLink to="/api-keys" className={linkClass}>API Keys</NavLink>}
       {isAdmin && <NavLink to="/regex-patterns" className={linkClass}>Regex</NavLink>}
       {isAdmin && <NavLink to="/denylist" className={linkClass}>Denylist</NavLink>}
-      {isAdmin && <NavLink to="/languages" className={linkClass}>Lingue</NavLink>}
+      {isAdmin && <NavLink to="/context-words" className={linkClass}>Context</NavLink>}
+      {isAdmin && <NavLink to="/languages" className={linkClass}>Languages</NavLink>}
       <NavLink to="/audit-log" className={linkClass}>Audit Log</NavLink>
       <NavLink to="/stats" className={linkClass}>Stats</NavLink>
       <div className="ml-auto">

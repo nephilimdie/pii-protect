@@ -96,6 +96,15 @@ export interface CreateApiKeyResponse {
   key: string;
 }
 
+export interface ContextWordItem {
+  id: number;
+  entity_type: string;
+  word: string;
+  description: string;
+  enabled: boolean;
+  created_at: string;
+}
+
 export interface LanguageInfo {
   code: string;
   name: string;
@@ -210,6 +219,13 @@ export const api = {
     put<DenylistEntryItem>(`/v1/admin/denylist/${id}`, body),
 
   deleteDenylistEntry: (id: string) => del(`/v1/admin/denylist/${id}`),
+
+  listContextWords: () => get<ContextWordItem[]>("/v1/admin/presidio-context"),
+  createContextWord: (body: { entity_type: string; word: string; description?: string }) =>
+    post<ContextWordItem>("/v1/admin/presidio-context", body),
+  updateContextWord: (id: number, body: Partial<{ entity_type: string; word: string; description: string; enabled: boolean }>) =>
+    put<ContextWordItem>(`/v1/admin/presidio-context/${id}`, body),
+  deleteContextWord: (id: number) => del(`/v1/admin/presidio-context/${id}`),
 
   listLanguages: () => get<LanguageInfo[]>("/v1/admin/languages"),
   getSettings: () => get<LanguageSettings>("/v1/admin/settings"),

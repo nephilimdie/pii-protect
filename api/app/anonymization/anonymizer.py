@@ -86,18 +86,20 @@ class PiiAnonymizer:
         snapped = self._merger.merge(snapped, text)
 
         generator = TokenGenerator()
-        # stable_map: original_text (lowered) → token already assigned this run
+        # Pass 1: assign tokens in left-to-right text order so [TYPE_1] is
+        # the leftmost occurrence, [TYPE_2] the next, etc.
         stable_map: dict[str, str] = {}
-        mappings: list[MappingEntry] = []
+        for entity in snapped:
+            key = entity.text.lower().strip()
+            if key not in stable_map:
+                stable_map[key] = generator.next_token(entity.pii_type)
 
+        # Pass 2: replace from right to preserve char offsets
+        mappings: list[MappingEntry] = []
         result = text
         for entity in reversed(snapped):
             key = entity.text.lower().strip()
-            if key in stable_map:
-                token = stable_map[key]
-            else:
-                token = generator.next_token(entity.pii_type)
-                stable_map[key] = token
+            token = stable_map[key]
             result = result[:entity.start] + token + result[entity.end:]
             mappings.append(MappingEntry(
                 token=token,
