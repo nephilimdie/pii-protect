@@ -7,6 +7,7 @@ Create Date: 2026-06-05
 
 from alembic import op
 import sqlalchemy as sa
+import uuid
 
 revision = "009"
 down_revision = "008"
@@ -47,9 +48,9 @@ def upgrade() -> None:
     # Denylist: User-Agent OS tokens falsely tagged as PERSON
     for word in ["macintosh", "windows", "intel", "android"]:
         conn.execute(sa.text(
-            "INSERT INTO entity_denylist (pii_type, value, match_type, description, enabled)"
-            " VALUES ('PERSON', :w, 'exact_word', 'User-Agent token — not a person name', true)"
-        ), {"w": word})
+            "INSERT INTO entity_denylist (id, pii_type, value, match_type, description, enabled)"
+            " VALUES (CAST(:id AS uuid), 'PERSON', :w, 'exact_word', 'User-Agent token — not a person name', true)"
+        ), {"id": str(uuid.uuid4()), "w": word})
 
 
 def downgrade() -> None:
