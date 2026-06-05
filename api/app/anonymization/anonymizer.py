@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.detection.detector_registry import DetectorRegistry
 from app.detection.entities import PiiEntity, MappingEntry
@@ -75,10 +76,13 @@ class PiiAnonymizer:
         self._denylist = denylist or {}
 
     def anonymize(self, text: str, context_id: str, context_type: str, language: str = "it") -> AnonymizationResult:
+        detectors = self._registry.get_ordered()
         all_entities: list[PiiEntity] = []
 
-        for detector in self._registry.get_ordered():
-            all_entities.extend(detector.detect(text, language))
+        with ThreadPoolExecutor(max_workers=len(detectors) or 1) as pool:
+            futures = {pool.submit(d.detect, text, language): d for d in detectors}
+            for future in as_completed(futures):
+                all_entities.extend(future.result())
 
         merged = self._merger.merge(all_entities, text)
         snapped = [_snap_to_word_boundary(text, e) for e in merged if _is_valid_entity(e, self._denylist)]

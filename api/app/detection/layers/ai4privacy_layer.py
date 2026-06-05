@@ -67,6 +67,7 @@ _LABEL_MAP: dict[str, str | None] = {
 }
 
 _MIN_SCORE = 0.70
+_MIN_CHARS = 200  # skip transformer inference for short texts — regex+spaCy sufficient
 
 
 class Ai4PrivacyDetector(DetectorContract):
@@ -100,7 +101,7 @@ class Ai4PrivacyDetector(DetectorContract):
             logger.warning("Ai4Privacy model unavailable: %s", exc)
 
     def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
-        if self._pipeline is None:
+        if self._pipeline is None or len(text) < _MIN_CHARS:
             return []
         try:
             results = self._pipeline(text)

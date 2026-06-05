@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,8 +62,11 @@ async def anonymize(
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
 ):
     lang = body.language or getattr(request.app.state, "default_language", "it")
+    loop = asyncio.get_event_loop()
     try:
-        result = anonymizer.anonymize(body.text, body.context_id, body.context_type, lang)
+        result = await loop.run_in_executor(
+            None, anonymizer.anonymize, body.text, body.context_id, body.context_type, lang
+        )
     except Exception:
         if body.mode == "strict":
             from fastapi import HTTPException
