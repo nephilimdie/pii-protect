@@ -30,6 +30,7 @@ export function NavBar({ isAdmin }: NavBarProps) {
       {isAdmin && <NavLink to="/context-words" className={linkClass}>Context</NavLink>}
       {isAdmin && <NavLink to="/languages" className={linkClass}>Languages</NavLink>}
       <NavLink to="/audit-log" className={linkClass}>Audit Log</NavLink>
+      {isAdmin && <NavLink to="/mappings" className={linkClass}>Mappings</NavLink>}
       <NavLink to="/stats" className={linkClass}>Stats</NavLink>
       <div className="ml-auto">
         <button

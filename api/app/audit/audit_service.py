@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from app.audit.models import AuditLog
 
 
@@ -48,3 +48,9 @@ class AuditService:
         result = await self._db.execute(stmt)
         items = list(result.scalars().all())
         return items, total
+
+    async def delete_by_ids(self, ids: list[uuid.UUID]) -> int:
+        stmt = delete(AuditLog).where(AuditLog.id.in_(ids))
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        return result.rowcount

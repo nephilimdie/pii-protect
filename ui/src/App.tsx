@@ -11,6 +11,7 @@ import { RegexPatternsPage } from "./pages/RegexPatternsPage";
 import { DenylistPage } from "./pages/DenylistPage";
 import { LanguagesPage } from "./pages/LanguagesPage";
 import { ContextWordsPage } from "./pages/ContextWordsPage";
+import { MappingsPage } from "./pages/MappingsPage";
 
 function useRole(): { ready: boolean; isAdmin: boolean; isAuthenticated: boolean } {
   const [ready, setReady] = useState(false);
@@ -66,7 +67,8 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="api-keys" element={<ApiKeysPage isAdmin={isAdmin} />} />
-          <Route path="audit-log" element={<AuditLogPage />} />
+          <Route path="audit-log" element={<AuditLogPage isAdmin={isAdmin} />} />
+          <Route path="mappings" element={<MappingsPage isAdmin={isAdmin} />} />
           <Route path="stats" element={<StatsPage />} />
           <Route path="regex-patterns" element={<RegexPatternsPage isAdmin={isAdmin} />} />
           <Route path="denylist" element={<DenylistPage isAdmin={isAdmin} />} />

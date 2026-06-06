@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.mapping.models import PiiMapping
 from app.mapping.encryptor import FieldEncryptor
@@ -53,6 +53,40 @@ class MappingRepository:
                 pii_type=row.pii_type,
             ))
         return entries
+
+    async def list_paginated(self, page: int, per_page: int) -> tuple[list[dict], int]:
+        count_stmt = select(func.count()).select_from(PiiMapping)
+        total = (await self._db.execute(count_stmt)).scalar_one()
+        stmt = (
+            select(PiiMapping)
+            .order_by(PiiMapping.created_at.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+        )
+        result = await self._db.execute(stmt)
+        rows = result.scalars().all()
+        items = []
+        for row in rows:
+            try:
+                original = self._encryptor.decrypt(row.original_encrypted)
+            except ValueError:
+                original = "***"
+            items.append({
+                "id": str(row.id),
+                "context_id": row.context_id,
+                "context_type": row.context_type,
+                "token": row.token,
+                "pii_type": row.pii_type,
+                "original": original,
+                "created_at": row.created_at,
+            })
+        return items, total
+
+    async def delete_by_ids(self, ids: list[uuid.UUID]) -> int:
+        stmt = delete(PiiMapping).where(PiiMapping.id.in_(ids))
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        return result.rowcount
 
     async def delete_expired(self, ttl_days: int) -> int:
         cutoff = datetime.utcnow() - timedelta(days=ttl_days)

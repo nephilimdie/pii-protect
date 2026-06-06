@@ -32,8 +32,12 @@ async function put<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function del(path: string): Promise<void> {
-  const res = await fetch(path, { method: "DELETE", headers: authHeaders() });
+async function del(path: string, body?: unknown): Promise<void> {
+  const res = await fetch(path, {
+    method: "DELETE",
+    headers: authHeaders(),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
@@ -62,6 +66,22 @@ export interface StatsResponse {
   total_tokens_created: number;
   pii_types_breakdown: Record<string, number>;
   requests_last_24h: number;
+}
+
+export interface MappingItem {
+  id: string;
+  context_id: string;
+  context_type: string;
+  token: string;
+  pii_type: string;
+  original: string;
+  created_at: string;
+}
+
+export interface MappingListResponse {
+  items: MappingItem[];
+  total: number;
+  page: number;
 }
 
 export interface AuditLogEntry {
@@ -232,4 +252,15 @@ export const api = {
   setSettings: (body: LanguageSettings) => put<LanguageSettings>("/v1/admin/settings", body),
   installLanguage: (code: string) => post<InstallStatus>(`/v1/admin/languages/${code}/install`, {}),
   getLanguageStatus: (code: string) => get<InstallStatus>(`/v1/admin/languages/${code}/status`),
+
+  deleteAuditLogBulk: (ids: string[]) =>
+    del("/v1/admin/audit-log/bulk", { ids }),
+
+  listMappings: (page: number, perPage: number) => {
+    const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    return get<MappingListResponse>(`/v1/admin/mappings?${params}`);
+  },
+
+  deleteMappingsBulk: (ids: string[]) =>
+    del("/v1/admin/mappings/bulk", { ids }),
 };

@@ -41,6 +41,26 @@ class CleanupResponse(BaseModel):
     deleted_count: int
 
 
+class BulkDeleteRequest(BaseModel):
+    ids: list[uuid.UUID]
+
+
+class MappingItem(BaseModel):
+    id: str
+    context_id: str
+    context_type: str
+    token: str
+    pii_type: str
+    original: str
+    created_at: datetime
+
+
+class MappingListResponse(BaseModel):
+    items: list[MappingItem]
+    total: int
+    page: int
+
+
 @router.get("/stats")
 async def get_stats(
     api_key: ApiKey = Depends(require_auditor),
@@ -71,4 +91,38 @@ async def cleanup(
 ):
     repo = MappingRepository(db)
     deleted = await repo.delete_expired(body.ttl_days)
+    return CleanupResponse(deleted_count=deleted)
+
+
+@router.delete("/audit-log/bulk", response_model=CleanupResponse)
+async def delete_audit_log_bulk(
+    body: BulkDeleteRequest,
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    service = AuditService(db)
+    deleted = await service.delete_by_ids(body.ids)
+    return CleanupResponse(deleted_count=deleted)
+
+
+@router.get("/mappings", response_model=MappingListResponse)
+async def list_mappings(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = MappingRepository(db)
+    items, total = await repo.list_paginated(page, per_page)
+    return MappingListResponse(items=items, total=total, page=page)
+
+
+@router.delete("/mappings/bulk", response_model=CleanupResponse)
+async def delete_mappings_bulk(
+    body: BulkDeleteRequest,
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = MappingRepository(db)
+    deleted = await repo.delete_by_ids(body.ids)
     return CleanupResponse(deleted_count=deleted)
