@@ -392,6 +392,8 @@ Central registry of all recognized PII types. Each type has:
 
 Managed from the admin UI under **PII Types**.
 
+![PII Type Registry UI](doc/img/pii_types_page.png)
+
 ---
 
 ## Detection Layers
