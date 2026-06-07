@@ -17,6 +17,15 @@ _HONORIFIC_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Kinship/relational prefixes that ML models include in PERSON entities by mistake
+_KINSHIP_PREFIX_RE = re.compile(
+    r"^(?:(?:mio|mia|suo|sua|il|la|lo|i|gli|le)\s+)?"
+    r"(?:moglie|marito|figlio|figlia|sorella|fratello|padre|madre|"
+    r"nonno|nonna|nipote|zio|zia|cugino|cugina|compagno|compagna|"
+    r"genero|nuora|cognato|cognata)\s+",
+    re.IGNORECASE,
+)
+
 
 def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
     start, end = entity.start, entity.end
@@ -35,12 +44,17 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
         while start > 0 and text[start - 1] in _WORD_CHARS:
             start -= 1
 
-    # For PERSON entities, absorb a preceding honorific (Dr., Avv., etc.)
-    if entity.pii_type == "PERSON" and start > 0:
-        prefix = text[max(0, start - 15):start]
-        m = _HONORIFIC_RE.search(prefix)
+    if entity.pii_type == "PERSON":
+        # Absorb a preceding honorific (Dr., Avv., etc.)
+        if start > 0:
+            prefix = text[max(0, start - 15):start]
+            m = _HONORIFIC_RE.search(prefix)
+            if m:
+                start = start - (len(prefix) - m.start())
+        # Strip leading kinship/relational term included by ML models
+        m = _KINSHIP_PREFIX_RE.match(text[start:end])
         if m:
-            start = start - (len(prefix) - m.start())
+            start = start + m.end()
 
     if start >= end:
         return entity
