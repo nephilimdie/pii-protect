@@ -17,6 +17,35 @@ _HONORIFIC_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Context-based reclassification rules: (window_re, from_type, to_type | None)
+# window_re is matched against the text immediately before the entity (up to 60 chars).
+# to_type=None means discard the entity entirely.
+_RECLASSIFY_RULES: list[tuple[re.Pattern, str, str | None]] = [
+    # PERSON after "username:" / "login:" → ACCOUNT
+    (re.compile(r"(?i)(?:username|login)\s*:\s*$"), "PERSON", "ACCOUNT"),
+    # PERSON after school/institution context → ORGANIZATION
+    (re.compile(r"(?i)(?:scuola|istituto|liceo|plesso|istituzione|college|università|accademia)\s+(?:\w+\s+){0,3}$"), "PERSON", "ORGANIZATION"),
+]
+
+_RECLASSIFY_WINDOW = 60  # chars to look back
+
+
+def _reclassify(entity: "PiiEntity", text: str) -> "PiiEntity | None":
+    window = text[max(0, entity.start - _RECLASSIFY_WINDOW):entity.start]
+    for rule_re, from_type, to_type in _RECLASSIFY_RULES:
+        if entity.pii_type != from_type:
+            continue
+        if rule_re.search(window):
+            if to_type is None:
+                return None
+            return PiiEntity(
+                start=entity.start, end=entity.end,
+                pii_type=to_type, text=entity.text, score=entity.score,
+                source=entity.source,
+            )
+    return entity
+
+
 # Kinship/relational prefixes that ML models include in PERSON entities by mistake
 _KINSHIP_PREFIX_RE = re.compile(
     r"^(?:(?:mio|mia|suo|sua|il|la|lo|i|gli|le)\s+)?"
@@ -99,7 +128,15 @@ class PiiAnonymizer:
                 all_entities.extend(future.result())
 
         merged = self._merger.merge(all_entities, text)
-        snapped = [_snap_to_word_boundary(text, e) for e in merged if _is_valid_entity(e, self._denylist)]
+
+        # Reclassify entities based on surrounding context (e.g. PERSON → ACCOUNT after "username:")
+        reclassified = []
+        for e in merged:
+            r = _reclassify(e, text)
+            if r is not None:
+                reclassified.append(r)
+
+        snapped = [_snap_to_word_boundary(text, e) for e in reclassified if _is_valid_entity(e, self._denylist)]
         # Re-merge after snapping in case boundaries now overlap
         snapped = self._merger.merge(snapped, text)
 
