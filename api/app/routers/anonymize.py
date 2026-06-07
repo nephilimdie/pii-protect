@@ -159,7 +159,7 @@ def _apply_replacements(
     mode: str,
     replacement_map: dict[str, str] | None,
 ) -> tuple[str, list[MappingEntry]]:
-    from app.anonymization.token_generator import TokenGenerator
+    from app.detection.token_generator import TokenGenerator
     generator = TokenGenerator()
     stable_map: dict[str, str] = {}
 
