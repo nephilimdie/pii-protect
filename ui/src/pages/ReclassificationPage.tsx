@@ -15,58 +15,157 @@ const TYPE_COLORS: Record<string, string> = {
 };
 const typeColor = (t: string) => TYPE_COLORS[t] ?? "#94a3b8";
 
-const NODE_R = 28;
-const SVG_W = 900;
-const SVG_H = 460;
-
-function layoutNodes(types: string[]): Record<string, { x: number; y: number }> {
-  const positions: Record<string, { x: number; y: number }> = {};
-  const n = types.length;
-  if (n === 0) return positions;
-  types.forEach((t, i) => {
-    const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-    positions[t] = {
-      x: SVG_W / 2 + (SVG_W / 2 - NODE_R - 30) * Math.cos(angle),
-      y: SVG_H / 2 + (SVG_H / 2 - NODE_R - 20) * Math.sin(angle),
-    };
-  });
-  return positions;
-}
-
-function edgePath(x1: number, y1: number, x2: number, y2: number, curvature = 0.25): string {
-  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-  const dx = x2 - x1, dy = y2 - y1;
-  return `M ${x1} ${y1} Q ${mx - dy * curvature} ${my + dx * curvature} ${x2} ${y2}`;
-}
-
-function bezierMid(x1: number, y1: number, x2: number, y2: number, curvature = 0.25) {
-  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-  const dx = x2 - x1, dy = y2 - y1;
-  const cx = mx - dy * curvature, cy = my + dx * curvature;
-  return { x: 0.25 * x1 + 0.5 * cx + 0.25 * x2, y: 0.25 * y1 + 0.5 * cy + 0.25 * y2 };
-}
-
-function truncate(s: string | null, n = 28) {
+function trunc(s: string | null | undefined, n: number) {
   if (!s) return "";
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
+// ── SVG graph ─────────────────────────────────────────────────────────────────
+const SVG_W      = 740;
+const ROW_H      = 90;   // height per rule row
+const PAD_TOP    = 20;
+const PAD_BOT    = 20;
+const NODE_W     = 130;
+const NODE_H     = 42;
+const FROM_X     = 20;
+const TO_X       = SVG_W - NODE_W - 20;
+const ARROW_X1   = FROM_X + NODE_W + 6;
+const ARROW_X2   = TO_X - 6;
+const MID_X      = (ARROW_X1 + ARROW_X2) / 2;
+
+function RuleGraph({ rules, hoveredRule, onHover }: {
+  rules: ReclassificationRule[];
+  hoveredRule: string | null;
+  onHover: (id: string | null) => void;
+}) {
+  const visible = rules; // all rules, one row each
+  const svgH = PAD_TOP + visible.length * ROW_H + PAD_BOT;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${SVG_W} ${svgH}`} className="block">
+      <defs>
+        <marker id="arr-default" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <path d="M0,0 L7,3.5 L0,7 Z" fill="#64748b" />
+        </marker>
+        {Object.entries(TYPE_COLORS).map(([t, c]) => (
+          <marker key={t} id={`arr-${t}`} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7 Z" fill={c} />
+          </marker>
+        ))}
+        <marker id="arr-discard" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <path d="M0,0 L7,3.5 L0,7 Z" fill="#ef4444" />
+        </marker>
+      </defs>
+
+      {visible.map((rule, i) => {
+        const cy     = PAD_TOP + i * ROW_H + ROW_H / 2;
+        const boxY   = cy - NODE_H / 2;
+        const hov    = hoveredRule === rule.id;
+        const fColor = typeColor(rule.from_type);
+        const tColor = rule.to_type ? typeColor(rule.to_type) : "#ef4444";
+        const dis    = !rule.enabled;
+        const alpha  = dis ? "55" : "ff";
+        const arrowId = rule.to_type ? (`arr-${rule.to_type}` in {} ? `arr-${rule.to_type}` : "arr-default") : "arr-discard";
+
+        // pattern lines
+        const ctxLine = rule.context_pattern ? `ctx: ${trunc(rule.context_pattern, 36)}` : null;
+        const entLine = rule.entity_pattern  ? `ent: ${trunc(rule.entity_pattern, 36)}`  : null;
+        const descLine = trunc(rule.description, 52);
+
+        return (
+          <g key={rule.id}
+            onMouseEnter={() => onHover(rule.id)}
+            onMouseLeave={() => onHover(null)}
+            style={{ opacity: dis ? 0.45 : 1, cursor: "default" }}>
+
+            {/* FROM box */}
+            <rect x={FROM_X} y={boxY} width={NODE_W} height={NODE_H} rx={6}
+              fill={fColor + "22"} stroke={fColor + alpha} strokeWidth={hov ? 2 : 1.5} />
+            <text x={FROM_X + NODE_W / 2} y={cy + 5} textAnchor="middle"
+              fontSize={11} fontWeight={700} fill={fColor} className="select-none">
+              {rule.from_type}
+            </text>
+
+            {/* Arrow */}
+            <line x1={ARROW_X1} y1={cy} x2={ARROW_X2} y2={cy}
+              stroke={tColor} strokeWidth={hov ? 2 : 1.5}
+              strokeDasharray={dis ? "5 3" : undefined}
+              markerEnd={`url(#${arrowId})`} />
+
+            {/* Rule labels on the arrow */}
+            {ctxLine && (
+              <text x={MID_X} y={cy - (entLine ? 9 : 5)} textAnchor="middle"
+                fontSize={9} fill="#94a3b8" fontFamily="monospace" className="select-none">
+                {ctxLine}
+              </text>
+            )}
+            {entLine && (
+              <text x={MID_X} y={cy + (ctxLine ? 0 : -5)} textAnchor="middle"
+                fontSize={9} fill="#c4b5fd" fontFamily="monospace" className="select-none">
+                {entLine}
+              </text>
+            )}
+            {descLine && (
+              <text x={MID_X} y={cy + (ctxLine || entLine ? 11 : 5)} textAnchor="middle"
+                fontSize={8.5} fill="#64748b" className="select-none">
+                {descLine}
+              </text>
+            )}
+
+            {/* TO box */}
+            {rule.to_type ? (
+              <>
+                <rect x={TO_X} y={boxY} width={NODE_W} height={NODE_H} rx={6}
+                  fill={tColor + "22"} stroke={tColor + alpha} strokeWidth={hov ? 2 : 1.5} />
+                <text x={TO_X + NODE_W / 2} y={cy + 5} textAnchor="middle"
+                  fontSize={11} fontWeight={700} fill={tColor} className="select-none">
+                  {rule.to_type}
+                </text>
+              </>
+            ) : (
+              <>
+                <rect x={TO_X} y={boxY} width={NODE_W} height={NODE_H} rx={6}
+                  fill="#ef444422" stroke={"#ef4444" + alpha} strokeWidth={hov ? 2 : 1.5}
+                  strokeDasharray="4 2" />
+                <text x={TO_X + NODE_W / 2} y={cy + 5} textAnchor="middle"
+                  fontSize={11} fontWeight={700} fill="#ef4444" className="select-none">
+                  discard
+                </text>
+              </>
+            )}
+
+            {/* Divider between rows */}
+            {i < visible.length - 1 && (
+              <line x1={0} y1={PAD_TOP + (i + 1) * ROW_H} x2={SVG_W} y2={PAD_TOP + (i + 1) * ROW_H}
+                stroke="#1e293b" strokeWidth={1} />
+            )}
+          </g>
+        );
+      })}
+
+      {visible.length === 0 && (
+        <text x={SVG_W / 2} y={60} textAnchor="middle" fill="#475569" fontSize={13}>
+          Nessuna regola — aggiungine una
+        </text>
+      )}
+    </svg>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 const EMPTY_FORM = {
-  from_type: "PERSON",
-  to_type: "",
-  context_pattern: "",
-  entity_pattern: "",
-  context_window: 60,
-  description: "",
+  from_type: "PERSON", to_type: "",
+  context_pattern: "", entity_pattern: "",
+  context_window: 60, description: "",
 };
 
 export function ReclassificationPage({ isAdmin }: Props) {
-  const [rules, setRules] = useState<ReclassificationRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [rules, setRules]           = useState<ReclassificationRule[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [showModal, setShowModal]   = useState(false);
   const [editTarget, setEditTarget] = useState<ReclassificationRule | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm]             = useState(EMPTY_FORM);
   const [hoveredRule, setHoveredRule] = useState<string | null>(null);
 
   function load() {
@@ -79,11 +178,6 @@ export function ReclassificationPage({ isAdmin }: Props) {
 
   useEffect(() => { load(); }, []);
 
-  const types = Array.from(new Set(
-    rules.flatMap(r => [r.from_type, ...(r.to_type ? [r.to_type] : [])])
-  )).sort();
-  const positions = layoutNodes(types);
-
   function openAdd() {
     setForm(EMPTY_FORM);
     setEditTarget(null);
@@ -92,12 +186,9 @@ export function ReclassificationPage({ isAdmin }: Props) {
 
   function openEdit(r: ReclassificationRule) {
     setForm({
-      from_type: r.from_type,
-      to_type: r.to_type ?? "",
-      context_pattern: r.context_pattern ?? "",
-      entity_pattern: r.entity_pattern ?? "",
-      context_window: r.context_window,
-      description: r.description,
+      from_type: r.from_type, to_type: r.to_type ?? "",
+      context_pattern: r.context_pattern ?? "", entity_pattern: r.entity_pattern ?? "",
+      context_window: r.context_window, description: r.description,
     });
     setEditTarget(r);
     setShowModal(true);
@@ -117,11 +208,8 @@ export function ReclassificationPage({ isAdmin }: Props) {
       return;
     }
     try {
-      if (editTarget) {
-        await api.updateReclassificationRule(editTarget.id, body);
-      } else {
-        await api.createReclassificationRule(body);
-      }
+      if (editTarget) { await api.updateReclassificationRule(editTarget.id, body); }
+      else             { await api.createReclassificationRule(body); }
       setShowModal(false);
       load();
     } catch { setError("Save failed."); }
@@ -149,164 +237,61 @@ export function ReclassificationPage({ isAdmin }: Props) {
             Post-detection rules: cambiano il tipo di un'entità in base al contesto o al suo testo.
           </p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 rounded px-3 py-2 text-sm">
+        <button onClick={openAdd}
+          className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 rounded px-3 py-2 text-sm">
           <Plus size={14} /> New rule
         </button>
       </div>
 
       {error && <p className="text-red-400 mb-4 text-sm">{error}</p>}
 
-      {/* SVG Graph */}
-      {!loading && types.length > 0 && (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl mb-6 overflow-hidden">
-          <svg width="100%" viewBox={`0 0 ${SVG_W} ${SVG_H}`} className="block">
-            <defs>
-              {types.map(t => (
-                <marker key={t} id={`arrow-${t}`} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L8,3 z" fill={typeColor(t)} />
-                </marker>
-              ))}
-              <marker id="arrow-discard" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill="#ef4444" />
-              </marker>
-            </defs>
-
-            {rules.map(rule => {
-              const from = positions[rule.from_type];
-              const to = rule.to_type ? positions[rule.to_type] : null;
-              if (!from) return null;
-
-              const isHovered = hoveredRule === rule.id;
-              const strokeColor = rule.to_type ? typeColor(rule.from_type) : "#ef4444";
-              const opacity = !rule.enabled ? 0.3 : isHovered ? 1 : 0.7;
-              const label = rule.entity_pattern
-                ? (rule.context_pattern ? `ctx+ent` : `ent: ${truncate(rule.entity_pattern, 22)}`)
-                : truncate(rule.context_pattern, 28);
-
-              if (!to || rule.from_type === rule.to_type) {
-                const tx = from.x, ty = from.y - NODE_R - 18;
-                return (
-                  <g key={rule.id} onMouseEnter={() => setHoveredRule(rule.id)} onMouseLeave={() => setHoveredRule(null)}>
-                    <ellipse cx={tx} cy={ty} rx={18} ry={12} fill="none" stroke={strokeColor}
-                      strokeWidth={isHovered ? 2.5 : 1.5} strokeDasharray={!rule.enabled ? "4 3" : undefined} opacity={opacity} />
-                    {isHovered && (
-                      <text x={tx} y={ty - 18} textAnchor="middle" fontSize={10} fill="#e2e8f0">{rule.to_type ?? "discard"}</text>
-                    )}
-                  </g>
-                );
-              }
-
-              const angle = Math.atan2(to.y - from.y, to.x - from.x);
-              const x1 = from.x + NODE_R * Math.cos(angle);
-              const y1 = from.y + NODE_R * Math.sin(angle);
-              const x2 = to.x - (NODE_R + 6) * Math.cos(angle);
-              const y2 = to.y - (NODE_R + 6) * Math.sin(angle);
-              const mid = bezierMid(x1, y1, x2, y2);
-              const markerId = rule.to_type ? `arrow-${rule.from_type}` : "arrow-discard";
-
-              return (
-                <g key={rule.id} onMouseEnter={() => setHoveredRule(rule.id)} onMouseLeave={() => setHoveredRule(null)}>
-                  <path d={edgePath(x1, y1, x2, y2)} fill="none" stroke={strokeColor}
-                    strokeWidth={isHovered ? 2.5 : 1.5} strokeDasharray={!rule.enabled ? "5 4" : undefined}
-                    markerEnd={`url(#${markerId})`} opacity={opacity} />
-                  {isHovered && (
-                    <text x={mid.x} y={mid.y - 8} textAnchor="middle" fontSize={10} fill="#e2e8f0" className="pointer-events-none">
-                      {label}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-
-            {types.map(t => {
-              const pos = positions[t];
-              if (!pos) return null;
-              return (
-                <g key={t}>
-                  <circle cx={pos.x} cy={pos.y} r={NODE_R} fill={typeColor(t)} opacity={0.15} />
-                  <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="none" stroke={typeColor(t)} strokeWidth={2} />
-                  <text x={pos.x} y={pos.y + 4} textAnchor="middle" fontSize={9} fontWeight={600}
-                    fill={typeColor(t)} className="pointer-events-none select-none">
-                    {t.length > 10 ? t.slice(0, 9) + "…" : t}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
+      {/* ── Graph ── */}
+      {!loading && (
+        <div className="bg-slate-900 border border-slate-700 rounded-xl mb-4 overflow-hidden">
+          <RuleGraph rules={rules} hoveredRule={hoveredRule} onHover={setHoveredRule} />
         </div>
       )}
 
-      {/* Rules list */}
-      {loading ? (
-        <p className="text-slate-400">Loading...</p>
-      ) : (
-        <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-700">
-                <th className="px-4 py-3">Da</th>
-                <th className="px-4 py-3">A</th>
-                <th className="px-4 py-3">Context pattern</th>
-                <th className="px-4 py-3">Entity pattern</th>
-                <th className="px-4 py-3">Win</th>
-                <th className="px-4 py-3">Descrizione</th>
-                <th className="px-4 py-3 text-right">Azioni</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rules.map(r => (
-                <tr key={r.id}
-                  className={`border-b border-slate-700/50 transition-colors ${hoveredRule === r.id ? "bg-slate-700/40" : ""} ${!r.enabled ? "opacity-50" : ""}`}
-                  onMouseEnter={() => setHoveredRule(r.id)}
-                  onMouseLeave={() => setHoveredRule(null)}>
-                  <td className="px-4 py-3">
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                      style={{ background: typeColor(r.from_type) + "33", color: typeColor(r.from_type) }}>
-                      {r.from_type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {r.to_type ? (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                        style={{ background: typeColor(r.to_type) + "33", color: typeColor(r.to_type) }}>
-                        {r.to_type}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-red-400 font-mono">discard</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-300 max-w-[180px] truncate">
-                    {r.context_pattern ?? <span className="text-slate-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-violet-300 max-w-[120px] truncate">
-                    {r.entity_pattern ?? <span className="text-slate-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{r.context_window}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{r.description || "—"}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2 justify-end">
-                      <button onClick={() => handleToggle(r)} className="hover:text-white text-slate-400" title="Toggle">
-                        {r.enabled ? <Check size={14} /> : <X size={14} />}
-                      </button>
-                      <button onClick={() => openEdit(r)} className="hover:text-white text-slate-400" title="Edit">
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => handleDelete(r)} className="hover:text-red-400 text-slate-400" title="Delete">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {rules.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Nessuna regola</td></tr>
-              )}
-            </tbody>
-          </table>
+      {/* ── Action strip per ogni regola ── */}
+      {!loading && (
+        <div className="flex flex-col gap-1">
+          {rules.map((r, i) => (
+            <div key={r.id}
+              className={`flex items-center justify-between px-4 py-2 rounded text-xs transition-colors
+                ${hoveredRule === r.id ? "bg-slate-700/60" : "bg-slate-800/40"}
+                ${!r.enabled ? "opacity-50" : ""}`}
+              onMouseEnter={() => setHoveredRule(r.id)}
+              onMouseLeave={() => setHoveredRule(null)}>
+              <span className="text-slate-500 w-4 shrink-0">{i + 1}</span>
+              <span className="font-semibold shrink-0"
+                style={{ color: typeColor(r.from_type) }}>{r.from_type}</span>
+              <span className="text-slate-600 mx-1">→</span>
+              <span className="font-semibold shrink-0"
+                style={{ color: r.to_type ? typeColor(r.to_type) : "#ef4444" }}>
+                {r.to_type ?? "discard"}
+              </span>
+              <span className="text-slate-500 mx-3 truncate max-w-xs">
+                {r.description || "—"}
+              </span>
+              <div className="flex gap-2 ml-auto shrink-0">
+                <button onClick={() => handleToggle(r)} className="hover:text-white text-slate-400" title="Toggle">
+                  {r.enabled ? <Check size={13} /> : <X size={13} />}
+                </button>
+                <button onClick={() => openEdit(r)} className="hover:text-white text-slate-400" title="Edit">
+                  <Pencil size={13} />
+                </button>
+                <button onClick={() => handleDelete(r)} className="hover:text-red-400 text-slate-400" title="Delete">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Modal */}
+      {loading && <p className="text-slate-400 text-sm">Loading...</p>}
+
+      {/* ── Modal ── */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-lg">
@@ -328,32 +313,23 @@ export function ReclassificationPage({ isAdmin }: Props) {
                     className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono" />
                 </label>
               </div>
-
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-400">
-                  Context pattern — regex nel testo prima dell'entità (opzionale)
-                </span>
+                <span className="text-xs text-slate-400">Context pattern — regex nel testo prima dell'entità</span>
                 <input type="text" value={form.context_pattern}
                   onChange={e => setForm({ ...form, context_pattern: e.target.value })}
                   placeholder='es. (?i)username\s*:\s*$'
                   className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono" />
               </label>
-
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-violet-300">
-                  Entity pattern — regex nel testo dell'entità stessa (opzionale)
-                </span>
+                <span className="text-xs text-violet-300">Entity pattern — regex nel testo dell'entità stessa</span>
                 <input type="text" value={form.entity_pattern}
                   onChange={e => setForm({ ...form, entity_pattern: e.target.value })}
-                  placeholder='es. @ — contiene una chiocciola'
+                  placeholder='es. @'
                   className="bg-slate-900 border border-violet-800 rounded px-3 py-2 text-sm font-mono" />
               </label>
-
               <p className="text-xs text-slate-500">
-                Se entrambi i pattern sono impostati, devono corrispondere entrambi (AND).
-                Almeno uno è obbligatorio.
+                Se entrambi sono impostati devono corrispondere entrambi (AND). Almeno uno è obbligatorio.
               </p>
-
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-400">Finestra di contesto (chars)</span>
                 <input type="number" value={form.context_window}
@@ -361,7 +337,6 @@ export function ReclassificationPage({ isAdmin }: Props) {
                   min={10} max={500}
                   className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm w-28" />
               </label>
-
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-400">Descrizione</span>
                 <input type="text" value={form.description}
@@ -369,9 +344,9 @@ export function ReclassificationPage({ isAdmin }: Props) {
                   placeholder="Spiegazione della regola"
                   className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm" />
               </label>
-
               <div className="flex gap-2 mt-2">
-                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 rounded px-3 py-2 text-sm">
+                <button type="submit"
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 rounded px-3 py-2 text-sm">
                   {editTarget ? "Salva" : "Aggiungi"}
                 </button>
                 <button type="button" onClick={() => setShowModal(false)}
