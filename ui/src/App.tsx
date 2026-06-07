@@ -12,6 +12,7 @@ import { DenylistPage } from "./pages/DenylistPage";
 import { LanguagesPage } from "./pages/LanguagesPage";
 import { ContextWordsPage } from "./pages/ContextWordsPage";
 import { MappingsPage } from "./pages/MappingsPage";
+import { ReclassificationPage } from "./pages/ReclassificationPage";
 
 function useRole(): { ready: boolean; isAdmin: boolean; isAuthenticated: boolean } {
   const [ready, setReady] = useState(false);
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="denylist" element={<DenylistPage isAdmin={isAdmin} />} />
           <Route path="languages" element={<LanguagesPage isAdmin={isAdmin} />} />
           <Route path="context-words" element={<ContextWordsPage isAdmin={isAdmin} />} />
+          <Route path="reclassification" element={<ReclassificationPage isAdmin={isAdmin} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

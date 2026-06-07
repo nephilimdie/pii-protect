@@ -68,6 +68,18 @@ export interface StatsResponse {
   requests_last_24h: number;
 }
 
+export interface ReclassificationRule {
+  id: string;
+  from_type: string;
+  to_type: string | null;
+  context_pattern: string | null;
+  entity_pattern: string | null;
+  context_window: number;
+  description: string;
+  enabled: boolean;
+  created_at: string;
+}
+
 export interface MappingItem {
   id: string;
   context_id: string;
@@ -263,4 +275,22 @@ export const api = {
 
   deleteMappingsBulk: (ids: string[]) =>
     del("/v1/admin/mappings/bulk", { ids }),
+
+  listReclassificationRules: () =>
+    get<ReclassificationRule[]>("/v1/admin/reclassification-rules"),
+
+  createReclassificationRule: (body: {
+    from_type: string; to_type: string | null;
+    context_pattern: string | null; entity_pattern: string | null;
+    context_window: number; description: string;
+  }) => post<ReclassificationRule>("/v1/admin/reclassification-rules", body),
+
+  updateReclassificationRule: (id: string, body: Partial<{
+    from_type: string; to_type: string | null;
+    context_pattern: string | null; entity_pattern: string | null;
+    context_window: number; description: string; enabled: boolean;
+  }>) => put<ReclassificationRule>(`/v1/admin/reclassification-rules/${id}`, body),
+
+  deleteReclassificationRule: (id: string) =>
+    del(`/v1/admin/reclassification-rules/${id}`),
 };

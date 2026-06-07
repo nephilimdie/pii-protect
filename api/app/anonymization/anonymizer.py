@@ -17,32 +17,53 @@ _HONORIFIC_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Context-based reclassification rules: (window_re, from_type, to_type | None)
-# window_re is matched against the text immediately before the entity (up to 60 chars).
-# to_type=None means discard the entity entirely.
-_RECLASSIFY_RULES: list[tuple[re.Pattern, str, str | None]] = [
-    # PERSON after "username:" / "login:" → ACCOUNT
-    (re.compile(r"(?i)(?:username|login)\s*:\s*$"), "PERSON", "ACCOUNT"),
-    # PERSON after school/institution context → ORGANIZATION
-    (re.compile(r"(?i)(?:scuola|istituto|liceo|plesso|istituzione|college|università|accademia)\s+(?:\w+\s+){0,3}$"), "PERSON", "ORGANIZATION"),
-]
+# Compiled reclassification rules loaded from DB at startup / on change.
+# Each entry: (context_re | None, entity_re | None, from_type, to_type | None, context_window)
+# context_re  — matched against the N chars BEFORE the entity; None = skip check
+# entity_re   — matched against the entity text itself;           None = skip check
+# Both present → both must match (AND logic)
+_reclassify_rules: list[tuple[re.Pattern | None, re.Pattern | None, str, str | None, int]] = []
 
-_RECLASSIFY_WINDOW = 60  # chars to look back
+
+def set_reclassify_rules(rules: list[dict]) -> None:
+    global _reclassify_rules
+    compiled = []
+    for r in rules:
+        try:
+            ctx_pat = r.get("context_pattern")
+            ent_pat = r.get("entity_pattern")
+            if not ctx_pat and not ent_pat:
+                continue
+            compiled.append((
+                re.compile(ctx_pat) if ctx_pat else None,
+                re.compile(ent_pat) if ent_pat else None,
+                r["from_type"],
+                r.get("to_type"),
+                int(r.get("context_window", 60)),
+            ))
+        except re.error:
+            pass
+    _reclassify_rules = compiled
 
 
 def _reclassify(entity: "PiiEntity", text: str) -> "PiiEntity | None":
-    window = text[max(0, entity.start - _RECLASSIFY_WINDOW):entity.start]
-    for rule_re, from_type, to_type in _RECLASSIFY_RULES:
+    for context_re, entity_re, from_type, to_type, window_size in _reclassify_rules:
         if entity.pii_type != from_type:
             continue
-        if rule_re.search(window):
-            if to_type is None:
-                return None
-            return PiiEntity(
-                start=entity.start, end=entity.end,
-                pii_type=to_type, text=entity.text, score=entity.score,
-                source=entity.source,
-            )
+        if context_re is not None:
+            window = text[max(0, entity.start - window_size):entity.start]
+            if not context_re.search(window):
+                continue
+        if entity_re is not None:
+            if not entity_re.search(entity.text):
+                continue
+        if to_type is None:
+            return None
+        return PiiEntity(
+            start=entity.start, end=entity.end,
+            pii_type=to_type, text=entity.text, score=entity.score,
+            source=entity.source,
+        )
     return entity
 
 

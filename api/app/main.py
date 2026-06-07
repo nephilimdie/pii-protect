@@ -8,6 +8,7 @@ from app.routers import regex_patterns as regex_patterns_router
 from app.routers import denylist as denylist_router
 from app.routers import languages as languages_router
 from app.routers import presidio_context as presidio_context_router
+from app.routers import reclassification as reclassification_router
 from app.detection.layers.presidio_layer import PresidioDetector
 from app.settings_repository import SettingsRepository
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
@@ -17,6 +18,8 @@ from app.detection.detector_provider import DetectorProvider
 from app.detection.regex_pattern_repository import RegexPatternRepository
 from app.detection.denylist_repository import DenylistRepository
 from app.detection.presidio_context_repository import PresidioContextRepository
+from app.detection.reclassification_repository import ReclassificationRepository
+from app.anonymization.anonymizer import set_reclassify_rules
 from app.database import AsyncSessionLocal
 from app.identity.api_key_service import ApiKeyService
 from app.config import settings
@@ -64,6 +67,8 @@ async def lifespan(app: FastAPI):
         denylist_entries = await DenylistRepository(db).find_enabled()
         default_lang = await SettingsRepository(db).get("default_language", "it")
         ctx_entries = await PresidioContextRepository(db).find_enabled()
+        reclass_rules = await ReclassificationRepository(db).find_enabled()
+    set_reclassify_rules(reclass_rules)
     app.state.default_language = default_lang
 
     context_map: dict[str, list[str]] = {}
@@ -101,3 +106,4 @@ app.include_router(regex_patterns_router.router, prefix="/v1/admin")
 app.include_router(denylist_router.router, prefix="/v1/admin")
 app.include_router(languages_router.router, prefix="/v1/admin")
 app.include_router(presidio_context_router.router, prefix="/v1/admin")
+app.include_router(reclassification_router.router, prefix="/v1/admin")
