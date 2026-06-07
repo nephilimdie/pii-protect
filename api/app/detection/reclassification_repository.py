@@ -15,6 +15,13 @@ class ReclassificationRepository:
         "id, from_type, to_type, context_pattern, entity_pattern, context_window, description, enabled, created_at"
     )
 
+    @staticmethod
+    def _row(mapping) -> dict:
+        d = dict(mapping)
+        if "id" in d:
+            d["id"] = str(d["id"])
+        return d
+
     async def find_enabled(self) -> list[dict]:
         result = await self._db.execute(
             text(
@@ -22,7 +29,7 @@ class ReclassificationRepository:
                 " FROM reclassification_rules WHERE enabled = true ORDER BY from_type"
             )
         )
-        return [dict(r._mapping) for r in result.fetchall()]
+        return [self._row(r._mapping) for r in result.fetchall()]
 
     async def find_all(self) -> list[dict]:
         result = await self._db.execute(
@@ -31,7 +38,7 @@ class ReclassificationRepository:
                 " FROM reclassification_rules ORDER BY from_type, created_at"
             )
         )
-        return [dict(r._mapping) for r in result.fetchall()]
+        return [self._row(r._mapping) for r in result.fetchall()]
 
     async def create(self, from_type: str, to_type: str | None, context_pattern: str | None,
                      entity_pattern: str | None, context_window: int, description: str) -> dict:
@@ -53,7 +60,7 @@ class ReclassificationRepository:
             },
         )
         await self._db.commit()
-        return dict(result.fetchone()._mapping)
+        return self._row(result.fetchone()._mapping)
 
     async def update(self, rule_id: str, **kwargs) -> dict | None:
         sets = ", ".join(f"{k} = :{k}" for k in kwargs)
@@ -66,7 +73,7 @@ class ReclassificationRepository:
         )
         await self._db.commit()
         row = result.fetchone()
-        return dict(row._mapping) if row else None
+        return self._row(row._mapping) if row else None
 
     async def delete(self, rule_id: str) -> bool:
         result = await self._db.execute(
