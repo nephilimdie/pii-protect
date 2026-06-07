@@ -29,6 +29,9 @@ export function NavBar({ isAdmin }: NavBarProps) {
       {isAdmin && <NavLink to="/denylist" className={linkClass}>Denylist</NavLink>}
       {isAdmin && <NavLink to="/context-words" className={linkClass}>Context</NavLink>}
       {isAdmin && <NavLink to="/reclassification" className={linkClass}>Rules</NavLink>}
+      {isAdmin && <NavLink to="/pii-types" className={linkClass}>PII Types</NavLink>}
+      {isAdmin && <NavLink to="/domain-policies" className={linkClass}>Policies</NavLink>}
+      {isAdmin && <NavLink to="/context-types" className={linkClass}>Contexts</NavLink>}
       {isAdmin && <NavLink to="/languages" className={linkClass}>Languages</NavLink>}
       <NavLink to="/audit-log" className={linkClass}>Audit Log</NavLink>
       {isAdmin && <NavLink to="/mappings" className={linkClass}>Mappings</NavLink>}

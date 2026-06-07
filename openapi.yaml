@@ -58,8 +58,50 @@ components:
           example: "550e8400-e29b-41d4-a716-446655440000"
         context_type:
           type: string
-          description: Semantic type of the context. Stored alongside context_id for human-readable audit logs.
-          example: "case_file"
+          description: |
+            Semantic type of the context. Drives policy and anonymization mode automatically via the
+            `context_types` table (which maps to a `domain_policies` entry). Examples: `fine_appeal`,
+            `contract_analysis`, `medical`, `embedding`.
+          example: "fine_appeal"
+        language:
+          type: string
+          description: Language hint for the NER detection layer. Defaults to `it`.
+          example: "it"
+        mode:
+          type: string
+          enum: [tag, surrogate]
+          description: |
+            Anonymization mode. Overrides the `default_mode` defined on the `context_type`.
+            - `tag` — replace PII with opaque placeholders like `[PERSON_1]` (default).
+            - `surrogate` — replace PII with realistic but fake values (e.g. a fake Italian CF
+              that is valid, a fake IBAN with the correct format). Coherent across the same `context_id`.
+          example: "tag"
+        policy:
+          type: object
+          description: |
+            Inline policy override. If provided, overrides the domain policy linked to `context_type`.
+            Only fields present in the object are applied; omitted fields fall back to the domain policy.
+          properties:
+            protect:
+              type: array
+              items:
+                type: string
+              description: PII types to anonymize. All others are left as-is unless also listed in `keep`.
+              example: ["PERSON", "FISCAL_CODE", "PHONE"]
+            keep:
+              type: array
+              items:
+                type: string
+              description: PII types to leave in the text unchanged (skipped entirely, not stored).
+              example: ["TARGA"]
+        detection_mode:
+          type: string
+          enum: [permissive, strict]
+          default: permissive
+          description: |
+            Controls sensitivity of the detection pipeline.
+            - `permissive` — favour recall (more detections, may include borderline cases).
+            - `strict` — favour precision (fewer false positives).
 
     EntityDetail:
       type: object
@@ -103,6 +145,164 @@ components:
           items:
             $ref: '#/components/schemas/EntityDetail'
           description: Detailed list of detected PII entities with position, value and replacement token.
+        mode:
+          type: string
+          enum: [tag, surrogate]
+          description: The anonymization mode that was actually applied to this request.
+          example: "tag"
+
+    ReclassificationRule:
+      type: object
+      properties:
+        id:
+          type: string
+          description: UUID of the rule.
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        from_type:
+          type: string
+          description: PII type that triggers the rule.
+          example: "PERSON"
+        to_type:
+          type: string
+          nullable: true
+          description: PII type to reclassify to. Null means the entity is dropped (suppressed).
+          example: "ACCOUNT"
+        context_pattern:
+          type: string
+          nullable: true
+          description: |
+            Regex matched against the text window immediately before the entity (up to `context_window`
+            characters). Both `context_pattern` and `entity_pattern` must match if both are set (AND logic).
+          example: "datore di lavoro\\s*:"
+        entity_pattern:
+          type: string
+          nullable: true
+          description: |
+            Regex matched against the entity text itself.
+            Useful when the entity content identifies the type (e.g. entities containing `@` are accounts,
+            not persons).
+          example: "@"
+        context_window:
+          type: integer
+          description: Number of characters before the entity to include in the context window.
+          example: 60
+        description:
+          type: string
+          example: "Username with @ is an account handle"
+        enabled:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+
+    PiiTypeItem:
+      type: object
+      description: Entry in the PII type registry. Drives default anonymization behaviour and Faker strategy for surrogates.
+      properties:
+        code:
+          type: string
+          description: Canonical PII type code (e.g. `PERSON`, `FISCAL_CODE`).
+          example: "FISCAL_CODE"
+        category:
+          type: string
+          enum: [IDENTITY, CONTACT, FINANCIAL, LEGAL, VEHICLE, NETWORK, CREDENTIAL]
+          example: "IDENTITY"
+        display_name:
+          type: string
+          example: "Codice Fiscale"
+        default_action:
+          type: string
+          enum: [protect, keep, redact]
+          description: |
+            What the system does when no explicit domain policy overrides this type.
+            - `protect` — anonymize/surrogate.
+            - `keep` — leave in text.
+            - `redact` — hard-redact (replace with `[REDACTED]`).
+          example: "protect"
+        faker_strategy:
+          type: string
+          nullable: true
+          description: Faker generator key used when mode is `surrogate`. Null means the type is not surrogate-capable.
+          example: "fiscal_code"
+        reversible:
+          type: boolean
+          description: Whether the surrogate value can be reversed (de-anonymized) via the deanonymize endpoint.
+          example: true
+        enabled:
+          type: boolean
+          example: true
+        description:
+          type: string
+          nullable: true
+          example: "Italian fiscal code — 16-character alphanumeric, format-preserving surrogate."
+
+    DomainPolicy:
+      type: object
+      description: |
+        Per-domain anonymization policy. Defines which PII types are protected and which are kept
+        in the text. Used by `context_types` to configure the pipeline automatically.
+      properties:
+        domain:
+          type: string
+          description: Unique domain identifier.
+          example: "fine_appeal"
+        protect_types:
+          type: array
+          items:
+            type: string
+          description: PII types that are anonymized in this domain.
+          example: ["PERSON", "FISCAL_CODE", "PHONE", "EMAIL"]
+        keep_types:
+          type: array
+          items:
+            type: string
+          description: PII types left unchanged in this domain (typically domain-relevant identifiers).
+          example: ["TARGA"]
+        description:
+          type: string
+          nullable: true
+          example: "Ricorsi per infrazioni stradali — la targa è parte del fascicolo."
+        enabled:
+          type: boolean
+          example: true
+        updated_at:
+          type: string
+          format: date-time
+
+    ContextTypeItem:
+      type: object
+      description: |
+        Context type configuration. Maps a `context_type` string (sent in anonymize requests)
+        to a domain policy and a default anonymization mode.
+      properties:
+        code:
+          type: string
+          description: Context type code — matches the `context_type` field in anonymize requests.
+          example: "fine_appeal"
+        display_name:
+          type: string
+          example: "Ricorso per infrazione"
+        domain:
+          type: string
+          nullable: true
+          description: Domain policy linked to this context. Null means fallback to each type's `default_action`.
+          example: "fine_appeal"
+        default_mode:
+          type: string
+          enum: [tag, surrogate]
+          description: Anonymization mode applied unless overridden in the request.
+          example: "tag"
+        description:
+          type: string
+          nullable: true
+          example: "Documenti relativi a ricorsi per infrazioni al codice della strada."
+        enabled:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
 
     DeanonymizeRequest:
       type: object
@@ -296,9 +496,17 @@ paths:
         be restored later via `/v1/deanonymize`.
 
         Detection runs through the configured layer cascade in priority order:
-        1. **ItalianRegex** (priority 10) — deterministic patterns: CF, IBAN, P.IVA, targa, phone, email
-        2. **Presidio + spaCy** (priority 20) — NER: PERSON, ADDRESS, DATE
-        3. **PrivacyFilter** (priority 30) — ML: secrets, tokens, free-form sensitive text
+        1. **Regex** (priority 30) — deterministic Italian patterns: CF, IBAN, P.IVA, targa, phone, email. Always wins on overlap.
+        2. **AI4Privacy** (priority 25) — fine-tuned multilingual PII model.
+        3. **PrivacyFilter** (priority 20) — general-purpose ML model for secrets, tokens, free-form sensitive text.
+        4. **Presidio + spaCy** (priority 10) — NER: PERSON, ADDRESS, DATE.
+
+        Post-detection, **reclassification rules** can relabel or suppress entities based on context
+        patterns (text before the entity) and/or entity patterns (the entity text itself).
+
+        When `mode` is `surrogate`, realistic fake values replace PII instead of opaque tags.
+        PERSON and FISCAL_CODE share a coherent fake profile per `context_id` (same fake name encodes
+        into the same fake CF).
 
         Each entity is tagged with the layer that detected it, visible in audit logs.
 
@@ -323,7 +531,11 @@ paths:
           <tbody>
             <tr><td><code>text</code></td><td>string</td><td>✓</td><td>Plain text to anonymize. Can be any length.</td></tr>
             <tr><td><code>context_id</code></td><td>string</td><td>✓</td><td>Opaque identifier for the document or session. All mappings for this call are stored under this ID and reused across multiple calls with the same ID (idempotent for the same entity value).</td></tr>
-            <tr><td><code>context_type</code></td><td>string</td><td>✓</td><td>Semantic label for the context (e.g. <code>case_file</code>, <code>chat_message</code>). Stored for audit purposes and used together with <code>context_id</code> to scope mappings.</td></tr>
+            <tr><td><code>context_type</code></td><td>string</td><td>✓</td><td>Drives policy and mode automatically via the <code>context_types</code> table (e.g. <code>fine_appeal</code>, <code>medical</code>, <code>embedding</code>). Configure context types in <code>GET /v1/admin/context-types</code>.</td></tr>
+            <tr><td><code>language</code></td><td>string</td><td>—</td><td>Language hint for the NER layer. Defaults to <code>it</code>.</td></tr>
+            <tr><td><code>mode</code></td><td><code>tag</code> | <code>surrogate</code></td><td>—</td><td>Overrides the mode defined on <code>context_type</code>. <code>tag</code> produces opaque placeholders; <code>surrogate</code> produces realistic fake values (coherent across the same <code>context_id</code>).</td></tr>
+            <tr><td><code>policy</code></td><td>object</td><td>—</td><td>Inline policy override: <code>{"protect": [...], "keep": [...]}</code>. Overrides the domain policy linked to <code>context_type</code>.</td></tr>
+            <tr><td><code>detection_mode</code></td><td><code>permissive</code> | <code>strict</code></td><td>—</td><td>Detection sensitivity. Default: <code>permissive</code>.</td></tr>
           </tbody>
         </table>
       operationId: anonymize
@@ -683,11 +895,628 @@ paths:
         "404":
           description: Key not found
 
+  /v1/admin/reclassification-rules:
+    get:
+      summary: List reclassification rules
+      description: |
+        Returns all reclassification rules (enabled and disabled). Rules are applied after entity
+        detection and can relabel or suppress PII entities based on contextual or entity-text patterns.
+
+        **curl example:**
+        ```bash
+        curl http://localhost:15500/v1/admin/reclassification-rules \
+          -H "X-Api-Key: your-admin-key"
+        ```
+      operationId: listReclassificationRules
+      tags: [Admin]
+      responses:
+        "200":
+          description: List of reclassification rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReclassificationRule"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
+    post:
+      summary: Create reclassification rule
+      description: |
+        Creates a new reclassification rule. At least one of `context_pattern` or `entity_pattern`
+        must be provided. Both are regex strings (Python `re` syntax).
+
+        When both are provided the rule fires only when **both** match (AND logic).
+
+        **curl example:**
+        ```bash
+        curl -X POST http://localhost:15500/v1/admin/reclassification-rules \
+          -H "X-Api-Key: your-admin-key" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "from_type": "PERSON",
+            "to_type": "ACCOUNT",
+            "entity_pattern": "@",
+            "description": "Username with @ is an account handle"
+          }'
+        ```
+
+        **Body parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>from_type</code></td><td>string</td><td>✓</td><td>PII type that triggers the rule (e.g. <code>PERSON</code>).</td></tr>
+            <tr><td><code>to_type</code></td><td>string | null</td><td>—</td><td>Target type after reclassification. Null suppresses (drops) the entity.</td></tr>
+            <tr><td><code>context_pattern</code></td><td>string</td><td>—</td><td>Regex matched against the text window before the entity.</td></tr>
+            <tr><td><code>entity_pattern</code></td><td>string</td><td>—</td><td>Regex matched against the entity text itself.</td></tr>
+            <tr><td><code>context_window</code></td><td>integer</td><td>—</td><td>Characters before the entity to include in context window. Default: 60.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description.</td></tr>
+          </tbody>
+        </table>
+      operationId: createReclassificationRule
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_type]
+              properties:
+                from_type:
+                  type: string
+                  example: "PERSON"
+                to_type:
+                  type: string
+                  nullable: true
+                  example: "ACCOUNT"
+                context_pattern:
+                  type: string
+                  nullable: true
+                  example: null
+                entity_pattern:
+                  type: string
+                  nullable: true
+                  example: "@"
+                context_window:
+                  type: integer
+                  default: 60
+                  example: 60
+                description:
+                  type: string
+                  default: ""
+                  example: "Username with @ is an account handle"
+      responses:
+        "200":
+          description: Rule created and hot-reloaded in the running detection pipeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReclassificationRule"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "422":
+          description: Validation error
+
+  /v1/admin/reclassification-rules/{rule_id}:
+    put:
+      summary: Update reclassification rule
+      description: |
+        Partially updates a reclassification rule. Only fields present in the body are changed.
+        The in-memory rule set is hot-reloaded immediately after save.
+
+        **curl example:**
+        ```bash
+        curl -X PUT http://localhost:15500/v1/admin/reclassification-rules/a1b2c3d4-... \
+          -H "X-Api-Key: your-admin-key" \
+          -H "Content-Type: application/json" \
+          -d '{"enabled": false}'
+        ```
+      operationId: updateReclassificationRule
+      tags: [Admin]
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: UUID of the rule to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from_type:
+                  type: string
+                to_type:
+                  type: string
+                  nullable: true
+                context_pattern:
+                  type: string
+                  nullable: true
+                entity_pattern:
+                  type: string
+                  nullable: true
+                context_window:
+                  type: integer
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReclassificationRule"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "404":
+          description: Rule not found
+
+    delete:
+      summary: Delete reclassification rule
+      description: |
+        Permanently deletes a reclassification rule and hot-reloads the pipeline.
+
+        **curl example:**
+        ```bash
+        curl -X DELETE http://localhost:15500/v1/admin/reclassification-rules/a1b2c3d4-... \
+          -H "X-Api-Key: your-admin-key"
+        ```
+      operationId: deleteReclassificationRule
+      tags: [Admin]
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Rule deleted
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "404":
+          description: Rule not found
+
+  /v1/admin/pii-types:
+    get:
+      summary: List PII type registry
+      description: |
+        Returns all entries in the PII type registry, ordered by category and code.
+        Each entry defines the canonical type code, display name, default anonymization action,
+        Faker strategy for surrogate mode, and reversibility flag.
+
+        **curl example:**
+        ```bash
+        curl http://localhost:15500/v1/admin/pii-types \
+          -H "X-Api-Key: your-admin-key"
+        ```
+      operationId: listPiiTypes
+      tags: [Admin]
+      responses:
+        "200":
+          description: List of PII type entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PiiTypeItem"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
+  /v1/admin/pii-types/{code}:
+    put:
+      summary: Update PII type entry
+      description: |
+        Partially updates a PII type registry entry. Only fields present in the body are changed.
+        Useful for changing the default action, adjusting the Faker strategy, or enabling/disabling a type.
+
+        **curl example:**
+        ```bash
+        curl -X PUT http://localhost:15500/v1/admin/pii-types/TARGA \
+          -H "X-Api-Key: your-admin-key" \
+          -H "Content-Type: application/json" \
+          -d '{"default_action": "keep"}'
+        ```
+      operationId: updatePiiType
+      tags: [Admin]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: PII type code (e.g. `PERSON`, `FISCAL_CODE`, `TARGA`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                default_action:
+                  type: string
+                  enum: [protect, keep, redact]
+                faker_strategy:
+                  type: string
+                  nullable: true
+                reversible:
+                  type: boolean
+                enabled:
+                  type: boolean
+                description:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Updated PII type entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiiTypeItem"
+        "400":
+          description: No fields to update
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "404":
+          description: PII type code not found
+
+  /v1/admin/domain-policies:
+    get:
+      summary: List domain policies
+      description: |
+        Returns all domain policies ordered by domain name. Each policy specifies which PII types
+        are protected (anonymized) and which are kept (left in the text) for a given domain.
+
+        **curl example:**
+        ```bash
+        curl http://localhost:15500/v1/admin/domain-policies \
+          -H "X-Api-Key: your-admin-key"
+        ```
+      operationId: listDomainPolicies
+      tags: [Admin]
+      responses:
+        "200":
+          description: List of domain policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DomainPolicy"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
+  /v1/admin/domain-policies/{domain}:
+    put:
+      summary: Create or update domain policy
+      description: |
+        Upserts (creates or fully replaces) a domain policy. PII types not listed in either
+        `protect_types` or `keep_types` fall back to each type's `default_action` from the registry.
+
+        **curl example:**
+        ```bash
+        curl -X PUT http://localhost:15500/v1/admin/domain-policies/fine_appeal \
+          -H "X-Api-Key: your-admin-key" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "protect_types": ["PERSON", "FISCAL_CODE", "PHONE", "EMAIL"],
+            "keep_types": ["TARGA"],
+            "description": "Ricorsi per infrazioni — la targa è parte del fascicolo."
+          }'
+        ```
+
+        **Body parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>protect_types</code></td><td>string[]</td><td>✓</td><td>PII type codes to anonymize in this domain.</td></tr>
+            <tr><td><code>keep_types</code></td><td>string[]</td><td>✓</td><td>PII type codes to leave unchanged in this domain.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description of the domain.</td></tr>
+            <tr><td><code>enabled</code></td><td>boolean</td><td>—</td><td>Whether this policy is active. Default: true.</td></tr>
+          </tbody>
+        </table>
+      operationId: upsertDomainPolicy
+      tags: [Admin]
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Domain identifier (e.g. `fine_appeal`, `medical`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [protect_types, keep_types]
+              properties:
+                protect_types:
+                  type: array
+                  items:
+                    type: string
+                  example: ["PERSON", "FISCAL_CODE", "PHONE"]
+                keep_types:
+                  type: array
+                  items:
+                    type: string
+                  example: ["TARGA"]
+                description:
+                  type: string
+                  nullable: true
+                enabled:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Domain policy created or updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainPolicy"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
+    delete:
+      summary: Delete domain policy
+      description: |
+        Permanently deletes a domain policy. Context types pointing to this domain will
+        lose their policy link and fall back to each type's `default_action`.
+
+        **curl example:**
+        ```bash
+        curl -X DELETE http://localhost:15500/v1/admin/domain-policies/fine_appeal \
+          -H "X-Api-Key: your-admin-key"
+        ```
+      operationId: deleteDomainPolicy
+      tags: [Admin]
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Policy deleted
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "404":
+          description: Domain policy not found
+
+  /v1/admin/context-types:
+    get:
+      summary: List context types
+      description: |
+        Returns all context type configurations ordered by code. Each entry maps a `context_type`
+        value (used in anonymize requests) to a domain policy and default anonymization mode.
+
+        **curl example:**
+        ```bash
+        curl http://localhost:15500/v1/admin/context-types \
+          -H "X-Api-Key: your-admin-key"
+        ```
+      operationId: listContextTypes
+      tags: [Admin]
+      responses:
+        "200":
+          description: List of context types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContextTypeItem"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
+    post:
+      summary: Create context type
+      description: |
+        Creates a new context type. The `code` must be unique — it is the string callers pass as
+        `context_type` in anonymize requests.
+
+        **curl example:**
+        ```bash
+        curl -X POST http://localhost:15500/v1/admin/context-types \
+          -H "X-Api-Key: your-admin-key" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "code": "hr",
+            "display_name": "Gestione HR",
+            "domain": "default",
+            "default_mode": "surrogate",
+            "description": "Documenti del personale — surrogati per l'\''analisi interna."
+          }'
+        ```
+
+        **Body parameters:**
+
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>code</code></td><td>string</td><td>✓</td><td>Unique identifier. Must match what callers send as <code>context_type</code>.</td></tr>
+            <tr><td><code>display_name</code></td><td>string</td><td>✓</td><td>Human-readable label shown in the UI.</td></tr>
+            <tr><td><code>domain</code></td><td>string</td><td>—</td><td>Domain policy to link. Must exist in <code>domain_policies</code>.</td></tr>
+            <tr><td><code>default_mode</code></td><td><code>tag</code> | <code>surrogate</code></td><td>—</td><td>Default anonymization mode. Default: <code>tag</code>.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>—</td><td>Optional description.</td></tr>
+          </tbody>
+        </table>
+      operationId: createContextType
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, display_name]
+              properties:
+                code:
+                  type: string
+                  example: "hr"
+                display_name:
+                  type: string
+                  example: "Gestione HR"
+                domain:
+                  type: string
+                  nullable: true
+                  example: "default"
+                default_mode:
+                  type: string
+                  enum: [tag, surrogate]
+                  default: "tag"
+                description:
+                  type: string
+                  nullable: true
+      responses:
+        "201":
+          description: Context type created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextTypeItem"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "409":
+          description: A context type with this code already exists
+        "422":
+          description: Validation error
+
+  /v1/admin/context-types/{code}:
+    put:
+      summary: Update context type
+      description: |
+        Partially updates a context type. Only fields present in the body are changed.
+
+        **curl example:**
+        ```bash
+        curl -X PUT http://localhost:15500/v1/admin/context-types/hr \
+          -H "X-Api-Key: your-admin-key" \
+          -H "Content-Type: application/json" \
+          -d '{"default_mode": "tag"}'
+        ```
+      operationId: updateContextType
+      tags: [Admin]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Context type code to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                domain:
+                  type: string
+                  nullable: true
+                default_mode:
+                  type: string
+                  enum: [tag, surrogate]
+                description:
+                  type: string
+                  nullable: true
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated context type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextTypeItem"
+        "400":
+          description: No fields to update
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "404":
+          description: Context type not found
+
+    delete:
+      summary: Delete context type
+      description: |
+        Permanently deletes a context type. Callers still sending this `context_type` in
+        anonymize requests will receive a 422 validation error.
+
+        **curl example:**
+        ```bash
+        curl -X DELETE http://localhost:15500/v1/admin/context-types/hr \
+          -H "X-Api-Key: your-admin-key"
+        ```
+      operationId: deleteContextType
+      tags: [Admin]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Context type code to delete.
+      responses:
+        "204":
+          description: Context type deleted
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+        "404":
+          description: Context type not found
+
 tags:
   - name: Pseudonymization
     description: Core anonymize / deanonymize operations
   - name: Admin
-    description: Statistics, audit log, and data cleanup
+    description: Statistics, audit log, data cleanup, and configuration (reclassification rules, PII types, domain policies, context types)
   - name: Auth
     description: API key management
   - name: System
