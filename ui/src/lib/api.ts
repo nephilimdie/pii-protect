@@ -210,9 +210,45 @@ export interface UpdateRegexPatternRequest {
   enabled?: boolean;
 }
 
+export interface PiiTypeItem {
+  code: string;
+  category: string;
+  display_name: string;
+  default_action: string;
+  faker_strategy: string | null;
+  reversible: boolean;
+  enabled: boolean;
+  description: string | null;
+}
+
+export interface DomainPolicy {
+  domain: string;
+  protect_types: string[];
+  keep_types: string[];
+  surrogate_types: string[];
+  description: string | null;
+  enabled: boolean;
+  updated_at: string;
+}
+
+export interface ContextTypeItem {
+  code: string;
+  display_name: string;
+  domain: string | null;
+  default_mode: string;
+  description: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
 export const api = {
-  anonymize: (text: string, contextId: string, contextType: string) =>
-    post<AnonymizeResponse>("/v1/anonymize", { text, context_id: contextId, context_type: contextType }),
+  anonymize: (
+    text: string, contextId: string, contextType: string,
+    opts?: { mode?: string; policy?: { protect: string[]; keep: string[] } }
+  ) =>
+    post<AnonymizeResponse>("/v1/anonymize", {
+      text, context_id: contextId, context_type: contextType, ...opts
+    }),
 
   deanonymize: (text: string, contextId: string, contextType: string) =>
     post<DeanonymizeResponse>("/v1/deanonymize", { text, context_id: contextId, context_type: contextType }),
@@ -293,4 +329,23 @@ export const api = {
 
   deleteReclassificationRule: (id: string) =>
     del(`/v1/admin/reclassification-rules/${id}`),
+
+  // PII Type Registry
+  listPiiTypes: () => get<PiiTypeItem[]>("/v1/admin/pii-types"),
+  updatePiiType: (code: string, body: Partial<PiiTypeItem>) =>
+    put<PiiTypeItem>(`/v1/admin/pii-types/${code}`, body),
+
+  // Domain Policies
+  listDomainPolicies: () => get<DomainPolicy[]>("/v1/admin/domain-policies"),
+  upsertDomainPolicy: (domain: string, body: { protect_types: string[]; keep_types: string[]; surrogate_types?: string[]; description?: string; enabled?: boolean }) =>
+    put<DomainPolicy>(`/v1/admin/domain-policies/${domain}`, body),
+  deleteDomainPolicy: (domain: string) => del(`/v1/admin/domain-policies/${domain}`),
+
+  // Context Types
+  listContextTypes: () => get<ContextTypeItem[]>("/v1/admin/context-types"),
+  createContextType: (body: { code: string; display_name: string; domain?: string; default_mode?: string; description?: string }) =>
+    post<ContextTypeItem>("/v1/admin/context-types", body),
+  updateContextType: (code: string, body: Partial<ContextTypeItem>) =>
+    put<ContextTypeItem>(`/v1/admin/context-types/${code}`, body),
+  deleteContextType: (code: string) => del(`/v1/admin/context-types/${code}`),
 };

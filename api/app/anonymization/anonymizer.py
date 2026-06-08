@@ -133,11 +133,35 @@ def _is_valid_entity(entity: PiiEntity, denylist: dict[str, dict]) -> bool:
     return True
 
 
+class DetectionResult:
+    """Raw detection result before token assignment — used by the new policy-aware router."""
+    def __init__(self, entities: list[PiiEntity]) -> None:
+        self.entities = entities
+
+
 class PiiAnonymizer:
     def __init__(self, registry: DetectorRegistry, denylist: dict[str, dict] | None = None) -> None:
         self._registry = registry
         self._merger = EntityMerger()
         self._denylist = denylist or {}
+
+    def detect_only(self, text: str, context_id: str, context_type: str, language: str = "it") -> DetectionResult:
+        """Run detection pipeline and return merged/reclassified entities without token assignment.
+        Called by the policy-aware anonymize router so it can filter by protect/keep lists."""
+        detectors = self._registry.get_ordered()
+        all_entities: list[PiiEntity] = []
+
+        with ThreadPoolExecutor(max_workers=len(detectors) or 1) as pool:
+            futures = {pool.submit(d.detect, text, language): d for d in detectors}
+            for future in as_completed(futures):
+                all_entities.extend(future.result())
+
+        merged = self._merger.merge(all_entities, text)
+        reclassified = [r for e in merged if (r := _reclassify(e, text)) is not None]
+        snapped = [_snap_to_word_boundary(text, e)
+                   for e in reclassified if _is_valid_entity(e, self._denylist)]
+        snapped = self._merger.merge(snapped, text)
+        return DetectionResult(entities=snapped)
 
     def anonymize(self, text: str, context_id: str, context_type: str, language: str = "it") -> AnonymizationResult:
         detectors = self._registry.get_ordered()

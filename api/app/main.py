@@ -9,6 +9,9 @@ from app.routers import denylist as denylist_router
 from app.routers import languages as languages_router
 from app.routers import presidio_context as presidio_context_router
 from app.routers import reclassification as reclassification_router
+from app.routers import pii_types_router
+from app.routers import domain_policies_router
+from app.routers import context_types_router
 from app.detection.layers.presidio_layer import PresidioDetector
 from app.settings_repository import SettingsRepository
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
@@ -107,3 +110,6 @@ app.include_router(denylist_router.router, prefix="/v1/admin")
 app.include_router(languages_router.router, prefix="/v1/admin")
 app.include_router(presidio_context_router.router, prefix="/v1/admin")
 app.include_router(reclassification_router.router, prefix="/v1/admin")
+app.include_router(pii_types_router.router, prefix="/v1/admin")
+app.include_router(domain_policies_router.router, prefix="/v1/admin")
+app.include_router(context_types_router.router, prefix="/v1/admin")

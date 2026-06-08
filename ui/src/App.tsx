@@ -13,6 +13,9 @@ import { LanguagesPage } from "./pages/LanguagesPage";
 import { ContextWordsPage } from "./pages/ContextWordsPage";
 import { MappingsPage } from "./pages/MappingsPage";
 import { ReclassificationPage } from "./pages/ReclassificationPage";
+import { PiiTypesPage } from "./pages/PiiTypesPage";
+import { DomainPoliciesPage } from "./pages/DomainPoliciesPage";
+import { ContextTypesPage } from "./pages/ContextTypesPage";
 
 function useRole(): { ready: boolean; isAdmin: boolean; isAuthenticated: boolean } {
   const [ready, setReady] = useState(false);
@@ -76,6 +79,9 @@ export default function App() {
           <Route path="languages" element={<LanguagesPage isAdmin={isAdmin} />} />
           <Route path="context-words" element={<ContextWordsPage isAdmin={isAdmin} />} />
           <Route path="reclassification" element={<ReclassificationPage isAdmin={isAdmin} />} />
+          <Route path="pii-types" element={<PiiTypesPage isAdmin={isAdmin} />} />
+          <Route path="domain-policies" element={<DomainPoliciesPage isAdmin={isAdmin} />} />
+          <Route path="context-types" element={<ContextTypesPage isAdmin={isAdmin} />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
