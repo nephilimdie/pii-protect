@@ -1,8 +1,6 @@
 """SurrogateService — DB-backed deterministic fake value generation."""
 
 import hashlib
-import json
-from datetime import date
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession

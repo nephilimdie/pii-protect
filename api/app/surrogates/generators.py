@@ -296,10 +296,10 @@ _STRATEGY_MAP: dict[str, callable] = {
     "health_card":    gen_health_card,
     "organization":   gen_organization,
     "company":        gen_company,
-    "practice_id":    lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 8),
-    "policy_number":  lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 10),
-    "loyalty_id":     lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 10),
-    "ticket_id":      lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 8),
+    "practice_id":    lambda v, c, loc="it_IT": gen_alphanumeric(v, c, loc, 8),
+    "policy_number":  lambda v, c, loc="it_IT": gen_alphanumeric(v, c, loc, 10),
+    "loyalty_id":     lambda v, c, loc="it_IT": gen_alphanumeric(v, c, loc, 10),
+    "ticket_id":      lambda v, c, loc="it_IT": gen_alphanumeric(v, c, loc, 8),
 }
 
 
