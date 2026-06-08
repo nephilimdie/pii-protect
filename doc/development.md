@@ -1,36 +1,36 @@
-# Architettura & Sviluppo
+# Architecture & Development
 
 ← [README](../README.md)
 
 ---
 
-## Stack tecnico
+## Tech Stack
 
-| Componente | Tecnologia |
-|------------|-----------|
+| Component | Technology |
+|-----------|-----------|
 | API | FastAPI + SQLAlchemy async |
 | Database | PostgreSQL 17 + pgvector |
 | NER Layer 1 | Microsoft Presidio + spaCy `it_core_news_lg` |
 | NER Layer 2 | `openai/privacy-filter` (ONNX quantized, CPU) |
 | NER Layer 3 | `Isotonic/distilbert_finetuned_ai4privacy_v2` |
 | NER Layer 4 | Regex patterns (DB, hot-reload) |
-| Surrogati | Faker IT (seed deterministico) + CF codec custom |
-| Cifratura | Fernet (symmetric, AES-128-CBC) |
-| Migrazioni | Alembic |
+| Surrogates | Faker IT (deterministic seed) + custom CF codec |
+| Encryption | Fernet (symmetric, AES-128-CBC) |
+| Migrations | Alembic |
 | Admin UI | React 18 + Vite + Tailwind CSS + lucide-react |
 | Container | Docker Compose |
 
 ---
 
-## Struttura del progetto
+## Project Structure
 
 ```
 pii-protect/
 ├── api/
 │   ├── app/
-│   │   ├── detection/              # Pipeline di detection
+│   │   ├── detection/              # Detection pipeline
 │   │   │   ├── contracts/          # DetectorContract ABC
-│   │   │   ├── layers/             # Un file per layer
+│   │   │   ├── layers/             # One file per layer
 │   │   │   │   ├── regex_layer.py
 │   │   │   │   ├── presidio_layer.py
 │   │   │   │   ├── privacy_filter_layer.py
@@ -38,36 +38,36 @@ pii-protect/
 │   │   │   ├── entities.py         # PiiEntity dataclass
 │   │   │   ├── entity_merger.py    # Merge + overlap resolution
 │   │   │   ├── detector_registry.py
-│   │   │   └── detector_provider.py   ← unico file da toccare per aggiungere layer
-│   │   ├── anonymization/          # Pseudonimizzazione + cifratura Fernet
-│   │   ├── surrogates/             # Generazione valori finti
-│   │   │   ├── cf_codec.py         # Encoder/decoder Codice Fiscale italiano
-│   │   │   ├── generators.py       # Generatori Faker IT per tipo
+│   │   │   └── detector_provider.py   ← only file to touch when adding a layer
+│   │   ├── anonymization/          # Pseudonymization + Fernet encryption
+│   │   ├── surrogates/             # Fake value generation
+│   │   │   ├── cf_codec.py         # Italian Codice Fiscale encoder/decoder
+│   │   │   ├── generators.py       # Faker IT generators per type
 │   │   │   ├── surrogate_service.py
 │   │   │   └── policy_service.py
-│   │   ├── routers/                # Endpoint FastAPI
-│   │   ├── identity/               # Auth + ruoli
+│   │   ├── routers/                # FastAPI endpoints
+│   │   ├── identity/               # Auth + roles
 │   │   ├── audit/                  # Audit log
-│   │   ├── mapping/                # Persistenza token↔valore
+│   │   ├── mapping/                # Token↔value persistence
 │   │   └── main.py
 │   ├── alembic/
-│   │   └── versions/               # 027+ migrazioni sequenziali
+│   │   └── versions/               # 027+ sequential migrations
 │   └── requirements.txt
 ├── ui/
 │   └── src/
-│       ├── pages/                  # Una pagina per feature admin
+│       ├── pages/                  # One page per admin feature
 │       ├── components/             # NavBar, Layout
-│       └── lib/api.ts              # Client API tipizzato
-├── doc/                            # Documentazione tecnica (questo file)
-├── openapi.yaml                    # Spec OpenAPI 3.1
+│       └── lib/api.ts              # Typed API client
+├── doc/                            # Technical documentation (this file)
+├── openapi.yaml                    # OpenAPI 3.1 spec
 └── docker-compose.yml
 ```
 
 ---
 
-## Aggiungere un layer di detection
+## Adding a Detection Layer
 
-**1. Crea il file** — `api/app/detection/layers/my_layer.py`
+**1. Create the file** — `api/app/detection/layers/my_layer.py`
 
 ```python
 from app.detection.contracts.detector_contract import DetectorContract
@@ -80,22 +80,22 @@ class MyCustomDetector(DetectorContract):
 
     @property
     def priority(self) -> int:
-        return 15  # tra Presidio (10) e privacy-filter (20)
+        return 15  # between Presidio (10) and privacy-filter (20)
 
     def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
-        # Mai sollevare eccezioni — return [] in caso di errore
+        # Never raise exceptions — return [] on error
         return []
 
     def is_available(self) -> bool:
         return True
 ```
 
-**2. Registra in `detector_provider.py`**
+**2. Register in `detector_provider.py`**
 
 ```python
 from app.detection.layers.my_layer import MyCustomDetector
 
-# dentro build():
+# inside build():
 registry.register(MyCustomDetector())
 ```
 
@@ -107,37 +107,37 @@ docker compose up -d --build api
 
 ---
 
-## Aggiungere un tipo PII
+## Adding a PII Type
 
-1. Aggiungi una migration Alembic che inserisce il tipo in `pii_type_registry`
-2. (Opzionale) Aggiungi il pattern regex in una migration separata
-3. (Opzionale) Aggiungi il generatore Faker in `surrogates/generators.py` e `_STRATEGY_MAP`
+1. Add an Alembic migration that inserts the type into `pii_type_registry`
+2. (Optional) Add the regex pattern in a separate migration
+3. (Optional) Add the Faker generator in `surrogates/generators.py` and `_STRATEGY_MAP`
 
 ---
 
-## Migrazioni Alembic
+## Alembic Migrations
 
-Le migrazioni sono sequenziali (`001` → `027`). Vengono eseguite automaticamente all'avvio del container tramite `entrypoint.sh`.
+Migrations are sequential (`001` → `027`+). They run automatically at container startup via `entrypoint.sh`.
 
-Per aggiungere una migrazione manualmente:
+To add a migration manually:
 
 ```bash
-# dentro il container API
-alembic revision -m "descrizione"
-# oppure crea il file manualmente seguendo la convenzione NNN_nome.py
+# inside the API container
+alembic revision -m "description"
+# or create the file manually following the NNN_name.py convention
 ```
 
-Naming convention: `NNN_descrizione_breve.py` con `revision = "NNN"` e `down_revision = "NNN-1"`.
+Naming convention: `NNN_short_description.py` with `revision = "NNN"` and `down_revision = "NNN-1"`.
 
 ---
 
-## Sviluppo locale
+## Local Development
 
 ```bash
 # PostgreSQL in Docker
 docker compose up postgres -d
 
-# API locale
+# Local API
 cd api
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -151,7 +151,7 @@ uvicorn app.main:app --reload --port 15500
 ```
 
 ```bash
-# UI locale
+# Local UI
 cd ui
 npm install
 npm run dev   # → http://localhost:5173
@@ -159,45 +159,45 @@ npm run dev   # → http://localhost:5173
 
 ---
 
-## Test
+## Tests
 
 ```bash
 make test
-# oppure
+# or
 docker compose exec api pytest
 ```
 
 ---
 
-## Principi di design
+## Design Principles
 
-- **Fail-open** — se il servizio è irraggiungibile, l'app chiamante continua invece di bloccarsi
-- **Regex vince sempre** — score 1.0 fisso, sovrascrive qualsiasi overlap ML
-- **Zero vendor lock-in** — tutti i modelli girano localmente, nessun dato esce dall'infrastruttura
-- **Operator-controlled** — pattern, policy, regole e chiavi API gestibili a runtime dall'admin UI
-- **Context-driven** — un campo `context_type` governa tutto: policy, mode, comportamento
+- **Fail-open** — if the service is unreachable, the calling app continues rather than blocking
+- **Regex always wins** — fixed score 1.0, overwrites any ML overlap
+- **Zero vendor lock-in** — all models run locally, no data leaves the infrastructure
+- **Operator-controlled** — patterns, policies, rules, and API keys manageable at runtime from the admin UI
+- **Context-driven** — a single `context_type` field governs everything: policy, mode, behavior
 
 ---
 
-## Integrazione con lavvocato
+## Integration Patterns
 
-Tre pattern d'uso principali:
+Three main usage patterns:
 
-**Generazione (chat / ricorso) — tag mode:**
+**Generation (chat / appeal) — tag mode:**
 ```http
 POST /v1/anonymize
 { "text": "...", "context_id": "...", "context_type": "fine_appeal" }
 ```
-Protegge l'identità, lascia i fatti legali (data, importo, targa, articolo). De-anonimizza l'output prima di mostrarlo all'utente.
+Protects identity, leaves legal facts (date, amount, plate, article). De-anonymize output before showing to the user.
 
-**Embedding (vector DB esterno) — surrogate mode:**
+**Embedding (external vector DB) — surrogate mode:**
 ```http
 POST /v1/anonymize
 { "text": "...", "context_id": "...", "context_type": "embedding" }
 ```
-Sostituisce PII con surrogati realistici. L'embedding cattura il significato semantico senza esporre dati reali. Non serve de-anonimizzazione per la similarity search.
+Replaces PII with realistic surrogates. The embedding captures semantic meaning without exposing real data. No de-anonymization needed for similarity search.
 
-**Policy custom per richiesta:**
+**Custom per-request policy:**
 ```http
 POST /v1/anonymize
 {
@@ -208,4 +208,4 @@ POST /v1/anonymize
 }
 ```
 
-Salva `context_id` + `context_type` insieme al testo anonimizzato. Passa entrambi a `/v1/deanonymize` per ripristinare.
+Save `context_id` + `context_type` alongside the anonymized text. Pass both to `/v1/deanonymize` to restore.

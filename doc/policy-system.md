@@ -1,43 +1,43 @@
-# Sistema di Policy
+# Policy System
 
 ← [README](../README.md)
 
-La policy determina **cosa fare** con ogni tipo PII rilevato. È configurata su tre livelli gerarchici:
+The policy determines **what to do** with each detected PII type. It is configured across three hierarchical levels:
 
 ```
 Context Type
-    ↓ punta a
+    ↓ points to
 Domain Policy  →  protect_types / keep_types / surrogate_types
     ↓ fallback
-PII Type Registry  →  default_action per tipo
+PII Type Registry  →  default_action per type
 ```
 
 ---
 
 ## PII Type Registry
 
-Registro centrale di tutti i tipi PII riconosciuti dal sistema (~33 tipi).
+Central registry of all PII types recognized by the system (~33 types).
 
-Ogni tipo ha:
+Each type has:
 
-| Campo | Descrizione |
+| Field | Description |
 |-------|-------------|
-| `code` | Identificatore (es. `FISCAL_CODE`) |
+| `code` | Identifier (e.g. `FISCAL_CODE`) |
 | `category` | `IDENTITY`, `CONTACT`, `FINANCIAL`, `LEGAL`, `VEHICLE`, `NETWORK`, `CREDENTIAL` |
-| `display_name` | Nome leggibile |
-| `default_action` | `protect`, `keep`, o `redact` — usato se nessuna policy lo sovrascrive |
-| `faker_strategy` | Generatore Faker da usare in surrogate mode |
-| `reversible` | Se il surrogate può essere de-anonimizzato |
-| `enabled` | Abilita/disabilita il tipo a livello globale |
+| `display_name` | Human-readable name |
+| `default_action` | `protect`, `keep`, or `redact` — used when no policy overrides it |
+| `faker_strategy` | Faker generator to use in surrogate mode |
+| `reversible` | Whether the surrogate can be de-anonymized |
+| `enabled` | Enable/disable the type globally |
 
 ![PII Type Registry](img/pii_types_registry.png)
 
-Gestisci da **Policy → PII Types**.
+Manage from **Policy → PII Types**.
 
-### Tipi per categoria
+### Types by category
 
-| Categoria | Tipi |
-|-----------|------|
+| Category | Types |
+|----------|-------|
 | IDENTITY | PERSON, FISCAL_CODE, DATE_BORN, CITY_BORN, PASSPORT, IDENTITY_CARD, DRIVER_LICENSE, HEALTH_CARD |
 | CONTACT | ACCOUNT, ADDRESS, EMAIL, PHONE |
 | FINANCIAL | BIC, CREDIT_CARD, IBAN, MONEY, SALARY |
@@ -50,79 +50,79 @@ Gestisci da **Policy → PII Types**.
 
 ## Domain Policies
 
-Una domain policy definisce, per un dato dominio applicativo, quali tipi PII:
-- **Proteggere** (🛡 nascondi) — anonimizzati con tag o surrogate
-- **Lasciare visibili** (👁 vedi) — lasciati invariati nel testo
-- **Sostituire con Faker** (✨) — sempre surrogati, anche se il context type è in modalità `tag`
-- **Non assegnati** — seguono il `default_action` del tipo nel registry
+A domain policy defines, for a given application domain, which PII types to:
+- **Protect** (🛡 hide) — anonymized with tag or surrogate
+- **Keep** (👁 show) — left unchanged in the text
+- **Surrogate** (✨) — always replaced with a fake value, even if the context type is in `tag` mode
+- **Unassigned** — follows the type's `default_action` from the registry
 
-### Policy pre-caricate
+### Pre-loaded policies
 
 | Domain | Protect | Keep |
 |--------|---------|------|
-| `default` | Tutti i tipi IDENTITY, CONTACT, FINANCIAL | DATE, MONEY, LAW_REF, URL, GPS |
+| `default` | All IDENTITY, CONTACT, FINANCIAL types | DATE, MONEY, LAW_REF, URL, GPS |
 | `fine_appeal` | PERSON, CF, EMAIL, PHONE, ADDRESS, IBAN, IDENTITY_CARD, DRIVER_LICENSE | DATE, MONEY, LAW_REF, **TARGA**, PRACTICE_ID, TICKET_ID |
 | `contract_analysis` | PERSON, CF, EMAIL, PHONE, ADDRESS, IBAN, CREDIT_CARD, **TARGA**, COMPANY | DATE, MONEY, LAW_REF, POLICY_NUMBER |
 | `medical` | PERSON, CF, EMAIL, PHONE, ADDRESS, **HEALTH_CARD** | DATE, MONEY, LAW_REF, PRACTICE_ID |
 
-> `TARGA` è in **keep** per `fine_appeal` (la targa è parte del fascicolo) ma in **protect** per `contract_analysis`.
+> `TARGA` is in **keep** for `fine_appeal` (the plate is part of the case file) but in **protect** for `contract_analysis`.
 
-Gestisci da **Policy → Domain Policies**.
+Manage from **Policy → Domain Policies**.
 
 ---
 
 ## Context Types
 
-I context type sono il punto di entrata della pipeline. Il caller passa un singolo campo `context_type` e il sistema configura automaticamente policy e modalità.
+Context types are the pipeline entry point. The caller passes a single `context_type` field and the system automatically configures policy and mode.
 
-| Campo | Descrizione |
+| Field | Description |
 |-------|-------------|
-| `code` | Stringa da passare come `context_type` nella chiamata API |
-| `display_name` | Nome leggibile nell'admin UI |
-| `domain` | Domain policy collegata (FK → `domain_policies`) |
-| `default_mode` | `tag` o `surrogate` — usato se non sovrascritto nella richiesta |
-| `enabled` | Abilita/disabilita il context type |
+| `code` | String to pass as `context_type` in the API call |
+| `display_name` | Human-readable name in the admin UI |
+| `domain` | Linked domain policy (FK → `domain_policies`) |
+| `default_mode` | `tag` or `surrogate` — used unless overridden in the request |
+| `enabled` | Enable/disable the context type |
 
-### Context type pre-caricati
+### Pre-loaded context types
 
-| Code | Domain | Mode | Uso tipico |
-|------|--------|------|-----------|
-| `default` | default | tag | Generico |
-| `fine_appeal` | fine_appeal | tag | Ricorsi infrazioni stradali |
-| `contract_analysis` | contract_analysis | tag | Analisi contratti |
-| `medical` | medical | tag | Documenti sanitari |
-| `hr` | default | tag | Risorse umane |
-| `legal_brief` | contract_analysis | tag | Atti legali |
-| `embedding` | default | **surrogate** | Testo per LLM/vector DB |
+| Code | Domain | Mode | Typical use |
+|------|--------|------|-------------|
+| `default` | default | tag | Generic |
+| `fine_appeal` | fine_appeal | tag | Traffic fine appeals |
+| `contract_analysis` | contract_analysis | tag | Contract analysis |
+| `medical` | medical | tag | Medical documents |
+| `hr` | default | tag | Human resources |
+| `legal_brief` | contract_analysis | tag | Legal briefs |
+| `embedding` | default | **surrogate** | Text for LLM/vector DB |
 
 ![Context Types](img/context_types.png)
 
 ![Context Types — Policy Editor](img/context_types_policy_editor.png)
 
-Cliccando su una riga nella pagina Context Types si apre l'editor inline della policy collegata: è possibile assegnare ogni tipo PII a protect/keep/faker senza uscire dalla pagina.
+Clicking a row in the Context Types page opens the inline policy editor: assign each PII type to protect/keep/faker without leaving the page.
 
-Gestisci da **Policy → Context Types**.
-
----
-
-## Risoluzione della policy — ordine di precedenza
-
-```
-1. inline policy nel body della richiesta   (massima priorità)
-2. domain policy del context_type
-3. default_action del tipo nel PII registry (fallback)
-```
-
-Il `mode` segue la stessa logica:
-```
-1. mode nel body della richiesta
-2. default_mode del context_type
-3. "tag" (fallback globale)
-```
+Manage from **Policy → Context Types**.
 
 ---
 
-## Override inline nella richiesta
+## Policy resolution — precedence order
+
+```
+1. Inline policy in the request body   (highest priority)
+2. Domain policy of the context_type
+3. default_action of the type in the PII registry (fallback)
+```
+
+`mode` follows the same logic:
+```
+1. mode in the request body
+2. default_mode of the context_type
+3. "tag" (global fallback)
+```
+
+---
+
+## Inline override in the request
 
 ```json
 {
@@ -138,4 +138,4 @@ Il `mode` segue la stessa logica:
 }
 ```
 
-L'override inline sostituisce completamente la domain policy collegata al context type.
+The inline override completely replaces the domain policy linked to the context type.

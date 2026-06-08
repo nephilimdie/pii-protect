@@ -2,26 +2,26 @@
 
 ← [README](../README.md)
 
-Full OpenAPI spec interattiva: http://localhost:15500/docs  
-File YAML: [`openapi.yaml`](../openapi.yaml)
+Interactive OpenAPI spec: http://localhost:15500/docs  
+YAML file: [`openapi.yaml`](../openapi.yaml)
 
 ---
 
-## Autenticazione
+## Authentication
 
-Ogni endpoint (tranne `/health`) richiede la chiave API nell'header:
+Every endpoint (except `/health`) requires the API key in the header:
 
 ```
 X-Api-Key: your-api-key-here
 ```
 
-### Ruoli
+### Roles
 
-| Ruolo | Permessi |
-|-------|----------|
-| `admin` | Accesso completo |
-| `service` | Anonimizza e de-anonimizza |
-| `auditor` | Lettura stats e audit log |
+| Role | Permissions |
+|------|-------------|
+| `admin` | Full access |
+| `service` | Anonymize and de-anonymize |
+| `auditor` | Read-only stats and audit log |
 
 ---
 
@@ -29,7 +29,7 @@ X-Api-Key: your-api-key-here
 
 ### `POST /v1/anonymize`
 
-Rileva PII nel testo e le sostituisce con token o surrogati.
+Detects PII in the text and replaces it with tokens or surrogates.
 
 ```bash
 curl -X POST http://localhost:15500/v1/anonymize \
@@ -44,17 +44,17 @@ curl -X POST http://localhost:15500/v1/anonymize \
 
 **Body:**
 
-| Campo | Tipo | Required | Descrizione |
+| Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `text` | string | ✓ | Testo da anonimizzare |
-| `context_id` | string | ✓ | Identificatore documento/sessione |
-| `context_type` | string | ✓ | Configura policy e mode automaticamente |
-| `language` | string | — | Lingua NER (default: `it`) |
-| `mode` | `tag`\|`surrogate` | — | Sovrascrive il default del context type |
+| `text` | string | ✓ | Text to anonymize |
+| `context_id` | string | ✓ | Document/session identifier |
+| `context_type` | string | ✓ | Automatically configures policy and mode |
+| `language` | string | — | NER language hint (default: `it`) |
+| `mode` | `tag`\|`surrogate` | — | Overrides the context type default |
 | `policy` | object | — | `{"protect":[...], "keep":[...], "surrogate":[...]}` |
-| `detection_mode` | `permissive`\|`strict` | — | Sensibilità detection (default: `permissive`) |
+| `detection_mode` | `permissive`\|`strict` | — | Detection sensitivity (default: `permissive`) |
 
-**Risposta:**
+**Response:**
 
 ```json
 {
@@ -72,7 +72,7 @@ curl -X POST http://localhost:15500/v1/anonymize \
 
 ### `POST /v1/deanonymize`
 
-Ripristina i valori originali in un testo precedentemente anonimizzato.
+Restores original values in a previously anonymized text.
 
 ```bash
 curl -X POST http://localhost:15500/v1/deanonymize \
@@ -85,14 +85,14 @@ curl -X POST http://localhost:15500/v1/deanonymize \
   }'
 ```
 
-**Risposta:**
+**Response:**
 ```json
 { "original_text": "Il sig. Mario Rossi, CF: RSSMRA80A01H501U" }
 ```
 
 ---
 
-## Admin — Statistiche e log
+## Admin — Stats and log
 
 ### `GET /v1/admin/stats`
 
@@ -106,101 +106,101 @@ Query params: `page`, `page_size` (max 200), `context_id`, `context_type`, `acti
 
 ### `POST /v1/admin/cleanup`
 
-Elimina i mapping scaduti (> `PII_MAPPING_TTL_DAYS` giorni).
+Deletes expired mappings (older than `PII_MAPPING_TTL_DAYS` days).
 
 ---
 
-## Admin — Configurazione policy
+## Admin — Policy configuration
 
 ### Context Types
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/context-types` | Lista tutti i context type |
-| `POST` | `/v1/admin/context-types` | Crea context type |
-| `PUT` | `/v1/admin/context-types/{code}` | Aggiorna |
-| `DELETE` | `/v1/admin/context-types/{code}` | Elimina |
+| `GET` | `/v1/admin/context-types` | List all context types |
+| `POST` | `/v1/admin/context-types` | Create context type |
+| `PUT` | `/v1/admin/context-types/{code}` | Update |
+| `DELETE` | `/v1/admin/context-types/{code}` | Delete |
 
 ### Domain Policies
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/domain-policies` | Lista tutte le policy |
-| `PUT` | `/v1/admin/domain-policies/{domain}` | Crea o aggiorna (upsert) |
-| `DELETE` | `/v1/admin/domain-policies/{domain}` | Elimina |
+| `GET` | `/v1/admin/domain-policies` | List all policies |
+| `PUT` | `/v1/admin/domain-policies/{domain}` | Create or update (upsert) |
+| `DELETE` | `/v1/admin/domain-policies/{domain}` | Delete |
 
 ### PII Type Registry
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/pii-types` | Lista tutti i tipi |
-| `PUT` | `/v1/admin/pii-types/{code}` | Aggiorna campi (default_action, faker_strategy, …) |
+| `GET` | `/v1/admin/pii-types` | List all types |
+| `PUT` | `/v1/admin/pii-types/{code}` | Update fields (default_action, faker_strategy, …) |
 
 ---
 
-## Admin — Configurazione detection
+## Admin — Detection configuration
 
 ### Regex Patterns
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/regex-patterns` | Lista pattern |
-| `POST` | `/v1/admin/regex-patterns` | Crea pattern |
-| `PUT` | `/v1/admin/regex-patterns/{id}` | Aggiorna |
-| `DELETE` | `/v1/admin/regex-patterns/{id}` | Elimina |
+| `GET` | `/v1/admin/regex-patterns` | List patterns |
+| `POST` | `/v1/admin/regex-patterns` | Create pattern |
+| `PUT` | `/v1/admin/regex-patterns/{id}` | Update |
+| `DELETE` | `/v1/admin/regex-patterns/{id}` | Delete |
 
 ### Reclassification Rules
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/reclassification-rules` | Lista regole |
-| `POST` | `/v1/admin/reclassification-rules` | Crea regola |
-| `PUT` | `/v1/admin/reclassification-rules/{id}` | Aggiorna |
-| `DELETE` | `/v1/admin/reclassification-rules/{id}` | Elimina |
+| `GET` | `/v1/admin/reclassification-rules` | List rules |
+| `POST` | `/v1/admin/reclassification-rules` | Create rule |
+| `PUT` | `/v1/admin/reclassification-rules/{id}` | Update |
+| `DELETE` | `/v1/admin/reclassification-rules/{id}` | Delete |
 
 ### Denylist
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/denylist` | Lista entries |
-| `POST` | `/v1/admin/denylist` | Aggiungi entry |
-| `PUT` | `/v1/admin/denylist/{id}` | Aggiorna |
-| `DELETE` | `/v1/admin/denylist/{id}` | Elimina |
+| `GET` | `/v1/admin/denylist` | List entries |
+| `POST` | `/v1/admin/denylist` | Add entry |
+| `PUT` | `/v1/admin/denylist/{id}` | Update |
+| `DELETE` | `/v1/admin/denylist/{id}` | Delete |
 
 ### Context Words (Presidio)
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/presidio-context` | Lista context words |
-| `POST` | `/v1/admin/presidio-context` | Aggiungi |
-| `PUT` | `/v1/admin/presidio-context/{id}` | Aggiorna |
-| `DELETE` | `/v1/admin/presidio-context/{id}` | Elimina |
+| `GET` | `/v1/admin/presidio-context` | List context words |
+| `POST` | `/v1/admin/presidio-context` | Add |
+| `PUT` | `/v1/admin/presidio-context/{id}` | Update |
+| `DELETE` | `/v1/admin/presidio-context/{id}` | Delete |
 
 ---
 
-## Admin — Sistema
+## Admin — System
 
 ### API Keys
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/auth/api-keys` | Lista chiavi (solo metadata) |
-| `POST` | `/v1/auth/api-keys` | Crea chiave — il valore raw è mostrato una sola volta |
-| `DELETE` | `/v1/auth/api-keys/{id}` | Revoca chiave |
+| `GET` | `/v1/auth/api-keys` | List keys (metadata only) |
+| `POST` | `/v1/auth/api-keys` | Create key — raw value shown once only |
+| `DELETE` | `/v1/auth/api-keys/{id}` | Revoke key |
 
 ### Languages
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/languages` | Modelli spaCy installati |
-| `POST` | `/v1/admin/languages/{code}/install` | Installa modello (`it`, `en`, `de`, …) |
+| `GET` | `/v1/admin/languages` | Installed spaCy models |
+| `POST` | `/v1/admin/languages/{code}/install` | Install model (`it`, `en`, `de`, …) |
 
 ### Mappings
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/admin/mappings` | Mapping token→valore (paginati) |
-| `DELETE` | `/v1/admin/mappings/bulk` | Eliminazione bulk |
+| `GET` | `/v1/admin/mappings` | Token mappings (paginated) |
+| `DELETE` | `/v1/admin/mappings/bulk` | Bulk delete |
 
 ### Health
 

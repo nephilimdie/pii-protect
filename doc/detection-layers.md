@@ -1,62 +1,62 @@
-# Layer di Detection
+# Detection Layers
 
 ← [README](../README.md)
 
-La pipeline di detection esegue tutti e 4 i layer in parallelo via `ThreadPoolExecutor`, poi unisce i risultati con `EntityMerger`.
+The detection pipeline runs all 4 layers in parallel via `ThreadPoolExecutor`, then merges results with `EntityMerger`.
 
 ---
 
-## Priorità e merge
+## Priority and merge
 
-Ogni layer ha una priorità numerica. In caso di overlap tra due entità rilevate da layer diversi, vince quella con score più alto. Il layer Regex ha score fisso `1.0` e vince sempre sugli overlap con i layer ML.
+Each layer has a numeric priority. When two entities from different layers overlap, the one with the higher score wins. The Regex layer has a fixed score of `1.0` and always wins on overlaps with ML layers.
 
-| Layer | Modello | Priorità | Score |
-|-------|---------|----------|-------|
-| Presidio + spaCy | `it_core_news_lg` | 10 | variabile |
-| openai/privacy-filter | ONNX quantized, CPU | 20 | variabile |
-| AI4Privacy | `distilbert_finetuned_ai4privacy_v2` | 25 | variabile |
-| **Regex (DB)** | pattern configurabili | **30** | **1.0** |
+| Layer | Model | Priority | Score |
+|-------|-------|----------|-------|
+| Presidio + spaCy | `it_core_news_lg` | 10 | variable |
+| openai/privacy-filter | ONNX quantized, CPU | 20 | variable |
+| AI4Privacy | `distilbert_finetuned_ai4privacy_v2` | 25 | variable |
+| **Regex (DB)** | configurable patterns | **30** | **1.0** |
 
 ---
 
 ## Layer 1 — Presidio + spaCy
 
-Tipi rilevati: `PERSON`, `EMAIL`, `PHONE`, `IBAN`, `FISCAL_CODE`, `DATE`
+Detected types: `PERSON`, `EMAIL`, `PHONE`, `IBAN`, `FISCAL_CODE`, `DATE`
 
-Usa il modello NER italiano `it_core_news_lg`. I context words (parole che aumentano la probabilità di riconoscimento) sono configurabili dall'admin UI sotto **Detection → Context Words**.
+Uses the Italian NER model `it_core_news_lg`. Context words (words that increase recognition confidence) are configurable from the admin UI under **Detection → Context Words**.
 
 ---
 
 ## Layer 2 — openai/privacy-filter
 
-Tipi rilevati: `PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `DATE`, `SECRET`
+Detected types: `PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `DATE`, `SECRET`
 
-Modello ONNX quantizzato, gira su CPU senza GPU. Buono per segreti e token (API key, password).
+Quantized ONNX model, runs on CPU without GPU. Good for secrets and tokens (API keys, passwords).
 
 ---
 
 ## Layer 3 — AI4Privacy (distilbert)
 
-Tipi rilevati: `PASSWORD`, `USERNAME`, `ACCOUNT_NUMBER`, `CREDIT_CARD`, `CVV`, `PIN`, `IBAN`, `BIC`, `MAC_ADDRESS`, `IP_ADDRESS`, `GPS_COORDINATE`, `URL`, `TARGA`, `PERSON`, `ADDRESS`, `DATE`, `EMAIL`, `PHONE`
+Detected types: `PASSWORD`, `USERNAME`, `ACCOUNT_NUMBER`, `CREDIT_CARD`, `CVV`, `PIN`, `IBAN`, `BIC`, `MAC_ADDRESS`, `IP_ADDRESS`, `GPS_COORDINATE`, `URL`, `TARGA`, `PERSON`, `ADDRESS`, `DATE`, `EMAIL`, `PHONE`
 
-Modello fine-tuned specifico per PII. Copre tipi tecnici che i layer NER tradizionali non rilevano.
+Fine-tuned model specifically for PII. Covers technical types that traditional NER layers miss.
 
 ---
 
-## Layer 4 — Regex (DB-configurabili)
+## Layer 4 — Regex (DB-configurable)
 
-Tipi rilevati: `FISCAL_CODE`, `IBAN`, `EMAIL`, `PHONE`, `TARGA`, `PIVA`, `CREDIT_CARD`, `MAC_ADDRESS`, `IP_ADDRESS`, `GPS_COORDINATE`, `HEALTH_CARD`, `PRACTICE_ID`, `TICKET_ID`, `POLICY_NUMBER`, `IMEI`, `PNR`, `ACCOUNT`, `API_KEY`, `BIC`, `CITY_BORN`, `COMPANY`, `SALARY`, `DATE`, `DATE_BORN`
+Detected types: `FISCAL_CODE`, `IBAN`, `EMAIL`, `PHONE`, `TARGA`, `PIVA`, `CREDIT_CARD`, `MAC_ADDRESS`, `IP_ADDRESS`, `GPS_COORDINATE`, `HEALTH_CARD`, `PRACTICE_ID`, `TICKET_ID`, `POLICY_NUMBER`, `IMEI`, `PNR`, `ACCOUNT`, `API_KEY`, `BIC`, `CITY_BORN`, `COMPANY`, `SALARY`, `DATE`, `DATE_BORN`
 
-I pattern sono salvati nel DB (`regex_patterns`) e ricaricati a caldo ad ogni modifica. Non serve restart.
+Patterns are stored in the DB (`regex_patterns`) and hot-reloaded on every change. No restart required.
 
-Ogni pattern ha:
-- **PII type** — tipo di entità
-- **Pattern** — regex Python
-- **Flags** — `IGNORECASE`, `MULTILINE`, `DOTALL` (separati da virgola)
-- **Capture group** — gruppo da estrarre (0 = full match)
-- **Enabled** — on/off senza eliminare
+Each pattern has:
+- **PII type** — entity type
+- **Pattern** — Python regex
+- **Flags** — `IGNORECASE`, `MULTILINE`, `DOTALL` (comma-separated)
+- **Capture group** — group to extract (0 = full match)
+- **Enabled** — on/off without deleting
 
-Gestisci da **Detection → Regex Patterns**.
+Manage from **Detection → Regex Patterns**.
 
 ![Regex Patterns](img/regex_patterns.png)
 
@@ -64,60 +64,60 @@ Gestisci da **Detection → Regex Patterns**.
 
 ## Denylist
 
-Parole o frasi che, se presenti come testo di un'entità, la invalidano (falso positivo ricorrente).
+Words or phrases that, if present as an entity's text, invalidate it (recurring false positive).
 
-Supporta due modalità:
-- **exact** — match esatto su singola parola (dopo stripping degli onorificis)
-- **contains** — l'entità contiene la stringa
+Supports two modes:
+- **exact** — exact match on a single word (after stripping honorifics)
+- **contains** — the entity contains the string
 
-Gestisci da **Detection → Denylist**.
+Manage from **Detection → Denylist**.
 
 ---
 
 ## Context Words (Presidio)
 
-Parole che, se appaiono vicino a un'entità, aumentano il confidence score di Presidio per quel tipo.
+Words that, when appearing near an entity, increase Presidio's confidence score for that type.
 
-Esempio: aggiungere `"codice fiscale"` per `FISCAL_CODE` fa sì che Presidio sia più propenso a riconoscere una stringa vicina come CF.
+Example: adding `"codice fiscale"` for `FISCAL_CODE` makes Presidio more likely to recognize a nearby string as a CF.
 
-Gestisci da **Detection → Context Words**.
+Manage from **Detection → Context Words**.
 
 ---
 
 ## Snap to word boundary
 
-Dopo il merge, ogni entità viene "snappata" ai bordi di parola:
-- Strip leading whitespace (i tokenizer BPE includono spesso lo spazio precedente)
-- Espansione destra se l'entità termina a metà parola
-- Per `PERSON`: assorbimento onorificis precedenti (Dr., Avv., Ing., …) e strip di termini di parentela aggiunti per errore dai modelli ML
+After merging, each entity is snapped to word boundaries:
+- Strip leading whitespace (BPE tokenizers often include the preceding space)
+- Right-expand if the entity ends mid-word
+- For `PERSON`: absorb preceding honorifics (Dr., Avv., Ing., …) and strip relational terms erroneously added by ML models
 
 ---
 
 ## Reclassification Rules
 
-Regole applicate **dopo** il merge. Cambiano il tipo di un'entità in base al contesto testuale.
+Rules applied **after** the merge. They change an entity's type based on textual context.
 
-Ogni regola ha:
-- **FROM** — tipo sorgente
-- **TO** — tipo destinazione (null = elimina l'entità)
-- **Context pattern** — regex cercata nei N caratteri prima dell'entità
-- **Entity pattern** — regex cercata nel testo dell'entità stessa
-- Se entrambi i pattern sono impostati, devono matchare entrambi (AND logic)
-- **Context window** — quanti caratteri prima guardare (default 60)
+Each rule has:
+- **FROM** — source type
+- **TO** — target type (null = drop the entity)
+- **Context pattern** — regex searched in the N characters before the entity
+- **Entity pattern** — regex searched in the entity text itself
+- If both patterns are set, both must match (AND logic)
+- **Context window** — how many characters to look back (default 60)
 
-Visualizzate come grafo bipartito (FROM a sinistra, TO a destra, frecce tratteggiate = regola disabilitata).
+Visualized as a bipartite graph (FROM on the left, TO on the right, dashed arrows = disabled rule).
 
 ![Reclassification Rules](img/reclassification_rules.png)
 
-Gestisci da **Detection → Reclass. Rules**.
+Manage from **Detection → Reclass. Rules**.
 
-### Esempi pre-caricati
+### Pre-loaded examples
 
-| FROM | TO | Condizione |
+| FROM | TO | Condition |
 |------|----|-----------|
-| `PERSON` | `ACCOUNT` | entity contiene `@` |
-| `PERSON` | `ACCOUNT` | context ha `username:` o `login:` |
-| `PERSON` | `ORGANIZATION` | context ha `datore di lavoro:` o `azienda:` |
-| `PERSON` | `ORGANIZATION` | entity contiene forma giuridica (S.r.l., S.p.A.) |
-| `PERSON` | `EMAIL` | context ha `email:` o `posta elettronica:` |
-| `DATE` | `DATE_BORN` | context ha `nato/nata a <Città> il` (80 char window) |
+| `PERSON` | `ACCOUNT` | entity contains `@` |
+| `PERSON` | `ACCOUNT` | context has `username:` or `login:` |
+| `PERSON` | `ORGANIZATION` | context has `datore di lavoro:` or `azienda:` |
+| `PERSON` | `ORGANIZATION` | entity contains legal suffix (S.r.l., S.p.A.) |
+| `PERSON` | `EMAIL` | context has `email:` or `posta elettronica:` |
+| `DATE` | `DATE_BORN` | context has `nato/nata a <City> il` (80-char window) |

@@ -1,88 +1,88 @@
 # pii-protect
 
-Microservizio standalone di pseudonimizzazione PII per documenti italiani. Rileva e anonimizza dati personali tramite una pipeline multi-layer configurabile, con supporto a surrogati realistici e politiche per dominio.
+Standalone PII pseudonymization microservice for Italian personal data. Detects and anonymizes personal information through a configurable multi-layer detection pipeline, with support for realistic surrogates and per-domain policies.
 
 ---
 
-## Documentazione
+## Documentation
 
-| Documento | Contenuto |
-|-----------|-----------|
-| [Architettura & sviluppo](doc/development.md) | Stack tecnico, struttura progetto, aggiungere layer, dev locale |
-| [Layer di detection](doc/detection-layers.md) | I 4 layer ML/regex, priorità, regex patterns, denylist, context words |
-| [Modalità di anonimizzazione](doc/anonymization-modes.md) | Tag vs surrogate, profili coerenti, Codice Fiscale, reversibilità |
-| [Sistema di policy](doc/policy-system.md) | Context types, domain policies, PII type registry, reclassification rules |
-| [API Reference](doc/api-reference.md) | Tutti gli endpoint REST con esempi curl |
+| Document | Contents |
+|----------|----------|
+| [Architecture & Development](doc/development.md) | Tech stack, project structure, adding layers, local dev |
+| [Detection Layers](doc/detection-layers.md) | The 4 ML/regex layers, priorities, regex patterns, denylist, context words |
+| [Anonymization Modes](doc/anonymization-modes.md) | Tag vs surrogate, coherent profiles, Codice Fiscale, reversibility |
+| [Policy System](doc/policy-system.md) | Context types, domain policies, PII type registry, reclassification rules |
+| [API Reference](doc/api-reference.md) | All REST endpoints with curl examples |
 
 ---
 
-## Feature
+## Features
 
-| Feature | Descrizione |
+| Feature | Description |
 |---------|-------------|
-| **Detection multi-layer** | 4 layer in cascata: Presidio+spaCy, openai/privacy-filter, AI4Privacy, Regex DB. Le regex hanno sempre priorità sugli overlap. |
-| **Modalità tag** | Sostituisce PII con token opachi `[PERSON_1]`. Reversibile via `/v1/deanonymize`. |
-| **Modalità surrogate** | Sostituisce PII con valori finti ma realistici (nome, CF, IBAN, targa). Deterministica: stesso input → stesso output. |
-| **Profili coerenti** | PERSON e FISCAL_CODE condividono un profilo finto per `context_id`: il CF finto codifica lo stesso nome/data/città della persona fittizia. |
-| **Context types** | Un singolo campo `context_type` nella chiamata API configura automaticamente policy e modalità. |
-| **Domain policies** | Per ogni dominio (fine_appeal, contratto, medico…) definisce quali tipi PII proteggere, lasciare visibili, o sostituire con Faker. |
-| **PII Type Registry** | ~33 tipi PII categorizzati (IDENTITY, CONTACT, FINANCIAL, LEGAL, VEHICLE, NETWORK, CREDENTIAL) con azione di default e strategia Faker. |
-| **Reclassification rules** | Regole post-detection che cambiano il tipo di un'entità in base al contesto (es. PERSON con `@` → ACCOUNT). Visualizzate come grafo bipartito. |
-| **Regex configurabili** | Pattern regex salvati in DB, ricaricati a caldo. Gestibili dall'admin UI senza restart. |
-| **Denylist** | Liste di parole/frasi da escludere dal riconoscimento (falsi positivi ricorrenti). |
-| **Audit log** | Ogni chiamata API è tracciata: tipo di azione, numero di entità, context type, chiave usata. |
-| **API key management** | Ruoli `admin`, `service`, `auditor`. Chiavi con scadenza opzionale. |
-| **Multi-lingua** | spaCy supporta IT, EN, DE, FR, ES, PT. Modelli installabili dall'admin UI. |
-| **Admin UI** | React + Tailwind. Gestione completa di tutti i componenti senza toccare il codice. |
+| **Multi-layer detection** | 4-layer cascade: Presidio+spaCy, openai/privacy-filter, AI4Privacy, DB Regex. Regex always wins on overlaps. |
+| **Tag mode** | Replaces PII with opaque tokens `[PERSON_1]`. Reversible via `/v1/deanonymize`. |
+| **Surrogate mode** | Replaces PII with realistic fake values (name, CF, IBAN, plate). Deterministic: same input → same output. |
+| **Coherent profiles** | PERSON and FISCAL_CODE share a fake profile per `context_id`: the fake CF encodes the same name/date/city as the fake person. |
+| **Context types** | A single `context_type` field in the API call automatically configures policy and mode. |
+| **Domain policies** | Per domain (fine_appeal, contract, medical…) defines which PII types to protect, leave visible, or replace with Faker. |
+| **PII Type Registry** | ~33 PII types categorized (IDENTITY, CONTACT, FINANCIAL, LEGAL, VEHICLE, NETWORK, CREDENTIAL) with default action and Faker strategy. |
+| **Reclassification rules** | Post-detection rules that change an entity's type based on context (e.g. PERSON containing `@` → ACCOUNT). Visualized as a bipartite graph. |
+| **Configurable regex** | Regex patterns stored in DB, hot-reloaded on change. Manageable from the admin UI without restart. |
+| **Denylist** | Word/phrase lists to exclude from detection (recurring false positives). |
+| **Audit log** | Every API call is logged: action type, entity count, context type, key used. |
+| **API key management** | Roles: `admin`, `service`, `auditor`. Keys with optional expiry. |
+| **Multi-language** | spaCy supports IT, EN, DE, FR, ES, PT. Models installable from the admin UI. |
+| **Admin UI** | React + Tailwind. Full management of all components without touching code. |
 
 ---
 
-## Installazione
+## Installation
 
-### Prerequisiti
+### Prerequisites
 
 - Docker + Docker Compose
-- `make` (pre-installato su macOS/Linux)
+- `make` (pre-installed on macOS/Linux)
 
-### Avvio rapido
+### Quick start
 
 ```bash
-make setup   # crea .env da .env.example
-# → modifica .env: imposta PII_ENCRYPTION_KEY e PII_ADMIN_INITIAL_KEY
-make start   # build immagini + avvia servizi + esegue migrazioni
+make setup   # creates .env from .env.example
+# → edit .env: set PII_ENCRYPTION_KEY and PII_ADMIN_INITIAL_KEY
+make start   # build images + start services + run migrations
 ```
 
-Genera la chiave di cifratura:
+Generate the Fernet encryption key:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-| Servizio | URL default |
-|----------|-------------|
+| Service | Default URL |
+|---------|-------------|
 | REST API | http://localhost:15500 |
 | API Docs (Swagger) | http://localhost:15500/docs |
 | Admin UI | http://localhost:15501 |
 | PostgreSQL | localhost:15433 |
 
-Al primo avvio l'API crea automaticamente una chiave admin da `PII_ADMIN_INITIAL_KEY`. Aprire http://localhost:15501 e inserirla.
+On first boot the API creates an admin key from `PII_ADMIN_INITIAL_KEY`. Open http://localhost:15501 and enter it.
 
-### Variabili d'ambiente
+### Environment variables
 
-| Variabile | Default | Descrizione |
-|-----------|---------|-------------|
-| `PII_ENCRYPTION_KEY` | — | **Obbligatoria.** Chiave Fernet per cifrare i mapping PII |
-| `PII_ADMIN_INITIAL_KEY` | — | **Obbligatoria.** Chiave admin iniziale |
-| `PII_DB_PASSWORD` | — | Password PostgreSQL |
-| `PII_DB_NAME` | `pii_protect` | Nome database |
-| `PII_DB_PORT` | `15433` | Porta PostgreSQL sull'host |
-| `PII_API_PORT` | `15500` | Porta API sull'host |
-| `PII_UI_PORT` | `15501` | Porta Admin UI sull'host |
-| `PII_MAPPING_TTL_DAYS` | `30` | Giorni prima che i mapping scadano |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PII_ENCRYPTION_KEY` | — | **Required.** Fernet key for encrypting PII mappings |
+| `PII_ADMIN_INITIAL_KEY` | — | **Required.** Initial admin API key |
+| `PII_DB_PASSWORD` | — | PostgreSQL password |
+| `PII_DB_NAME` | `pii_protect` | Database name |
+| `PII_DB_PORT` | `15433` | PostgreSQL host port |
+| `PII_API_PORT` | `15500` | API host port |
+| `PII_UI_PORT` | `15501` | Admin UI host port |
+| `PII_MAPPING_TTL_DAYS` | `30` | Days before mappings expire |
 
 ---
 
-## Screenshot
+## Screenshots
 
 ### Dashboard
 ![Dashboard](doc/img/dashboard.png)
@@ -96,7 +96,7 @@ Al primo avvio l'API crea automaticamente una chiave admin da `PII_ADMIN_INITIAL
 ### PII Type Registry
 ![PII Type Registry](doc/img/pii_types_registry.png)
 
-### Context Types — policy editor inline
+### Context Types — inline policy editor
 ![Context Types](doc/img/context_types_policy_editor.png)
 
 ### API Keys
