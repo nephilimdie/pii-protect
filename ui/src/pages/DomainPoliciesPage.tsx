@@ -1,5 +1,5 @@
 import { useEffect, useState, FormEvent } from "react";
-import { Plus, Trash2, Pencil, Shield, Eye } from "lucide-react";
+import { Plus, Trash2, Pencil, Shield, Eye, Wand2 } from "lucide-react";
 import { api, DomainPolicy, PiiTypeItem } from "../lib/api";
 
 interface Props { isAdmin: boolean; }
@@ -16,9 +16,11 @@ export function DomainPoliciesPage({ isAdmin }: Props) {
   const [error, setError]       = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editDomain, setEditDomain] = useState<string | null>(null);
+  type PiiState = "protect" | "keep" | "surrogate" | null;
+
   const [form, setForm] = useState({
     domain: "", description: "",
-    protect: [] as string[], keep: [] as string[],
+    protect: [] as string[], keep: [] as string[], surrogate: [] as string[],
   });
 
   function load() {
@@ -31,11 +33,11 @@ export function DomainPoliciesPage({ isAdmin }: Props) {
   useEffect(() => { load(); }, []);
 
   function openAdd() {
-    setForm({ domain: "", description: "", protect: [], keep: [] });
+    setForm({ domain: "", description: "", protect: [], keep: [], surrogate: [] });
     setEditDomain(null); setShowModal(true);
   }
   function openEdit(p: DomainPolicy) {
-    setForm({ domain: p.domain, description: p.description ?? "", protect: [...p.protect_types], keep: [...p.keep_types] });
+    setForm({ domain: p.domain, description: p.description ?? "", protect: [...p.protect_types], keep: [...p.keep_types], surrogate: [...(p.surrogate_types ?? [])] });
     setEditDomain(p.domain); setShowModal(true);
   }
 
@@ -44,7 +46,7 @@ export function DomainPoliciesPage({ isAdmin }: Props) {
     const target = editDomain ?? form.domain;
     try {
       await api.upsertDomainPolicy(target, {
-        protect_types: form.protect, keep_types: form.keep, description: form.description || undefined,
+        protect_types: form.protect, keep_types: form.keep, surrogate_types: form.surrogate, description: form.description || undefined,
       });
       setShowModal(false); load();
     } catch { setError("Save failed."); }
@@ -56,13 +58,16 @@ export function DomainPoliciesPage({ isAdmin }: Props) {
     catch { setError("Delete failed."); }
   }
 
-  function toggleType(list: "protect" | "keep", code: string) {
-    const other = list === "protect" ? "keep" : "protect";
-    setForm(f => ({
-      ...f,
-      [list]: f[list].includes(code) ? f[list].filter(c => c !== code) : [...f[list], code],
-      [other]: f[other].filter(c => c !== code), // remove from the other list
-    }));
+  function toggleType(list: "protect" | "keep" | "surrogate", code: string) {
+    setForm(f => {
+      const others = (["protect", "keep", "surrogate"] as const).filter(l => l !== list);
+      const isActive = f[list].includes(code);
+      return {
+        ...f,
+        [list]: isActive ? f[list].filter(c => c !== code) : [...f[list], code],
+        ...Object.fromEntries(others.map(o => [o, f[o].filter(c => c !== code)])),
+      };
+    });
   }
 
   const categories = Array.from(new Set(allTypes.map(t => t.category))).sort();
@@ -110,6 +115,11 @@ export function DomainPoliciesPage({ isAdmin }: Props) {
                     <Eye size={10} /> {t}
                   </span>
                 ))}
+                {(p.surrogate_types ?? []).map(t => (
+                  <span key={t} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                    <Wand2 size={10} /> {t}
+                  </span>
+                ))}
               </div>
             </div>
           ))}
@@ -139,32 +149,40 @@ export function DomainPoliciesPage({ isAdmin }: Props) {
               </label>
 
               <div>
-                <p className="text-xs text-slate-400 mb-2">
-                  Assegna ogni tipo PII a <span className="text-indigo-400">Protect</span> o{" "}
-                  <span className="text-emerald-400">Keep</span> (non assegnato = segue default del tipo).
-                </p>
-                <div className="flex gap-3 text-xs text-slate-500 mb-2">
-                  <span className="flex items-center gap-1"><Shield size={10} className="text-indigo-400" /> Protect — anonimizzato</span>
-                  <span className="flex items-center gap-1"><Eye size={10} className="text-emerald-400" /> Keep — lasciato nel testo</span>
+                <div className="flex gap-4 text-xs text-slate-500 mb-3">
+                  <span className="flex items-center gap-1"><Shield size={10} className="text-indigo-400" /> Nascondi</span>
+                  <span className="flex items-center gap-1"><Eye size={10} className="text-emerald-400" /> Vedi</span>
+                  <span className="flex items-center gap-1"><Wand2 size={10} className="text-amber-400" /> Faker</span>
+                  <span className="text-slate-600">· nessuno = default del tipo</span>
                 </div>
                 {categories.map(cat => (
                   <div key={cat} className="mb-3">
-                    <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">{cat}</p>
-                    <div className="flex flex-wrap gap-1">
+                    <p className="text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">{cat}</p>
+                    <div className="flex flex-wrap gap-1.5">
                       {allTypes.filter(t => t.category === cat).map(t => {
-                        const isProtect = form.protect.includes(t.code);
-                        const isKeep    = form.keep.includes(t.code);
+                        const cur = form.protect.includes(t.code) ? "protect"
+                                  : form.keep.includes(t.code)    ? "keep"
+                                  : form.surrogate.includes(t.code)? "surrogate"
+                                  : null;
                         return (
-                          <div key={t.code} className="flex rounded overflow-hidden border border-slate-700 text-xs">
-                            <button type="button"
-                              onClick={() => toggleType("protect", t.code)}
-                              className={`px-2 py-1 ${isProtect ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-700"}`}>
-                              <Shield size={9} className="inline mr-0.5" />{t.code}
+                          <div key={t.code} className="flex items-stretch rounded-lg overflow-hidden border border-slate-700 text-xs">
+                            <span className={`px-2.5 py-1.5 font-mono font-semibold flex items-center select-none transition-colors ${
+                              cur === "protect"  ? "bg-indigo-600/30 text-indigo-300" :
+                              cur === "keep"     ? "bg-emerald-600/30 text-emerald-300" :
+                              cur === "surrogate"? "bg-amber-600/30 text-amber-300" :
+                              "bg-slate-900 text-slate-400"
+                            }`}>{t.code}</span>
+                            <button type="button" onClick={() => toggleType("protect", t.code)} title="Nascondi"
+                              className={`px-2 py-1.5 border-l border-slate-700 transition-colors ${cur === "protect" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-500 hover:text-indigo-400 hover:bg-slate-800"}`}>
+                              <Shield size={10} />
                             </button>
-                            <button type="button"
-                              onClick={() => toggleType("keep", t.code)}
-                              className={`px-2 py-1 border-l border-slate-700 ${isKeep ? "bg-emerald-700 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-700"}`}>
-                              <Eye size={9} />
+                            <button type="button" onClick={() => toggleType("keep", t.code)} title="Vedi"
+                              className={`px-2 py-1.5 border-l border-slate-700 transition-colors ${cur === "keep" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-500 hover:text-emerald-400 hover:bg-slate-800"}`}>
+                              <Eye size={10} />
+                            </button>
+                            <button type="button" onClick={() => toggleType("surrogate", t.code)} title="Faker"
+                              className={`px-2 py-1.5 border-l border-slate-700 transition-colors ${cur === "surrogate" ? "bg-amber-600 text-white" : "bg-slate-900 text-slate-500 hover:text-amber-400 hover:bg-slate-800"}`}>
+                              <Wand2 size={10} />
                             </button>
                           </div>
                         );

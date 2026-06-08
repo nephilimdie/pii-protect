@@ -14,10 +14,12 @@ class PolicyService:
         context_type: str | None,
         inline_policy: dict | None = None,
         inline_mode: str | None = None,
-    ) -> tuple[set[str] | None, set[str], str]:
+    ) -> tuple[set[str] | None, set[str], set[str], str]:
         """
-        Returns (protect_types, keep_types, mode).
-        protect_types = None means "protect everything not in keep_types".
+        Returns (protect_types, keep_types, surrogate_types, mode).
+        protect_types = None means "protect everything not in keep/surrogate".
+        surrogate_types = types that are always replaced with a fake value,
+                          regardless of the context-level mode.
         """
         # 1. Load context_type config from DB
         ct_domain = None
@@ -34,29 +36,34 @@ class PolicyService:
         # 2. Load domain policy
         protect: set[str] | None = None
         keep: set[str] = set()
+        surrogate: set[str] = set()
         if ct_domain:
             result = await self._db.execute(
-                text("SELECT protect_types, keep_types FROM domain_policies WHERE domain = :d AND enabled = true"),
+                text("SELECT protect_types, keep_types, surrogate_types FROM domain_policies WHERE domain = :d AND enabled = true"),
                 {"d": ct_domain},
             )
             row = result.fetchone()
             if row:
-                protect_list = row[0] if isinstance(row[0], list) else json.loads(row[0] or "[]")
-                keep_list    = row[1] if isinstance(row[1], list) else json.loads(row[1] or "[]")
-                protect = set(protect_list)
-                keep    = set(keep_list)
+                protect_list   = row[0] if isinstance(row[0], list) else json.loads(row[0] or "[]")
+                keep_list      = row[1] if isinstance(row[1], list) else json.loads(row[1] or "[]")
+                surrogate_list = row[2] if isinstance(row[2], list) else json.loads(row[2] or "[]")
+                protect   = set(protect_list)
+                keep      = set(keep_list)
+                surrogate = set(surrogate_list)
 
         # 3. Inline policy overrides domain policy
         if inline_policy:
             if "protect" in inline_policy:
-                protect = set(inline_policy["protect"])
+                protect   = set(inline_policy["protect"])
             if "keep" in inline_policy:
-                keep = set(inline_policy.get("keep", []))
+                keep      = set(inline_policy.get("keep", []))
+            if "surrogate" in inline_policy:
+                surrogate = set(inline_policy.get("surrogate", []))
 
         # 4. Mode: inline > context_type default > "tag"
         mode = inline_mode or ct_mode or "tag"
 
-        return protect, keep, mode
+        return protect, keep, surrogate, mode
 
     async def get_faker_strategy(self, pii_type: str) -> str | None:
         result = await self._db.execute(

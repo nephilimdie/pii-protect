@@ -15,6 +15,7 @@ class PolicyResponse(BaseModel):
     domain: str
     protect_types: list[str]
     keep_types: list[str]
+    surrogate_types: list[str]
     description: str | None
     enabled: bool
     updated_at: datetime
@@ -23,15 +24,18 @@ class PolicyResponse(BaseModel):
 class UpsertPolicyRequest(BaseModel):
     protect_types: list[str]
     keep_types: list[str]
+    surrogate_types: list[str] = []
     description: str | None = None
     enabled: bool = True
 
 
 def _row(mapping) -> dict:
     d = dict(mapping)
-    for k in ("protect_types", "keep_types"):
+    for k in ("protect_types", "keep_types", "surrogate_types"):
         if isinstance(d.get(k), str):
             d[k] = json.loads(d[k])
+        elif d.get(k) is None:
+            d[k] = []
     return d
 
 
@@ -41,7 +45,7 @@ async def list_policies(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text(
-        "SELECT domain, protect_types, keep_types, description, enabled, updated_at"
+        "SELECT domain, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
         " FROM domain_policies ORDER BY domain"
     ))
     return [_row(r._mapping) for r in result.fetchall()]
@@ -56,22 +60,24 @@ async def upsert_policy(
 ):
     result = await db.execute(
         text(
-            "INSERT INTO domain_policies (domain, protect_types, keep_types, description, enabled, updated_at)"
-            " VALUES (:domain, CAST(:protect AS jsonb), CAST(:keep AS jsonb), :desc, :enabled, now())"
+            "INSERT INTO domain_policies (domain, protect_types, keep_types, surrogate_types, description, enabled, updated_at)"
+            " VALUES (:domain, CAST(:protect AS jsonb), CAST(:keep AS jsonb), CAST(:surrogate AS jsonb), :desc, :enabled, now())"
             " ON CONFLICT (domain) DO UPDATE SET"
-            "   protect_types = CAST(:protect AS jsonb),"
-            "   keep_types    = CAST(:keep AS jsonb),"
-            "   description   = :desc,"
-            "   enabled       = :enabled,"
-            "   updated_at    = now()"
-            " RETURNING domain, protect_types, keep_types, description, enabled, updated_at"
+            "   protect_types   = CAST(:protect AS jsonb),"
+            "   keep_types      = CAST(:keep AS jsonb),"
+            "   surrogate_types = CAST(:surrogate AS jsonb),"
+            "   description     = :desc,"
+            "   enabled         = :enabled,"
+            "   updated_at      = now()"
+            " RETURNING domain, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
         ),
         {
             "domain": domain,
-            "protect": json.dumps(body.protect_types),
-            "keep": json.dumps(body.keep_types),
-            "desc": body.description,
-            "enabled": body.enabled,
+            "protect":   json.dumps(body.protect_types),
+            "keep":      json.dumps(body.keep_types),
+            "surrogate": json.dumps(body.surrogate_types),
+            "desc":      body.description,
+            "enabled":   body.enabled,
         },
     )
     await db.commit()

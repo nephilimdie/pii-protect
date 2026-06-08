@@ -72,7 +72,7 @@ async def anonymize(
 
     # Resolve policy and mode from context_type + inline overrides
     policy_svc = PolicyService(db)
-    protect_types, keep_types, resolved_mode = await policy_svc.resolve(
+    protect_types, keep_types, surrogate_types, resolved_mode = await policy_svc.resolve(
         context_type=body.context_type,
         inline_policy=body.policy,
         inline_mode=body.mode,
@@ -93,17 +93,22 @@ async def anonymize(
     # Filter entities by policy
     entities_to_protect = []
     for entity in result.entities:
-        if keep_types and entity.pii_type in keep_types:
+        if entity.pii_type in keep_types:
             continue  # keep as-is in text
-        if protect_types is not None and entity.pii_type not in protect_types:
-            continue  # not in protect list → skip
+        if protect_types is not None and entity.pii_type not in protect_types and entity.pii_type not in surrogate_types:
+            continue  # not in any protect/surrogate list → skip
         entities_to_protect.append(entity)
 
     # Build replacements
-    if resolved_mode == "surrogate":
+    # surrogate_types are always fake regardless of context-level mode
+    needs_surrogate = resolved_mode == "surrogate" or bool(surrogate_types)
+    if needs_surrogate:
         surrogate_svc = SurrogateService(db)
         replacement_map: dict[str, str] = {}
         for entity in entities_to_protect:
+            # per-type override: surrogate_types always get fake value; others follow mode
+            if resolved_mode != "surrogate" and entity.pii_type not in surrogate_types:
+                continue  # tag mode, not a per-type surrogate → skip (handled as tag below)
             key = entity.text.lower().strip()
             if key not in replacement_map:
                 strategy = await policy_svc.get_faker_strategy(entity.pii_type)
@@ -111,7 +116,7 @@ async def anonymize(
                     body.context_id, entity.text, entity.pii_type, strategy
                 )
     else:
-        replacement_map = None  # tag mode handled in anonymizer
+        replacement_map = None  # tag mode handled in _apply_replacements
 
     # Apply replacements to text
     final_text, mappings = _apply_replacements(

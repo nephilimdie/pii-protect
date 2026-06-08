@@ -225,6 +225,7 @@ export interface DomainPolicy {
   domain: string;
   protect_types: string[];
   keep_types: string[];
+  surrogate_types: string[];
   description: string | null;
   enabled: boolean;
   updated_at: string;
@@ -336,7 +337,7 @@ export const api = {
 
   // Domain Policies
   listDomainPolicies: () => get<DomainPolicy[]>("/v1/admin/domain-policies"),
-  upsertDomainPolicy: (domain: string, body: { protect_types: string[]; keep_types: string[]; description?: string; enabled?: boolean }) =>
+  upsertDomainPolicy: (domain: string, body: { protect_types: string[]; keep_types: string[]; surrogate_types?: string[]; description?: string; enabled?: boolean }) =>
     put<DomainPolicy>(`/v1/admin/domain-policies/${domain}`, body),
   deleteDomainPolicy: (domain: string) => del(`/v1/admin/domain-policies/${domain}`),
 

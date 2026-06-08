@@ -1,5 +1,5 @@
 import { useEffect, useState, FormEvent } from "react";
-import { Plus, Trash2, Pencil, Check, X, ChevronDown, Shield, Eye, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Pencil, Check, X, ChevronDown, Shield, Eye, Wand2, AlertCircle } from "lucide-react";
 import { api, ContextTypeItem, DomainPolicy, PiiTypeItem } from "../lib/api";
 
 interface Props { isAdmin: boolean; }
@@ -26,35 +26,41 @@ interface PolicyEditorProps {
   onError: (msg: string) => void;
 }
 
+type PiiState = "protect" | "keep" | "surrogate" | null;
+
 function PolicyEditor({ contextCode, domain, policies, allTypes, onSaved, onError }: PolicyEditorProps) {
   const linked = policies.find(p => p.domain === domain) ?? null;
 
-  const [protect, setProtect] = useState<string[]>(linked?.protect_types ?? []);
-  const [keep,    setKeep]    = useState<string[]>(linked?.keep_types    ?? []);
-  const [saving,  setSaving]  = useState(false);
+  const buildState = (p: DomainPolicy | null): Record<string, PiiState> => {
+    const s: Record<string, PiiState> = {};
+    for (const c of (p?.protect_types   ?? [])) s[c] = "protect";
+    for (const c of (p?.keep_types      ?? [])) s[c] = "keep";
+    for (const c of (p?.surrogate_types ?? [])) s[c] = "surrogate";
+    return s;
+  };
 
-  useEffect(() => {
-    setProtect(linked?.protect_types ?? []);
-    setKeep(linked?.keep_types    ?? []);
-  }, [domain]);
+  const [state,  setState]  = useState<Record<string, PiiState>>(buildState(linked));
+  const [saving, setSaving] = useState(false);
 
-  function toggle(list: "protect" | "keep", code: string) {
-    const other = list === "protect" ? "keep" : "protect";
-    const setList  = list  === "protect" ? setProtect : setKeep;
-    const setOther = other === "protect" ? setProtect : setKeep;
-    setList(prev  => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
-    setOther(prev => prev.filter(c => c !== code));
+  useEffect(() => { setState(buildState(linked)); }, [domain]);
+
+  function toggle(code: string, next: PiiState) {
+    setState(prev => ({ ...prev, [code]: prev[code] === next ? null : next }));
   }
 
   async function save() {
     if (!domain) return;
     setSaving(true);
+    const protect   = Object.entries(state).filter(([, v]) => v === "protect").map(([k]) => k);
+    const keep      = Object.entries(state).filter(([, v]) => v === "keep").map(([k]) => k);
+    const surrogate = Object.entries(state).filter(([, v]) => v === "surrogate").map(([k]) => k);
     try {
       await api.upsertDomainPolicy(domain, {
-        protect_types: protect,
-        keep_types: keep,
+        protect_types:   protect,
+        keep_types:      keep,
+        surrogate_types: surrogate,
         description: linked?.description ?? undefined,
-        enabled: linked?.enabled ?? true,
+        enabled:     linked?.enabled ?? true,
       });
       onSaved();
     } catch {
@@ -77,36 +83,49 @@ function PolicyEditor({ contextCode, domain, policies, allTypes, onSaved, onErro
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-3 text-xs text-slate-500">
+      <div className="flex items-center gap-4 mb-3 text-xs text-slate-500">
         <span className="font-semibold text-slate-400">Policy: <span className="font-mono text-indigo-400">{domain}</span></span>
-        <span className="flex items-center gap-1"><Shield size={10} className="text-indigo-400" /> Protect — anonimizzato</span>
-        <span className="flex items-center gap-1"><Eye size={10} className="text-emerald-400" /> Keep — lasciato nel testo</span>
-        <span className="text-slate-600">· non assegnato = default del tipo</span>
+        <span className="flex items-center gap-1"><Shield size={10} className="text-indigo-400" /> Nascondi</span>
+        <span className="flex items-center gap-1"><Eye size={10} className="text-emerald-400" /> Vedi</span>
+        <span className="flex items-center gap-1"><Wand2 size={10} className="text-amber-400" /> Faker</span>
+        <span className="text-slate-600">· nessuno = default del tipo</span>
       </div>
 
       <div className="flex flex-col gap-3 mb-4">
         {categories.map(cat => (
           <div key={cat}>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{cat}</p>
-            <div className="flex flex-wrap gap-1">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{cat}</p>
+            <div className="flex flex-wrap gap-1.5">
               {allTypes.filter(t => t.category === cat).map(t => {
-                const isProtect = protect.includes(t.code);
-                const isKeep    = keep.includes(t.code);
+                const cur = state[t.code] ?? null;
                 return (
-                  <div key={t.code} className="flex rounded overflow-hidden border border-slate-700 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => toggle("protect", t.code)}
-                      title="Protect (anonimizza)"
-                      className={`px-2 py-1 transition-colors ${isProtect ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-700"}`}>
-                      <Shield size={9} className="inline mr-0.5" />{t.code}
+                  <div key={t.code} className="flex items-stretch rounded-lg overflow-hidden border border-slate-700 text-xs">
+                    {/* label */}
+                    <span className={`px-2.5 py-1.5 font-mono font-semibold text-xs flex items-center select-none transition-colors ${
+                      cur === "protect"  ? "bg-indigo-600/30 text-indigo-300" :
+                      cur === "keep"     ? "bg-emerald-600/30 text-emerald-300" :
+                      cur === "surrogate"? "bg-amber-600/30 text-amber-300" :
+                      "bg-slate-900 text-slate-400"
+                    }`}>
+                      {t.code}
+                    </span>
+                    {/* protect */}
+                    <button type="button" onClick={() => toggle(t.code, "protect")}
+                      title="Nascondi (anonimizza)"
+                      className={`px-2 py-1.5 border-l border-slate-700 transition-colors ${cur === "protect" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-500 hover:text-indigo-400 hover:bg-slate-800"}`}>
+                      <Shield size={10} />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => toggle("keep", t.code)}
-                      title="Keep (lascia nel testo)"
-                      className={`px-2 py-1 border-l border-slate-700 transition-colors ${isKeep ? "bg-emerald-700 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-700"}`}>
-                      <Eye size={9} />
+                    {/* keep */}
+                    <button type="button" onClick={() => toggle(t.code, "keep")}
+                      title="Vedi (lascia nel testo)"
+                      className={`px-2 py-1.5 border-l border-slate-700 transition-colors ${cur === "keep" ? "bg-emerald-600 text-white" : "bg-slate-900 text-slate-500 hover:text-emerald-400 hover:bg-slate-800"}`}>
+                      <Eye size={10} />
+                    </button>
+                    {/* surrogate */}
+                    <button type="button" onClick={() => toggle(t.code, "surrogate")}
+                      title="Faker (sostituisci con valore realistico)"
+                      className={`px-2 py-1.5 border-l border-slate-700 transition-colors ${cur === "surrogate" ? "bg-amber-600 text-white" : "bg-slate-900 text-slate-500 hover:text-amber-400 hover:bg-slate-800"}`}>
+                      <Wand2 size={10} />
                     </button>
                   </div>
                 );
@@ -116,9 +135,7 @@ function PolicyEditor({ contextCode, domain, policies, allTypes, onSaved, onErro
         ))}
       </div>
 
-      <button
-        onClick={save}
-        disabled={saving}
+      <button onClick={save} disabled={saving}
         className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded px-4 py-1.5 text-xs font-medium">
         {saving ? "Salvo…" : "Salva policy"}
       </button>
