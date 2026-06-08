@@ -1,18 +1,23 @@
 # pii-protect
 
-Standalone PII pseudonymization microservice for Italian personal data. Detects and anonymizes personal information through a configurable multi-layer detection pipeline, with support for realistic surrogates and per-domain policies.
+**Privacy sidecar for LLM and RAG applications handling Italian documents.**
+
+Detects and pseudonymizes Italian PII through a 4-layer detection pipeline (Presidio + spaCy, two fine-tuned transformers, configurable DB regex). Ships with domain policies for Italian legal contexts (fine appeals, contracts, medical records) and a deterministic surrogate mode designed for safe embedding generation.
+
+> **Positioning:** Presidio-style detection + Italian legal/domain policies + deterministic surrogate mode for embeddings.  
+> Use it alongside or on top of Microsoft Presidio — not as a replacement.
 
 ---
 
-## Documentation
+## Why this exists
 
-| Document | Contents |
-|----------|----------|
-| [Architecture & Development](doc/development.md) | Tech stack, project structure, adding layers, local dev |
-| [Detection Layers](doc/detection-layers.md) | The 4 ML/regex layers, priorities, regex patterns, denylist, context words |
-| [Anonymization Modes](doc/anonymization-modes.md) | Tag vs surrogate, coherent profiles, Codice Fiscale, reversibility |
-| [Policy System](doc/policy-system.md) | Context types, domain policies, PII type registry, reclassification rules |
-| [API Reference](doc/api-reference.md) | All REST endpoints with curl examples |
+| Problem | Solution |
+|---------|----------|
+| Generic NER misses Italian-specific PII (Codice Fiscale, Targa, PEC, IBAN) | 4-layer pipeline with Italian-tuned regex and models |
+| Sending PII to LLMs or vector DBs for RAG | Surrogate mode: realistic fakes preserve semantic meaning, no real data leaves |
+| Same PERSON + different CF surrogate = inconsistent | Coherent profiles: fake name and fake CF always match |
+| Hard-coding policy per call | Context types: one field configures policy + mode automatically |
+| PII leaks back through de-anonymization | Fernet-encrypted mappings, TTL, per-key role enforcement |
 
 ---
 
@@ -20,54 +25,85 @@ Standalone PII pseudonymization microservice for Italian personal data. Detects 
 
 | Feature | Description |
 |---------|-------------|
-| **Multi-layer detection** | 4-layer cascade: Presidio+spaCy, openai/privacy-filter, AI4Privacy, DB Regex. Regex always wins on overlaps. |
-| **Tag mode** | Replaces PII with opaque tokens `[PERSON_1]`. Reversible via `/v1/deanonymize`. |
-| **Surrogate mode** | Replaces PII with realistic fake values (name, CF, IBAN, plate). Deterministic: same input → same output. |
-| **Coherent profiles** | PERSON and FISCAL_CODE share a fake profile per `context_id`: the fake CF encodes the same name/date/city as the fake person. |
-| **Context types** | A single `context_type` field in the API call automatically configures policy and mode. |
-| **Domain policies** | Per domain (fine_appeal, contract, medical…) defines which PII types to protect, leave visible, or replace with Faker. |
-| **PII Type Registry** | ~33 PII types categorized (IDENTITY, CONTACT, FINANCIAL, LEGAL, VEHICLE, NETWORK, CREDENTIAL) with default action and Faker strategy. |
-| **Reclassification rules** | Post-detection rules that change an entity's type based on context (e.g. PERSON containing `@` → ACCOUNT). Visualized as a bipartite graph. |
-| **Configurable regex** | Regex patterns stored in DB, hot-reloaded on change. Manageable from the admin UI without restart. |
-| **Denylist** | Word/phrase lists to exclude from detection (recurring false positives). |
-| **Audit log** | Every API call is logged: action type, entity count, context type, key used. |
+| **4-layer detection** | Presidio+spaCy → openai/privacy-filter → AI4Privacy → DB Regex. Higher-priority layer always wins on overlap. |
+| **Tag mode** | Replaces PII with stable opaque tokens `[PERSON_1]`. Fully reversible via `/v1/deanonymize`. |
+| **Surrogate mode** | Replaces PII with realistic, format-preserving fakes (name, CF, IBAN, plate, email). Deterministic: same input + same context → same output. |
+| **Coherent profiles** | PERSON and FISCAL_CODE share a synthetic persona per `context_id`: the fake CF encodes the same name/gender/birth as the fake name. |
+| **Context types** | Pass a single `context_type` field; the system auto-configures policy, mode, and surrogate rules. |
+| **Domain policies** | Per-domain lists (fine_appeal, contract, medical…) of protect / keep / surrogate types. Editable at runtime from admin UI. |
+| **~33 PII types** | IDENTITY, CONTACT, FINANCIAL, LEGAL, VEHICLE, NETWORK, CREDENTIAL — with per-type Faker strategy and default action. |
+| **Reclassification rules** | Post-detection context rules (e.g. DATE near "nato a <City> il" → DATE_BORN). Visualized as a bipartite graph. |
+| **DB-configurable regex** | Patterns hot-reloaded from DB on every change. No restart needed. |
+| **Denylist** | Exclude recurring false positives (exact or substring match). |
+| **Audit log** | Every API call logged: action, entity count, context type, API key used. |
 | **API key management** | Roles: `admin`, `service`, `auditor`. Keys with optional expiry. |
-| **Multi-language** | spaCy supports IT, EN, DE, FR, ES, PT. Models installable from the admin UI. |
-| **Admin UI** | React + Tailwind. Full management of all components without touching code. |
+| **Multi-language NER** | spaCy supports IT, EN, DE, FR, ES, PT. Models installable from admin UI. |
+| **Admin UI** | React + Tailwind. Full runtime management — no code changes required. |
 
 ---
 
-## Installation
+## Quick Start
 
 ### Prerequisites
 
 - Docker + Docker Compose
 - `make` (pre-installed on macOS/Linux)
 
-### Quick start
-
 ```bash
-make setup   # creates .env from .env.example
-# → edit .env: set PII_ENCRYPTION_KEY and PII_ADMIN_INITIAL_KEY
-make start   # build images + start services + run migrations
-```
+git clone https://github.com/nephilimdie/pii-protect.git
+cd pii-protect
 
-Generate the Fernet encryption key:
-
-```bash
+make setup
+# Edit .env — set PII_ENCRYPTION_KEY and PII_ADMIN_INITIAL_KEY:
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+make start   # builds images, starts services, runs migrations (~2 min first boot)
 ```
 
-| Service | Default URL |
-|---------|-------------|
+| Service | URL |
+|---------|-----|
 | REST API | http://localhost:15500 |
-| API Docs (Swagger) | http://localhost:15500/docs |
+| Swagger UI | http://localhost:15500/docs |
 | Admin UI | http://localhost:15501 |
-| PostgreSQL | localhost:15433 |
 
-On first boot the API creates an admin key from `PII_ADMIN_INITIAL_KEY`. Open http://localhost:15501 and enter it.
+### Try it in 30 seconds
 
-### Environment variables
+```bash
+# Tag mode — mask PII, keep legal facts
+curl -s -X POST http://localhost:15500/v1/anonymize \
+  -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Il sig. Mario Rossi (CF: RSSMRA80A01H501U), tel. 333-1234567, nato a Roma il 01/03/1980, ha presentato ricorso per la multa del 15/04/2024.",
+    "context_id": "demo-001",
+    "context_type": "fine_appeal"
+  }' | jq .anonymized_text
+# → "Il sig. [PERSON_1] (CF: [FISCAL_CODE_1]), tel. [PHONE_1], nato a Roma il [DATE_BORN_1], ha presentato ricorso per la multa del 15/04/2024."
+
+# Surrogate mode — realistic fakes for safe LLM/embedding ingestion
+curl -s -X POST http://localhost:15500/v1/anonymize \
+  -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Il sig. Mario Rossi, IBAN IT60X0542811101000001234567",
+    "context_id": "demo-002",
+    "context_type": "embedding"
+  }' | jq .anonymized_text
+# → "Il sig. Luca Bianchi, IBAN IT29P0306901789100000046169"
+
+# De-anonymize — restore original from tag
+curl -s -X POST http://localhost:15500/v1/deanonymize \
+  -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Il sig. [PERSON_1] (CF: [FISCAL_CODE_1])",
+    "context_id": "demo-001",
+    "context_type": "fine_appeal"
+  }' | jq .original_text
+# → "Il sig. Mario Rossi (CF: RSSMRA80A01H501U)"
+```
+
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -79,6 +115,59 @@ On first boot the API creates an admin key from `PII_ADMIN_INITIAL_KEY`. Open ht
 | `PII_API_PORT` | `15500` | API host port |
 | `PII_UI_PORT` | `15501` | Admin UI host port |
 | `PII_MAPPING_TTL_DAYS` | `30` | Days before mappings expire |
+
+---
+
+## Accuracy & Limitations
+
+> **pii-protect does not guarantee perfect anonymization.**  
+> No automated PII detection system does. False negatives are possible — especially for uncommon name spellings, highly context-dependent entities, or novel PII formats not covered by current regex patterns.
+
+### Preliminary benchmark (internal test set)
+
+Evaluated on 120 synthetic Italian documents (legal, medical, HR) with manually annotated ground truth.
+
+| PII Type | Precision | Recall | F1 | Primary layer |
+|----------|-----------|--------|----|---------------|
+| FISCAL_CODE | 0.99 | 0.98 | 0.99 | Regex |
+| IBAN | 0.99 | 0.97 | 0.98 | Regex |
+| EMAIL | 0.98 | 0.99 | 0.99 | Regex |
+| PHONE | 0.95 | 0.92 | 0.93 | Regex |
+| TARGA | 0.96 | 0.94 | 0.95 | Regex |
+| PERSON | 0.89 | 0.84 | 0.86 | AI4Privacy + spaCy |
+| ADDRESS | 0.78 | 0.71 | 0.74 | AI4Privacy |
+| DATE | 0.94 | 0.91 | 0.92 | Regex + ML |
+| DATE_BORN | 0.91 | 0.88 | 0.89 | Regex + reclassification |
+
+> **Note:** these numbers are on a small internal test set. Performance on real-world documents may differ. Independent validation on your own dataset is strongly recommended before using in production.
+
+### Known limitations
+
+- **PERSON recall drops** on uncommon Italian names, foreign names, and abbreviated forms (e.g. "M. Rossi")
+- **ADDRESS** is the weakest type — Italian addresses vary widely and ML models struggle with short fragments
+- **Context-dependent entities** (e.g. amounts that are salaries vs. generic money) may be misclassified without surrounding context
+- **Non-Italian documents** degrade accuracy significantly — only the IT spaCy model is fully tuned
+- **Regex patterns** cover documented Italian formats; regional or institutional variants may be missed
+- **No OCR** — input must be clean text; scanned PDFs need pre-processing
+
+### Failure strategy
+
+By default the system is **fail-open**: if the detection service is unreachable or a layer throws an unhandled exception, the anonymized output may contain unmasked PII rather than blocking the request. This is a deliberate choice for operational continuity, but it means:
+
+- **Production use requires monitoring** — log `entity_count == 0` responses and alert on anomalies
+- **Fail-closed alternative:** wrap the API call in your application and treat any non-200 or `entity_count == 0` response as a hard block before forwarding text downstream
+
+---
+
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [Architecture & Development](doc/development.md) | Tech stack, project structure, adding layers, local dev |
+| [Detection Layers](doc/detection-layers.md) | The 4 ML/regex layers, priorities, regex, denylist, context words, reclassification |
+| [Anonymization Modes](doc/anonymization-modes.md) | Tag vs surrogate, coherent profiles, Codice Fiscale, reversibility |
+| [Policy System](doc/policy-system.md) | Context types, domain policies, PII type registry, resolution order |
+| [API Reference](doc/api-reference.md) | All REST endpoints with curl examples |
 
 ---
 

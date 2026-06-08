@@ -171,7 +171,7 @@ docker compose exec api pytest
 
 ## Design Principles
 
-- **Fail-open** — if the service is unreachable, the calling app continues rather than blocking
+- **Caller-controlled failure strategy** — the default is fail-open (unmasked text passes through on error) to avoid blocking the calling app; implement fail-closed in your wrapper by treating any non-200 or `entity_count == 0` as a hard stop
 - **Regex always wins** — fixed score 1.0, overwrites any ML overlap
 - **Zero vendor lock-in** — all models run locally, no data leaves the infrastructure
 - **Operator-controlled** — patterns, policies, rules, and API keys manageable at runtime from the admin UI
