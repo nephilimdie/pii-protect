@@ -13,6 +13,7 @@ from app.mapping.repository import MappingRepository
 from app.audit.audit_service import AuditService
 from app.surrogates.policy_service import PolicyService
 from app.surrogates.surrogate_service import SurrogateService
+from app.surrogates.generators import language_to_locale
 from app.detection.entities import MappingEntry
 
 router = APIRouter()
@@ -69,6 +70,7 @@ async def anonymize(
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
 ):
     lang = body.language or getattr(request.app.state, "default_language", "it")
+    locale = language_to_locale(lang)
 
     # Resolve policy and mode from context_type + inline overrides
     policy_svc = PolicyService(db)
@@ -103,7 +105,7 @@ async def anonymize(
     # surrogate_types are always fake regardless of context-level mode
     needs_surrogate = resolved_mode == "surrogate" or bool(surrogate_types)
     if needs_surrogate:
-        surrogate_svc = SurrogateService(db)
+        surrogate_svc = SurrogateService(db, locale=locale)
         replacement_map: dict[str, str] = {}
         for entity in entities_to_protect:
             # per-type override: surrogate_types always get fake value; others follow mode

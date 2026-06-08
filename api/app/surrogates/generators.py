@@ -10,13 +10,47 @@ from faker import Faker
 from app.surrogates.cf_codec import CITIES, BELFIORE, encode as cf_encode
 
 
+# ── Locale support ────────────────────────────────────────────────────────────
+
+LANGUAGE_TO_LOCALE: dict[str, str] = {
+    "it": "it_IT",
+    "en": "en_US",
+    "en_gb": "en_GB",
+    "de": "de_DE",
+    "fr": "fr_FR",
+    "es": "es_ES",
+    "pt": "pt_PT",
+    "nl": "nl_NL",
+    "pl": "pl_PL",
+    "cs": "cs_CZ",
+    "ro": "ro_RO",
+    "hu": "hu_HU",
+}
+
+_LEGAL_SUFFIXES: dict[str, list[str]] = {
+    "it_IT": ["S.r.l.", "S.p.A.", "S.n.c.", "S.a.s.", "S.r.l.s."],
+    "en_US": ["LLC", "Inc.", "Corp.", "Ltd.", "LLP"],
+    "en_GB": ["Ltd", "PLC", "LLP", "CIC"],
+    "de_DE": ["GmbH", "AG", "KG", "OHG", "GmbH & Co. KG"],
+    "fr_FR": ["SARL", "SA", "SAS", "SASU", "EURL"],
+    "es_ES": ["S.L.", "S.A.", "S.L.U.", "S.A.U."],
+    "pt_PT": ["Lda.", "S.A.", "Unipessoal Lda."],
+    "nl_NL": ["B.V.", "N.V.", "V.O.F.", "C.V."],
+    "pl_PL": ["Sp. z o.o.", "S.A.", "S.K.", "S.J."],
+}
+
+
+def language_to_locale(language: str) -> str:
+    return LANGUAGE_TO_LOCALE.get(language.lower(), "en_US")
+
+
 def _seed(real_value: str, context_id: str) -> int:
     digest = hashlib.sha256(f"{real_value}|{context_id}".encode()).hexdigest()
     return int(digest[:16], 16)
 
 
-def _faker(real_value: str, context_id: str) -> Faker:
-    f = Faker("it_IT")
+def _faker(real_value: str, context_id: str, locale: str = "it_IT") -> Faker:
+    f = Faker(locale)
     f.seed_instance(_seed(real_value, context_id))
     return f
 
@@ -27,54 +61,44 @@ def _rng(real_value: str, context_id: str) -> random.Random:
 
 # ── Per-type generators ───────────────────────────────────────────────────────
 
-def gen_person(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.name()
+def gen_person(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).name()
 
 
-def gen_email(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    # Preserve domain if present
+def gen_email(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    f = _faker(real_value, context_id, locale)
     if "@" in real_value:
         domain = real_value.split("@", 1)[1]
-        local = f.user_name()
-        return f"{local}@{domain}"
+        return f"{f.user_name()}@{domain}"
     return f.email()
 
 
-def gen_phone(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.phone_number()
+def gen_phone(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).phone_number()
 
 
-def gen_address(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.address().replace("\n", ", ")
+def gen_address(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).address().replace("\n", ", ")
 
 
-def gen_city(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.city()
+def gen_city(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).city()
 
 
-def gen_username(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.user_name()
+def gen_username(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).user_name()
 
 
-def gen_iban(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.iban()
+def gen_iban(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).iban()
 
 
-def gen_credit_card(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.credit_card_number(card_type="visa")
+def gen_credit_card(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).credit_card_number(card_type="visa")
 
 
-def gen_salary(real_value: str, context_id: str) -> str:
+def gen_salary(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
-    # Preserve rough magnitude
     try:
         digits = "".join(c for c in real_value if c.isdigit() or c in ".,")
         amount = float(digits.replace(".", "").replace(",", "."))
@@ -85,68 +109,61 @@ def gen_salary(real_value: str, context_id: str) -> str:
         return str(rng.randint(25_000, 80_000))
 
 
-def gen_date_shift(real_value: str, context_id: str) -> str:
+def gen_date_shift(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
     shift = rng.randint(30, 365)
-    # Try to preserve format
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"):
         try:
             from datetime import datetime
             d = datetime.strptime(real_value.strip(), fmt)
-            shifted = d + timedelta(days=shift)
-            return shifted.strftime(fmt)
+            return (d + timedelta(days=shift)).strftime(fmt)
         except ValueError:
             continue
-    return real_value  # fallback: keep as-is
+    return real_value
 
 
-def gen_ip(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.ipv4_private()
+def gen_ip(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).ipv4_private()
 
 
-def gen_mac(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.mac_address()
+def gen_mac(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).mac_address()
 
 
-def gen_url(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.url()
+def gen_url(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).url()
 
 
-def gen_gps(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
+def gen_gps(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    f = _faker(real_value, context_id, locale)
     return f"{f.latitude()}, {f.longitude()}"
 
 
-def gen_api_key(real_value: str, context_id: str) -> str:
+def gen_api_key(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
     chars = string.ascii_letters + string.digits
     length = len(real_value) if 16 <= len(real_value) <= 64 else 32
     return "".join(rng.choice(chars) for _ in range(length))
 
 
-def gen_password(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
+def gen_password(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    f = _faker(real_value, context_id, locale)
     return f.password(length=max(len(real_value), 12))
 
 
-def gen_targa(real_value: str, context_id: str) -> str:
+def gen_targa(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
     letters = string.ascii_uppercase
-    digits = string.digits
     return (
         rng.choice(letters) + rng.choice(letters)
-        + "".join(rng.choice(digits) for _ in range(3))
+        + "".join(rng.choice(string.digits) for _ in range(3))
         + rng.choice(letters) + rng.choice(letters)
     )
 
 
-def gen_imei(real_value: str, context_id: str) -> str:
+def gen_imei(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
     base = "".join(str(rng.randint(0, 9)) for _ in range(14))
-    # Luhn check digit
     total = 0
     for i, d in enumerate(base):
         n = int(d)
@@ -155,38 +172,36 @@ def gen_imei(real_value: str, context_id: str) -> str:
             if n > 9:
                 n -= 9
         total += n
-    check = (10 - total % 10) % 10
-    return base + str(check)
+    return base + str((10 - total % 10) % 10)
 
 
-def gen_pnr(real_value: str, context_id: str) -> str:
+def gen_pnr(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
-    chars = string.ascii_uppercase + string.digits
-    return "".join(rng.choice(chars) for _ in range(6))
+    return "".join(rng.choice(string.ascii_uppercase + string.digits) for _ in range(6))
 
 
-def gen_alphanumeric(real_value: str, context_id: str, length: int | None = None) -> str:
+def gen_alphanumeric(real_value: str, context_id: str, locale: str = "it_IT", length: int | None = None) -> str:
     rng = _rng(real_value, context_id)
     n = length or max(len(real_value), 8)
-    chars = string.ascii_uppercase + string.digits
-    return "".join(rng.choice(chars) for _ in range(n))
+    return "".join(rng.choice(string.ascii_uppercase + string.digits) for _ in range(n))
 
 
-def gen_bic(real_value: str, context_id: str) -> str:
+def gen_bic(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
     bank = "".join(rng.choice(string.ascii_uppercase) for _ in range(4))
-    country = rng.choice(["IT", "DE", "FR", "ES", "NL", "BE", "AT"])
+    country = rng.choice(["IT", "DE", "FR", "ES", "NL", "BE", "AT", "GB", "PL", "PT"])
     loc = "".join(rng.choice(string.ascii_uppercase + string.digits) for _ in range(2))
     branch = "".join(rng.choice(string.ascii_uppercase + string.digits) for _ in range(3))
     return bank + country + loc + branch
 
 
-def gen_passport(real_value: str, context_id: str) -> str:
+def gen_passport(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
-    return "IT" + "".join(str(rng.randint(0, 9)) for _ in range(7))
+    country = locale.split("_")[-1] if "_" in locale else "XX"
+    return country + "".join(str(rng.randint(0, 9)) for _ in range(7))
 
 
-def gen_identity_card(real_value: str, context_id: str) -> str:
+def gen_identity_card(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
     letters = string.ascii_uppercase
     return (
@@ -196,53 +211,46 @@ def gen_identity_card(real_value: str, context_id: str) -> str:
     )
 
 
-def gen_driver_license(real_value: str, context_id: str) -> str:
+def gen_driver_license(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
     return "".join(rng.choice(string.ascii_uppercase + string.digits) for _ in range(10))
 
 
-def gen_health_card(real_value: str, context_id: str) -> str:
+def gen_health_card(real_value: str, context_id: str, locale: str = "it_IT") -> str:
     rng = _rng(real_value, context_id)
-    # Italian tessera sanitaria starts with TEAM + CF (16 chars) + expiry
     prefix = "".join(rng.choice(string.ascii_uppercase) for _ in range(2))
     number = "".join(str(rng.randint(0, 9)) for _ in range(13))
     return prefix + number
 
 
-def gen_organization(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    return f.company()
+def gen_organization(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    return _faker(real_value, context_id, locale).company()
 
 
-def gen_company(real_value: str, context_id: str) -> str:
-    f = _faker(real_value, context_id)
-    suffixes = ["S.r.l.", "S.p.A.", "S.n.c.", "S.a.s.", "S.r.l.s."]
+def gen_company(real_value: str, context_id: str, locale: str = "it_IT") -> str:
+    f = _faker(real_value, context_id, locale)
     rng = _rng(real_value, context_id)
+    suffixes = _LEGAL_SUFFIXES.get(locale, _LEGAL_SUFFIXES["en_US"])
     return f.company() + " " + rng.choice(suffixes)
 
 
-# ── Profile-based CF generator ────────────────────────────────────────────────
+# ── Profile-based CF generator (Italian-specific) ─────────────────────────────
 
-def gen_fake_profile(real_key: str, context_id: str, gender_hint: str = "M") -> dict:
-    """Generate a coherent fake persona. Returns dict with all profile fields."""
-    f = _faker(real_key, context_id)
+def gen_fake_profile(real_key: str, context_id: str, gender_hint: str = "M", locale: str = "it_IT") -> dict:
+    """Generate a coherent fake persona. CF fields are Italian-specific."""
+    f = _faker(real_key, context_id, locale)
     rng = _rng(real_key, context_id)
 
     gender = gender_hint if gender_hint in ("M", "F") else rng.choice(["M", "F"])
 
-    if gender == "M":
-        first = f.first_name_male()
-    else:
-        first = f.first_name_female()
+    first = f.first_name_male() if gender == "M" else f.first_name_female()
     last = f.last_name()
 
-    # Birth date: realistic range, slightly randomised
     year = rng.randint(1950, 2000)
     month = rng.randint(1, 12)
     import calendar
     max_day = calendar.monthrange(year, month)[1]
-    day = rng.randint(1, max_day)
-    birth = date(year, month, day)
+    birth = date(year, month, rng.randint(1, max_day))
 
     city = rng.choice(list(CITIES))
     belfiore = BELFIORE[city]
@@ -288,15 +296,15 @@ _STRATEGY_MAP: dict[str, callable] = {
     "health_card":    gen_health_card,
     "organization":   gen_organization,
     "company":        gen_company,
-    "practice_id":    lambda v, c: gen_alphanumeric(v, c, 8),
-    "policy_number":  lambda v, c: gen_alphanumeric(v, c, 10),
-    "loyalty_id":     lambda v, c: gen_alphanumeric(v, c, 10),
-    "ticket_id":      lambda v, c: gen_alphanumeric(v, c, 8),
+    "practice_id":    lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 8),
+    "policy_number":  lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 10),
+    "loyalty_id":     lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 10),
+    "ticket_id":      lambda v, c, l="it_IT": gen_alphanumeric(v, c, l, 8),
 }
 
 
-def generate(strategy: str, real_value: str, context_id: str) -> str:
+def generate(strategy: str, real_value: str, context_id: str, locale: str = "it_IT") -> str:
     fn = _STRATEGY_MAP.get(strategy)
     if fn is None:
-        return gen_alphanumeric(real_value, context_id)
-    return fn(real_value, context_id)
+        return gen_alphanumeric(real_value, context_id, locale)
+    return fn(real_value, context_id, locale)

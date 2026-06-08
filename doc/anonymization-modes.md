@@ -42,17 +42,35 @@ Output: "Il sig. Luca Bianchi, CF: BNCLCU85M12F205X, IBAN: IT29P0306901789100000
 | `ADDRESS` | Fake Italian address |
 | `CITY_BORN` | Fake Italian city |
 
+### Locale-aware generation
+
+Surrogates adapt to the document language via the `language` field in the request:
+
+| `language` | Faker locale | Names | Phone format | Company suffixes |
+|------------|-------------|-------|--------------|-----------------|
+| `it` | `it_IT` | Italian | +39 | S.r.l., S.p.A. |
+| `en` | `en_US` | American | +1 | LLC, Inc., Corp. |
+| `de` | `de_DE` | German | +49 | GmbH, AG, KG |
+| `fr` | `fr_FR` | French | +33 | SARL, SA, SAS |
+| `es` | `es_ES` | Spanish | +34 | S.L., S.A. |
+| `pt` | `pt_PT` | Portuguese | +351 | Lda., S.A. |
+| `nl` | `nl_NL` | Dutch | +31 | B.V., N.V. |
+
+Format-neutral types (IBAN, IP, MAC, URL, IMEI, PNR) are generated identically regardless of locale.
+
+> **Note:** FISCAL_CODE and TARGA are Italian-specific PII types. Their surrogate generators always use Italian format — these types are not expected to appear in non-Italian documents.
+
 ### Determinism
 
 Surrogates are generated deterministically:
 
 ```python
 seed = int(sha256(f"{real_value}|{context_id}".encode()).hexdigest()[:16], 16)
-faker = Faker("it_IT")
+faker = Faker(locale)  # derived from the request's language field
 faker.seed_instance(seed)
 ```
 
-Same `real_value` + same `context_id` → same surrogate, always. No DB read is needed to generate: the DB acts as a cache to support de-anonymization.
+Same `real_value` + same `context_id` + same `language` → same surrogate, always. No DB read is needed to generate: the DB acts as a cache to support de-anonymization.
 
 ---
 

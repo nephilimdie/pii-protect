@@ -1,10 +1,10 @@
 # pii-protect
 
-**Privacy sidecar for LLM and RAG applications handling Italian documents.**
+**Privacy sidecar for LLM and RAG applications.** Multilingual, policy-driven, surrogate-ready.
 
-Detects and pseudonymizes Italian PII through a 4-layer detection pipeline (Presidio + spaCy, two fine-tuned transformers, configurable DB regex). Ships with domain policies for Italian legal contexts (fine appeals, contracts, medical records) and a deterministic surrogate mode designed for safe embedding generation.
+Detects and pseudonymizes PII through a 4-layer detection pipeline (Presidio + spaCy, two fine-tuned transformers, configurable DB regex). Ships with domain policies tuned for Italian legal contexts (fine appeals, contracts, medical records) and grows naturally to other languages and locales: spaCy NER supports IT, EN, DE, FR, ES, PT; Faker surrogates adapt to the document locale.
 
-> **Positioning:** Presidio-style detection + Italian legal/domain policies + deterministic surrogate mode for embeddings.  
+> **Positioning:** Presidio-style detection + domain-aware policies + deterministic surrogate mode for embeddings.  
 > Use it alongside or on top of Microsoft Presidio — not as a replacement.
 
 ---
@@ -37,7 +37,7 @@ Detects and pseudonymizes Italian PII through a 4-layer detection pipeline (Pres
 | **Denylist** | Exclude recurring false positives (exact or substring match). |
 | **Audit log** | Every API call logged: action, entity count, context type, API key used. |
 | **API key management** | Roles: `admin`, `service`, `auditor`. Keys with optional expiry. |
-| **Multi-language NER** | spaCy supports IT, EN, DE, FR, ES, PT. Models installable from admin UI. |
+| **Multi-language** | spaCy NER supports IT, EN, DE, FR, ES, PT. Faker surrogates adapt locale per request (`language` field). Models installable from admin UI. |
 | **Admin UI** | React + Tailwind. Full runtime management — no code changes required. |
 
 ---
@@ -87,9 +87,23 @@ curl -s -X POST http://localhost:15500/v1/anonymize \
   -d '{
     "text": "Il sig. Mario Rossi, IBAN IT60X0542811101000001234567",
     "context_id": "demo-002",
-    "context_type": "embedding"
+    "context_type": "embedding",
+    "language": "it"
   }' | jq .anonymized_text
 # → "Il sig. Luca Bianchi, IBAN IT29P0306901789100000046169"
+
+# English document — surrogates adapt to en_US locale
+curl -s -X POST http://localhost:15500/v1/anonymize \
+  -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "John Smith, email: j.smith@acme.com, phone: +1-555-0123",
+    "context_id": "demo-003",
+    "context_type": "embedding",
+    "language": "en",
+    "mode": "surrogate"
+  }' | jq .anonymized_text
+# → "Michael Johnson, email: m.johnson@acme.com, phone: +1-555-9847"
 
 # De-anonymize — restore original from tag
 curl -s -X POST http://localhost:15500/v1/deanonymize \

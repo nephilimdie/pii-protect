@@ -20,8 +20,9 @@ def _normalise_name(name: str) -> str:
 
 
 class SurrogateService:
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: AsyncSession, locale: str = "it_IT") -> None:
         self._db = db
+        self._locale = locale
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ class SurrogateService:
         if cached:
             return cached
 
-        fake = generators.generate(strategy or "alphanumeric", real_value, context_id)
+        fake = generators.generate(strategy or "alphanumeric", real_value, context_id, self._locale)
         await self._store(context_id, pii_type, rh, fake)
         return fake
 
@@ -91,7 +92,7 @@ class SurrogateService:
         if row:
             return dict(row._mapping)
 
-        profile = generators.gen_fake_profile(key, context_id, gender_hint)
+        profile = generators.gen_fake_profile(key, context_id, gender_hint, self._locale)
         await self._db.execute(
             text(
                 "INSERT INTO surrogate_profiles"
