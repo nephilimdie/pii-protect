@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  unit-tests:
+    name: Unit tests & coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: api/requirements-dev.txt
+
+      - name: Install dev dependencies
+        run: pip install -r api/requirements-dev.txt
+
+      - name: Run unit tests with coverage
+        working-directory: api
+        run: |
+          pytest tests/unit/ \
+            --cov=app/surrogates \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: api/coverage.xml
+          flags: unit
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff==0.6.9
+
+      - name: Run ruff
+        run: ruff check api/app/surrogates/ api/app/detection/entities.py
+
+  e2e:
+    name: E2E tests (Docker)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from example
+        run: |
+          cp .env.example .env
+          # Generate a throwaway Fernet key for CI
+          python3 -c "
+          import base64, os
+          key = base64.urlsafe_b64encode(os.urandom(32))
+          print('PII_ENCRYPTION_KEY=' + key.decode())
+          " >> .env
+          echo "PII_ADMIN_INITIAL_KEY=ci-test-admin-key-do-not-use" >> .env
+
+      - name: Build and start services
+        run: docker compose up --build -d
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:15500/health > /dev/null 2>&1; then
+              echo "API is healthy"
+              exit 0
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 10
+          done
+          echo "API did not become healthy in time"
+          docker compose logs api
+          exit 1
+
+      - name: Install test dependencies
+        run: pip install -r api/requirements-dev.txt
+
+      - name: Run E2E tests
+        env:
+          PII_API_URL: http://localhost:15500
+          PII_ADMIN_KEY: ci-test-admin-key-do-not-use
+        run: pytest tests/e2e/ -v --timeout=60
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs

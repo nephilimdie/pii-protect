@@ -1,5 +1,10 @@
 # pii-protect
 
+[![CI](https://github.com/nephilimdie/pii-protect/actions/workflows/ci.yml/badge.svg)](https://github.com/nephilimdie/pii-protect/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/nephilimdie/pii-protect/branch/master/graph/badge.svg)](https://codecov.io/gh/nephilimdie/pii-protect)
+[![Release](https://img.shields.io/github/v/release/nephilimdie/pii-protect)](https://github.com/nephilimdie/pii-protect/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 **Privacy sidecar for LLM and RAG applications.** Multilingual, policy-driven, surrogate-ready.
 
 Detects and pseudonymizes PII through a 4-layer detection pipeline (Presidio + spaCy, two fine-tuned transformers, configurable DB regex). Ships with domain policies tuned for Italian legal contexts (fine appeals, contracts, medical records) and grows naturally to other languages and locales: spaCy NER supports IT, EN, DE, FR, ES, PT; Faker surrogates adapt to the document locale.
@@ -182,6 +187,10 @@ By default the system is **fail-open**: if the detection service is unreachable 
 | [Anonymization Modes](doc/anonymization-modes.md) | Tag vs surrogate, coherent profiles, Codice Fiscale, reversibility |
 | [Policy System](doc/policy-system.md) | Context types, domain policies, PII type registry, resolution order |
 | [API Reference](doc/api-reference.md) | All REST endpoints with curl examples |
+| [Real-World Examples](doc/examples.md) | End-to-end curl examples: fine appeal, medical, contracts, LLM embedding |
+| [vs Microsoft Presidio](doc/comparison-presidio.md) | Honest feature comparison and architecture relationship |
+| [Roadmap](doc/roadmap.md) | Planned features for v0.2, v0.3, v0.4, v0.5 |
+| [Changelog](CHANGELOG.md) | Release history |
 
 ---
 
@@ -210,6 +219,18 @@ By default the system is **fail-open**: if the detection service is unreachable 
 
 ### Stats
 ![Stats](doc/img/stats.png)
+
+---
+
+## Who uses this?
+
+pii-protect is early-stage. If you are using it in production or a pilot project, open an issue or PR to be listed here — it helps others evaluate the project.
+
+Use cases we are aware of:
+
+- Italian legal document processing pipelines (fine appeals, contracts)
+- RAG applications that need to embed Italian public-sector documents without exposing PII
+- LLM-assisted drafting tools where user documents pass through an external model
 
 ---
 
