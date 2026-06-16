@@ -29,7 +29,7 @@ X-Api-Key: $PII_API_KEY
 
 ### `POST /v1/anonymize`
 
-Detects PII in the text and replaces it with tokens or surrogates.
+Detects PII in the text and replaces it with tokens or surrogates. By default, raw entity values are not returned.
 
 ```bash
 curl -X POST http://localhost:15500/v1/anonymize \
@@ -53,6 +53,8 @@ curl -X POST http://localhost:15500/v1/anonymize \
 | `mode` | `tag`\|`surrogate` | — | Overrides the context type default |
 | `policy` | object | — | `{"protect":[...], "keep":[...], "surrogate":[...]}` |
 | `detection_mode` | `permissive`\|`strict` | — | Detection sensitivity (default: `permissive`) |
+| `include_entity_values` | boolean | — | Return raw entity values only for authorized admin inspection (`false` by default) |
+| `dry_run` | boolean | — | Detect and score without persisting mappings (`false` by default) |
 
 **Response:**
 
@@ -62,8 +64,37 @@ curl -X POST http://localhost:15500/v1/anonymize \
   "entity_count": 3,
   "pii_types_found": ["PERSON", "FISCAL_CODE", "PHONE"],
   "mode": "tag",
+  "dry_run": false,
   "entities": [
-    { "type": "PERSON", "value": "Mario Rossi", "start": 8, "end": 19, "confidence": 0.99, "replacement": "[PERSON_1]" }
+    { "type": "PERSON", "start": 8, "end": 19, "confidence": 0.99, "replacement": "[PERSON_1]" }
+  ]
+}
+```
+
+### `POST /v1/anonymize/batch`
+
+Processes multiple texts in one call. Each item inherits the top-level context unless overridden at item level.
+
+```bash
+curl -X POST http://localhost:15500/v1/anonymize/batch \
+  -H "X-Api-Key: $PII_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "context_type": "fine_appeal",
+    "items": [
+      { "id": "doc-1", "text": "Mario Rossi, CF RSSMRA80A01H501U" },
+      { "id": "doc-2", "text": "Giulia Bianchi, email giulia@example.com" }
+    ]
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "items": [
+    { "id": "doc-1", "status": "processed", "output": "[PERSON_1], CF [FISCAL_CODE_1]" },
+    { "id": "doc-2", "status": "processed", "output": "[PERSON_1], email [EMAIL_1]" }
   ]
 }
 ```
@@ -121,6 +152,8 @@ Deletes expired mappings (older than `PII_MAPPING_TTL_DAYS` days).
 | `PUT` | `/v1/admin/context-types/{code}` | Update |
 | `DELETE` | `/v1/admin/context-types/{code}` | Delete |
 
+Context type responses include a monotonically increasing `version` field that changes on every update.
+
 ### Domain Policies
 
 | Method | Path | Description |
@@ -128,6 +161,8 @@ Deletes expired mappings (older than `PII_MAPPING_TTL_DAYS` days).
 | `GET` | `/v1/admin/domain-policies` | List all policies |
 | `PUT` | `/v1/admin/domain-policies/{domain}` | Create or update (upsert) |
 | `DELETE` | `/v1/admin/domain-policies/{domain}` | Delete |
+
+Domain policy responses also include a `version` field that increments on every upsert.
 
 ### PII Type Registry
 

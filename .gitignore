@@ -63,3 +63,5 @@ audit-results/*
 audit-git-security.sh
 FEATURING-FOR-PROD.md
 .gitleaks.toml
+benchmark/results/italian_legal_v0.2.0.json
+benchmark/results/italian_legal_v0.2.0.md

@@ -30,6 +30,8 @@ Each type has:
 | `reversible` | Whether the surrogate can be de-anonymized |
 | `enabled` | Enable/disable the type globally |
 
+Policy changes are versioned at the context type and domain policy layers so operators can trace which configuration was active when a request was processed.
+
 ![PII Type Registry](img/pii_types_registry.png)
 
 Manage from **Policy → PII Types**.

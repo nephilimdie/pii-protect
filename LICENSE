@@ -1,21 +1,64 @@
-MIT License
+pii-protect Source Available License
 
 Copyright (c) 2026 Stefano Bassetto
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Permission is granted to any person or organization that obtains a copy of this
+software and associated documentation files (the "Software") to use, copy,
+modify, and deploy the Software for its own lawful business purposes, including
+internal use and use inside the licensee's own products and services, subject
+to the conditions below.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Conditions
+
+1. Permitted use.
+   You may run the Software for your own organization, for your own workloads,
+   and inside your own applications and services, including commercial use.
+   Contractors may use the Software on your behalf under confidentiality
+   obligations.
+
+2. No competing managed service.
+   You may not offer, operate, resell, sublicense, or make available the
+   Software, or a substantially similar service based on the Software, as a
+   hosted, managed, shared, white-label, outsourced, or multi-tenant
+   anonymization, de-identification, redaction, or pii-protection service for
+   third parties.
+
+3. No standalone redistribution of the core product.
+   You may not sell, sublicense, lease, or distribute the Software itself as a
+   standalone product, toolkit, appliance, or service offering without a
+   separate written agreement from the copyright holder.
+
+4. Plugins and extensions are allowed.
+   You may build, use, and distribute plugins, extensions, and integrations
+   that interact with the Software through published interfaces. Ownership of
+   those plugins remains with their respective authors. This license does not
+   grant any right to bundle or redistribute the core Software beyond the rights
+   stated in this license.
+
+5. Reserved cloud and premium rights.
+   The copyright holder may offer hosted services, cloud-only features,
+   commercial modules, paid support, or marketplace services under separate
+   terms. Those offerings are not licensed to you by this license unless
+   expressly stated otherwise.
+
+6. Attribution.
+   All copies or substantial portions of the Software must retain this license
+   notice.
+
+7. No trademark rights.
+   This license does not grant permission to use any trademarks, service marks,
+   or logos associated with the Software.
+
+8. Termination.
+   Any use of the Software in breach of this license automatically terminates
+   the rights granted above. If you stop the violating use and cure the breach,
+   the copyright holder may restore your rights at its discretion.
+
+Disclaimer
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR OR COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

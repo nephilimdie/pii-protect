@@ -14,6 +14,7 @@ help:
 	@echo "  make migrate   run Alembic migrations"
 	@echo "  make logs      tail API logs"
 	@echo "  make test      run pytest inside the API container"
+	@echo "  make benchmark run the benchmark command"
 	@echo "  make clean     stop + remove volumes (destructive)"
 	@echo ""
 
@@ -70,6 +71,10 @@ update:
 .PHONY: test
 test:
 	docker compose exec api pytest
+
+.PHONY: benchmark
+benchmark:
+	docker compose exec api python -m app.reporting.benchmark
 
 .PHONY: test-e2e
 test-e2e:

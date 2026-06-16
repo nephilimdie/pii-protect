@@ -1,0 +1,67 @@
+name: pii-protect-prod
+
+services:
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api
+      - ui
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
+      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY}
+      ADMIN_INITIAL_KEY: ${PII_ADMIN_INITIAL_KEY}
+      FAILURE_MODE: ${PII_FAILURE_MODE:-closed}
+      SPACY_MODEL: ${PII_SPACY_MODEL:-it_core_news_lg}
+      PRIVACY_FILTER_MODEL: ${PII_PRIVACY_FILTER_MODEL:-openai/privacy-filter}
+      AI4PRIVACY_MODEL: ${PII_AI4PRIVACY_MODEL:-Isotonic/distilbert_finetuned_ai4privacy_v2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    expose:
+      - "80"
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${PII_DB_NAME:-pii_protect}
+      POSTGRES_USER: ${PII_DB_USER:-pii_protect}
+      POSTGRES_PASSWORD: ${PII_DB_PASSWORD:-changeme_secret}
+    volumes:
+      - pii_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PII_DB_USER:-pii_protect}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pii_postgres_data:

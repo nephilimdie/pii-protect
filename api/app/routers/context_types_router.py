@@ -17,6 +17,7 @@ class ContextTypeResponse(BaseModel):
     default_mode: str
     description: str | None
     enabled: bool
+    version: int
     created_at: datetime
 
 
@@ -42,7 +43,7 @@ async def list_context_types(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text(
-        "SELECT code, display_name, domain, default_mode, description, enabled, created_at"
+        "SELECT code, display_name, domain, default_mode, description, enabled, version, created_at"
         " FROM context_types ORDER BY code"
     ))
     return [dict(r._mapping) for r in result.fetchall()]
@@ -56,10 +57,10 @@ async def create_context_type(
 ):
     result = await db.execute(
         text(
-            "INSERT INTO context_types (code, display_name, domain, default_mode, description)"
-            " VALUES (:code, :display_name, :domain, :mode, :desc)"
+            "INSERT INTO context_types (code, display_name, domain, default_mode, description, version)"
+            " VALUES (:code, :display_name, :domain, :mode, :desc, 1)"
             " ON CONFLICT (code) DO NOTHING"
-            " RETURNING code, display_name, domain, default_mode, description, enabled, created_at"
+            " RETURNING code, display_name, domain, default_mode, description, enabled, version, created_at"
         ),
         {"code": body.code, "display_name": body.display_name,
          "domain": body.domain, "mode": body.default_mode, "desc": body.description},
@@ -83,8 +84,8 @@ async def update_context_type(
         raise HTTPException(400, "no_fields")
     sets = ", ".join(f"{k} = :{k}" for k in updates)
     result = await db.execute(
-        text(f"UPDATE context_types SET {sets} WHERE code = :code"
-             " RETURNING code, display_name, domain, default_mode, description, enabled, created_at"),
+           text(f"UPDATE context_types SET {sets}, version = version + 1 WHERE code = :code"
+               " RETURNING code, display_name, domain, default_mode, description, enabled, version, created_at"),
         {"code": code, **updates},
     )
     await db.commit()

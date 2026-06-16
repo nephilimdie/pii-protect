@@ -11,13 +11,27 @@ class ApiKeyService:
     def __init__(self, db: AsyncSession):
         self._db = db
 
-    async def create(self, name: str, role: str) -> tuple[ApiKey, str]:
+    async def create(
+        self,
+        name: str,
+        role: str,
+        max_requests_per_minute: int | None = None,
+        max_requests_per_day: int | None = None,
+        max_chars_per_request: int | None = None,
+        max_chars_per_month: int | None = None,
+        expires_at: datetime | None = None,
+    ) -> tuple[ApiKey, str]:
         plain_key = secrets.token_urlsafe(32)
         key = ApiKey(
             id=uuid.uuid4(),
             name=name,
             key_hash=self._hash(plain_key),
             role=role,
+            max_requests_per_minute=max_requests_per_minute,
+            max_requests_per_day=max_requests_per_day,
+            max_chars_per_request=max_chars_per_request,
+            max_chars_per_month=max_chars_per_month,
+            expires_at=expires_at,
         )
         self._db.add(key)
         await self._db.commit()
@@ -30,6 +44,8 @@ class ApiKeyService:
         result = await self._db.execute(stmt)
         api_key = result.scalar_one_or_none()
         if api_key is None:
+            return None
+        if api_key.expires_at and api_key.expires_at <= datetime.utcnow():
             return None
         stmt = (
             update(ApiKey)

@@ -43,11 +43,11 @@ async function del(path: string, body?: unknown): Promise<void> {
 
 export interface EntityDetail {
   type: string;
-  value: string;
   start: number;
   end: number;
   confidence: number;
   replacement: string;
+  value?: string | null;
 }
 
 export interface AnonymizeResponse {
@@ -55,6 +55,8 @@ export interface AnonymizeResponse {
   entity_count: number;
   pii_types_found: string[];
   entities: EntityDetail[];
+  mode: string;
+  dry_run: boolean;
 }
 
 export interface DeanonymizeResponse {
@@ -66,6 +68,8 @@ export interface StatsResponse {
   total_tokens_created: number;
   pii_types_breakdown: Record<string, number>;
   requests_last_24h: number;
+  usage_events_total: number;
+  usage_chars_in_total: number;
 }
 
 export interface ReclassificationRule {
@@ -117,6 +121,11 @@ export interface ApiKeyItem {
   name: string;
   role: string;
   active: boolean;
+  max_requests_per_minute: number | null;
+  max_requests_per_day: number | null;
+  max_chars_per_request: number | null;
+  max_chars_per_month: number | null;
+  expires_at: string | null;
   created_at: string;
   last_used_at: string | null;
 }
@@ -126,6 +135,11 @@ export interface CreateApiKeyResponse {
   name: string;
   role: string;
   key: string;
+  max_requests_per_minute: number | null;
+  max_requests_per_day: number | null;
+  max_chars_per_request: number | null;
+  max_chars_per_month: number | null;
+  expires_at: string | null;
 }
 
 export interface ContextWordItem {
@@ -244,7 +258,7 @@ export interface ContextTypeItem {
 export const api = {
   anonymize: (
     text: string, contextId: string, contextType: string,
-    opts?: { mode?: string; policy?: { protect: string[]; keep: string[] } }
+    opts?: { mode?: string; policy?: { protect: string[]; keep: string[] }; include_entity_values?: boolean; dry_run?: boolean }
   ) =>
     post<AnonymizeResponse>("/v1/anonymize", {
       text, context_id: contextId, context_type: contextType, ...opts

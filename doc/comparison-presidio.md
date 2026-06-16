@@ -22,7 +22,7 @@ pii-protect is built **on top of** Presidio, not against it. Presidio handles on
 | Multi-tenant / API key roles | None | admin / service / auditor |
 | Audit log | None | Per-call log with entity counts |
 | Deployment | Python library | Docker Compose microservice |
-| License | MIT | MIT |
+| License | MIT | Source-available core license |
 
 ---
 

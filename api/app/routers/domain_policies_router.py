@@ -13,6 +13,7 @@ router = APIRouter()
 
 class PolicyResponse(BaseModel):
     domain: str
+    version: int
     protect_types: list[str]
     keep_types: list[str]
     surrogate_types: list[str]
@@ -45,7 +46,7 @@ async def list_policies(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text(
-        "SELECT domain, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
+        "SELECT domain, version, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
         " FROM domain_policies ORDER BY domain"
     ))
     return [_row(r._mapping) for r in result.fetchall()]
@@ -60,16 +61,17 @@ async def upsert_policy(
 ):
     result = await db.execute(
         text(
-            "INSERT INTO domain_policies (domain, protect_types, keep_types, surrogate_types, description, enabled, updated_at)"
-            " VALUES (:domain, CAST(:protect AS jsonb), CAST(:keep AS jsonb), CAST(:surrogate AS jsonb), :desc, :enabled, now())"
+            "INSERT INTO domain_policies (domain, version, protect_types, keep_types, surrogate_types, description, enabled, updated_at)"
+            " VALUES (:domain, 1, CAST(:protect AS jsonb), CAST(:keep AS jsonb), CAST(:surrogate AS jsonb), :desc, :enabled, now())"
             " ON CONFLICT (domain) DO UPDATE SET"
+            "   version         = domain_policies.version + 1,"
             "   protect_types   = CAST(:protect AS jsonb),"
             "   keep_types      = CAST(:keep AS jsonb),"
             "   surrogate_types = CAST(:surrogate AS jsonb),"
             "   description     = :desc,"
             "   enabled         = :enabled,"
             "   updated_at      = now()"
-            " RETURNING domain, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
+            " RETURNING domain, version, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
         ),
         {
             "domain": domain,

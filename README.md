@@ -3,7 +3,7 @@
 [![CI](https://github.com/nephilimdie/pii-protect/actions/workflows/ci.yml/badge.svg)](https://github.com/nephilimdie/pii-protect/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/nephilimdie/pii-protect/branch/master/graph/badge.svg)](https://codecov.io/gh/nephilimdie/pii-protect)
 [![Release](https://img.shields.io/github/v/release/nephilimdie/pii-protect)](https://github.com/nephilimdie/pii-protect/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![License](https://img.shields.io/badge/License-Source%20Available-blue.svg)](./LICENSE)
 
 **Privacy sidecar for LLM and RAG applications.** Multilingual, policy-driven, surrogate-ready.
 
@@ -134,6 +134,7 @@ curl -s -X POST http://localhost:15500/v1/deanonymize \
 | `PII_API_PORT` | `15500` | API host port |
 | `PII_UI_PORT` | `15501` | Admin UI host port |
 | `PII_MAPPING_TTL_DAYS` | `30` | Days before mappings expire |
+| `PII_FAILURE_MODE` | `closed` | Fail-closed by default; set `open` only if you explicitly accept degraded protection |
 
 ---
 
@@ -171,10 +172,10 @@ Evaluated on 120 synthetic Italian documents (legal, medical, HR) with manually 
 
 ### Failure strategy
 
-By default the system is **fail-open**: if the detection service is unreachable or a layer throws an unhandled exception, the anonymized output may contain unmasked PII rather than blocking the request. This is a deliberate choice for operational continuity, but it means:
+By default the system is **fail-closed**: if detection cannot complete safely, the request is blocked instead of returning potentially unsafe output. This is the recommended production posture because it prevents accidental leakage when a dependency is degraded.
 
-- **Production use requires monitoring** — log `entity_count == 0` responses and alert on anomalies
-- **Fail-closed alternative:** wrap the API call in your application and treat any non-200 or `entity_count == 0` response as a hard block before forwarding text downstream
+- **Operational override:** set `PII_FAILURE_MODE=open` only if your workflow can tolerate degraded protection and you have explicit downstream controls.
+- **Monitoring:** alert on any 5xx response from anonymize/deanonymize and on repeated empty detections, because both can indicate configuration or model problems.
 
 ---
 
@@ -190,6 +191,12 @@ By default the system is **fail-open**: if the detection service is unreachable 
 | [Real-World Examples](doc/examples.md) | End-to-end curl examples: fine appeal, medical, contracts, LLM embedding |
 | [vs Microsoft Presidio](doc/comparison-presidio.md) | Honest feature comparison and architecture relationship |
 | [Roadmap](doc/roadmap.md) | Planned features for v0.2, v0.3, v0.4, v0.5 |
+| [Licensing Model](LICENSING.md) | Core license, allowed use, and reserved cloud rights |
+| [Plugins](PLUGINS.md) | Plugin strategy and author expectations |
+| [Marketplace Principles](MARKETPLACE.md) | Future marketplace rules and publisher expectations |
+| [Security Policy](SECURITY.md) | Vulnerability reporting and security expectations |
+| [Privacy Policy](PRIVACY.md) | Data handling, telemetry, and user privacy posture |
+| [Data Retention](DATA_RETENTION.md) | Retention periods for mappings, audit logs, and usage events |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ---
@@ -236,5 +243,5 @@ Use cases we are aware of:
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).  
+Source-available core license — see [LICENSE](./LICENSE). Hosted services, premium modules, and future marketplace operations may be offered under separate terms.  
 Copyright © 2026 Stefano Bassetto.

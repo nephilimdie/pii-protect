@@ -41,6 +41,15 @@ class CleanupResponse(BaseModel):
     deleted_count: int
 
 
+class StatsResponse(BaseModel):
+    total_anonymizations: int
+    total_tokens_created: int
+    pii_types_breakdown: dict[str, int]
+    requests_last_24h: int
+    usage_events_total: int
+    usage_chars_in_total: int
+
+
 class BulkDeleteRequest(BaseModel):
     ids: list[uuid.UUID]
 
@@ -61,7 +70,7 @@ class MappingListResponse(BaseModel):
     page: int
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=StatsResponse)
 async def get_stats(
     api_key: ApiKey = Depends(require_auditor),
     db: AsyncSession = Depends(get_db),
