@@ -15,6 +15,7 @@ class AuditService:
         context_id: str | None = None,
         pii_types_found: list[str] | None = None,
         char_count: int | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         entry = AuditLog(
             id=uuid.uuid4(),
@@ -23,6 +24,7 @@ class AuditService:
             context_id=context_id,
             pii_types_found=pii_types_found,
             char_count=char_count,
+            tenant_id=tenant_id,
         )
         self._db.add(entry)
         await self._db.commit()

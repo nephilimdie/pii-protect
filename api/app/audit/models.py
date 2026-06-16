@@ -11,6 +11,7 @@ class AuditLog(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     api_key_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     action: Mapped[str | None] = mapped_column(String(50), nullable=True)
     context_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pii_types_found: Mapped[list | None] = mapped_column(JSON, nullable=True)

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.identity.dependencies import require_service
+from app.identity.tenant import get_tenant_id
 from app.identity.models import ApiKey
 from app.config import settings
 from app.detection.detector_registry import DetectorRegistry
@@ -115,8 +116,9 @@ async def anonymize(
     api_key: ApiKey = Depends(require_service),
     db: AsyncSession = Depends(get_db),
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
-    return await _process_anonymization(body, request, api_key, db, anonymizer)
+    return await _process_anonymization(body, request, api_key, db, anonymizer, tenant_id)
 
 
 @router.post("/anonymize/batch", response_model=BatchAnonymizeResponse)
@@ -126,6 +128,7 @@ async def anonymize_batch(
     api_key: ApiKey = Depends(require_service),
     db: AsyncSession = Depends(get_db),
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     if len(body.items) > settings.batch_max_items:
         raise HTTPException(
@@ -148,7 +151,7 @@ async def anonymize_batch(
                 "policy": item.policy or body.policy,
                 "dry_run": body.dry_run if item.dry_run is None else item.dry_run,
             })
-            response = await _process_anonymization(item_body, request, api_key, db, anonymizer)
+            response = await _process_anonymization(item_body, request, api_key, db, anonymizer, tenant_id)
             results.append(
                 BatchItemResult(
                     id=item.id,
@@ -168,6 +171,7 @@ async def _process_anonymization(
     api_key: ApiKey,
     db: AsyncSession,
     anonymizer: PiiAnonymizer,
+    tenant_id: str | None = None,
 ) -> AnonymizeResponse:
     lang = body.language or getattr(request.app.state, "default_language", "it")
     locale = language_to_locale(lang)
@@ -179,7 +183,7 @@ async def _process_anonymization(
         await usage_service.ensure_within_limits(api_key, len(body.text))
 
         # Resolve policy and mode from context_type + inline overrides
-        policy_svc = PolicyService(db)
+        policy_svc = PolicyService(db, tenant_id=tenant_id)
         policy = await policy_svc.resolve(
             context_type=body.context_type,
             inline_policy=body.policy,
@@ -257,6 +261,7 @@ async def _process_anonymization(
             context_id=body.context_id,
             pii_types_found=pii_types,
             char_count=len(body.text),
+            tenant_id=tenant_id,
         )
 
         policy_hash = policy["policy_hash"]

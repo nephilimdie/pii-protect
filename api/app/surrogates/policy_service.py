@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class PolicyService:
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: AsyncSession, tenant_id: str | None = None) -> None:
         self._db = db
+        self._tenant_id = tenant_id
 
     async def resolve(
         self,
@@ -21,16 +22,25 @@ class PolicyService:
         protect_types = None means "protect everything not in keep/surrogate".
         surrogate_types = types that are always replaced with a fake value,
                           regardless of the context-level mode.
+
+        When tenant_id is set (cloud mode), policy and context lookups are
+        scoped to that tenant. When None (self-hosted), behaviour is unchanged.
         """
         # 1. Load context_type config from DB
         ct_domain = None
         ct_mode = "tag"
         ct_version = 1
         if context_type:
-            result = await self._db.execute(
-                text("SELECT domain, default_mode, version FROM context_types WHERE code = :c AND enabled = true"),
-                {"c": context_type},
-            )
+            if self._tenant_id is not None:
+                result = await self._db.execute(
+                    text("SELECT domain, default_mode, version FROM context_types WHERE code = :c AND enabled = true AND tenant_id = :t"),
+                    {"c": context_type, "t": self._tenant_id},
+                )
+            else:
+                result = await self._db.execute(
+                    text("SELECT domain, default_mode, version FROM context_types WHERE code = :c AND enabled = true AND tenant_id IS NULL"),
+                    {"c": context_type},
+                )
             row = result.fetchone()
             if row:
                 ct_domain, ct_mode, ct_version = row[0], row[1], row[2]
@@ -41,10 +51,16 @@ class PolicyService:
         surrogate: set[str] = set()
         domain_version = 1
         if ct_domain:
-            result = await self._db.execute(
-                text("SELECT protect_types, keep_types, surrogate_types, version FROM domain_policies WHERE domain = :d AND enabled = true"),
-                {"d": ct_domain},
-            )
+            if self._tenant_id is not None:
+                result = await self._db.execute(
+                    text("SELECT protect_types, keep_types, surrogate_types, version FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id = :t"),
+                    {"d": ct_domain, "t": self._tenant_id},
+                )
+            else:
+                result = await self._db.execute(
+                    text("SELECT protect_types, keep_types, surrogate_types, version FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id IS NULL"),
+                    {"d": ct_domain},
+                )
             row = result.fetchone()
             if row:
                 protect_list   = row[0] if isinstance(row[0], list) else json.loads(row[0] or "[]")

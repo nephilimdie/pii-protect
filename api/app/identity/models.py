@@ -14,6 +14,7 @@ class ApiKey(Base):
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tenant_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     max_requests_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_requests_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_requests_per_day: Mapped[int | None] = mapped_column(Integer, nullable=True)

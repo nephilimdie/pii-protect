@@ -21,6 +21,7 @@ class ApiKeyService:
         max_chars_per_request: int | None = None,
         max_chars_per_month: int | None = None,
         expires_at: datetime | None = None,
+        tenant_id: str | None = None,
     ) -> tuple[ApiKey, str]:
         plain_key = secrets.token_urlsafe(32)
         key = ApiKey(
@@ -28,6 +29,7 @@ class ApiKeyService:
             name=name,
             key_hash=self._hash(plain_key),
             role=role,
+            tenant_id=tenant_id,
             max_requests_per_minute=max_requests_per_minute,
             max_requests_per_hour=max_requests_per_hour,
             max_requests_per_day=max_requests_per_day,
