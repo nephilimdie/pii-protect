@@ -13,6 +13,11 @@ services:
       - ./docker/nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
       - ./docker/nginx/certs:/etc/nginx/certs:ro
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   api:
     build:
@@ -25,12 +30,15 @@ services:
       ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY}
       ADMIN_INITIAL_KEY: ${PII_ADMIN_INITIAL_KEY}
       FAILURE_MODE: ${PII_FAILURE_MODE:-closed}
+      BATCH_MAX_ITEMS: ${PII_BATCH_MAX_ITEMS:-50}
       SPACY_MODEL: ${PII_SPACY_MODEL:-it_core_news_lg}
       PRIVACY_FILTER_MODEL: ${PII_PRIVACY_FILTER_MODEL:-openai/privacy-filter}
       AI4PRIVACY_MODEL: ${PII_AI4PRIVACY_MODEL:-Isotonic/distilbert_finetuned_ai4privacy_v2}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -38,6 +46,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   ui:
     build:
@@ -46,6 +59,54 @@ services:
     expose:
       - "80"
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backup:
+    image: postgres:17-alpine
+    environment:
+      PGPASSWORD: ${PII_DB_PASSWORD:-changeme_secret}
+      PII_DB_NAME: ${PII_DB_NAME:-pii_protect}
+      PII_DB_USER: ${PII_DB_USER:-pii_protect}
+    command: ["/bin/sh", "/scripts/backup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - pii_postgres_backups:/backups
+      - ./docker/postgres/backup.sh:/scripts/backup.sh:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  monitoring:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -62,6 +123,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pii_postgres_data:
+  pii_postgres_backups:

@@ -12,6 +12,7 @@ Set these variables before starting production:
 - `PII_ENCRYPTION_KEY`
 - `PII_ADMIN_INITIAL_KEY`
 - `PII_FAILURE_MODE=closed`
+- `PII_BATCH_MAX_ITEMS=50`
 
 ## Recommended topology
 
@@ -21,6 +22,9 @@ Use [docker-compose.prod.yml](docker-compose.prod.yml) with:
 - `api` for the FastAPI service
 - `ui` for the admin dashboard
 - `postgres` as an internal-only database
+- `redis` reserved for future queueing and caching needs
+- `backup` for scheduled database dumps
+- `monitoring` for basic runtime visibility
 
 Do not expose PostgreSQL directly on a public port.
 

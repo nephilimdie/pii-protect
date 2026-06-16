@@ -50,13 +50,22 @@ export interface EntityDetail {
   value?: string | null;
 }
 
+export interface PolicyMetadata {
+  id?: string | null;
+  version?: string | null;
+  hash?: string | null;
+}
+
 export interface AnonymizeResponse {
   anonymized_text: string;
   entity_count: number;
   pii_types_found: string[];
   entities: EntityDetail[];
   mode: string;
+  policy: PolicyMetadata;
+  safe: boolean;
   dry_run: boolean;
+  warnings?: string[] | null;
 }
 
 export interface DeanonymizeResponse {

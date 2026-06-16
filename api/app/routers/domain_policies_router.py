@@ -22,6 +22,13 @@ class PolicyResponse(BaseModel):
     updated_at: datetime
 
 
+class PolicyVersionResponse(BaseModel):
+    domain: str
+    version: int
+    snapshot: dict
+    created_at: datetime
+
+
 class UpsertPolicyRequest(BaseModel):
     protect_types: list[str]
     keep_types: list[str]
@@ -38,6 +45,15 @@ def _row(mapping) -> dict:
         elif d.get(k) is None:
             d[k] = []
     return d
+
+
+def _history_row(mapping) -> dict:
+    return {
+        "domain": mapping["domain"],
+        "version": mapping["version"],
+        "snapshot": dict(mapping["snapshot"]),
+        "created_at": mapping["created_at"],
+    }
 
 
 @router.get("/domain-policies", response_model=list[PolicyResponse])
@@ -82,8 +98,33 @@ async def upsert_policy(
             "enabled":   body.enabled,
         },
     )
+    row = _row(result.fetchone()._mapping)
+    await db.execute(
+        text(
+            "INSERT INTO domain_policy_versions (domain, version, snapshot)"
+            " VALUES (:domain, :version, CAST(:snapshot AS jsonb))"
+            " ON CONFLICT (domain, version) DO NOTHING"
+        ),
+        {"domain": row["domain"], "version": row["version"], "snapshot": json.dumps(row, default=str)},
+    )
     await db.commit()
-    return _row(result.fetchone()._mapping)
+    return row
+
+
+@router.get("/domain-policies/{domain}/versions", response_model=list[PolicyVersionResponse])
+async def list_policy_versions(
+    domain: str,
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        text(
+            "SELECT domain, version, snapshot, created_at"
+            " FROM domain_policy_versions WHERE domain = :domain ORDER BY version DESC"
+        ),
+        {"domain": domain},
+    )
+    return [_history_row(row._mapping) for row in result.fetchall()]
 
 
 @router.delete("/domain-policies/{domain}", status_code=204)

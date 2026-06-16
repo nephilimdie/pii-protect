@@ -80,6 +80,10 @@ def score(dataset: list[BenchmarkSample]) -> dict:
     return {
         "dataset": "italian_legal_v0.2.0",
         "dataset_size": len(dataset),
+        "language": "it",
+        "domain": "legal",
+        "policy_used": "fine_appeal",
+        "synthetic_dataset": True,
         "engine_versions": {
             "detector": "builtin-regex-v1",
             "anonymizer": "token-generator-v1",
@@ -107,6 +111,10 @@ def main() -> None:
         "# Benchmark Results\n\n"
         f"- Dataset: {result['dataset']}\n"
         f"- Dataset size: {result['dataset_size']}\n"
+        f"- Language: {result['language']}\n"
+        f"- Domain: {result['domain']}\n"
+        f"- Policy used: {result['policy_used']}\n"
+        f"- Synthetic dataset: {result['synthetic_dataset']}\n"
         f"- Engine versions: {json.dumps(result['engine_versions'], sort_keys=True)}\n"
         f"- Precision: {result['precision']}\n"
         f"- Recall: {result['recall']}\n"

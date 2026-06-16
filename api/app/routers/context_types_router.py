@@ -21,6 +21,22 @@ class ContextTypeResponse(BaseModel):
     created_at: datetime
 
 
+class ContextTypeVersionResponse(BaseModel):
+    code: str
+    version: int
+    snapshot: dict
+    created_at: datetime
+
+
+def _history_row(mapping) -> dict:
+    return {
+        "code": mapping["code"],
+        "version": mapping["version"],
+        "snapshot": dict(mapping["snapshot"]),
+        "created_at": mapping["created_at"],
+    }
+
+
 class CreateContextTypeRequest(BaseModel):
     code: str
     display_name: str
@@ -65,11 +81,20 @@ async def create_context_type(
         {"code": body.code, "display_name": body.display_name,
          "domain": body.domain, "mode": body.default_mode, "desc": body.description},
     )
-    await db.commit()
     row = result.fetchone()
     if not row:
         raise HTTPException(409, "code_already_exists")
-    return dict(row._mapping)
+    payload = dict(row._mapping)
+    await db.execute(
+        text(
+            "INSERT INTO context_type_versions (code, version, snapshot)"
+            " VALUES (:code, :version, CAST(:snapshot AS jsonb))"
+            " ON CONFLICT (code, version) DO NOTHING"
+        ),
+        {"code": payload["code"], "version": payload["version"], "snapshot": json.dumps(payload, default=str)},
+    )
+    await db.commit()
+    return payload
 
 
 @router.put("/context-types/{code}", response_model=ContextTypeResponse)
@@ -88,11 +113,36 @@ async def update_context_type(
                " RETURNING code, display_name, domain, default_mode, description, enabled, version, created_at"),
         {"code": code, **updates},
     )
-    await db.commit()
     row = result.fetchone()
     if not row:
         raise HTTPException(404, "not_found")
-    return dict(row._mapping)
+    payload = dict(row._mapping)
+    await db.execute(
+        text(
+            "INSERT INTO context_type_versions (code, version, snapshot)"
+            " VALUES (:code, :version, CAST(:snapshot AS jsonb))"
+            " ON CONFLICT (code, version) DO NOTHING"
+        ),
+        {"code": payload["code"], "version": payload["version"], "snapshot": json.dumps(payload, default=str)},
+    )
+    await db.commit()
+    return payload
+
+
+@router.get("/context-types/{code}/versions", response_model=list[ContextTypeVersionResponse])
+async def list_context_type_versions(
+    code: str,
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        text(
+            "SELECT code, version, snapshot, created_at"
+            " FROM context_type_versions WHERE code = :code ORDER BY version DESC"
+        ),
+        {"code": code},
+    )
+    return [_history_row(row._mapping) for row in result.fetchall()]
 
 
 @router.delete("/context-types/{code}", status_code=204)

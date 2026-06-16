@@ -135,6 +135,7 @@ curl -s -X POST http://localhost:15500/v1/deanonymize \
 | `PII_UI_PORT` | `15501` | Admin UI host port |
 | `PII_MAPPING_TTL_DAYS` | `30` | Days before mappings expire |
 | `PII_FAILURE_MODE` | `closed` | Fail-closed by default; set `open` only if you explicitly accept degraded protection |
+| `PII_BATCH_MAX_ITEMS` | `50` | Maximum items accepted by the batch anonymize endpoint |
 
 ---
 
@@ -191,6 +192,7 @@ By default the system is **fail-closed**: if detection cannot complete safely, t
 | [Real-World Examples](doc/examples.md) | End-to-end curl examples: fine appeal, medical, contracts, LLM embedding |
 | [vs Microsoft Presidio](doc/comparison-presidio.md) | Honest feature comparison and architecture relationship |
 | [Roadmap](doc/roadmap.md) | Planned features for v0.2, v0.3, v0.4, v0.5 |
+| [Benchmark Results](benchmark/results/italian_legal_v0.2.0.md) | Current reproducible synthetic benchmark output |
 | [Licensing Model](LICENSING.md) | Core license, allowed use, and reserved cloud rights |
 | [Plugins](PLUGINS.md) | Plugin strategy and author expectations |
 | [Marketplace Principles](MARKETPLACE.md) | Future marketplace rules and publisher expectations |
@@ -238,6 +240,10 @@ Use cases we are aware of:
 - Italian legal document processing pipelines (fine appeals, contracts)
 - RAG applications that need to embed Italian public-sector documents without exposing PII
 - LLM-assisted drafting tools where user documents pass through an external model
+
+## Public Demo Warning
+
+If you expose a public demo of `pii-protect`, warn users not to paste real personal data, credentials, secrets, or regulated documents into that environment.
 
 ---
 

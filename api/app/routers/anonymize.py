@@ -35,6 +35,12 @@ class AnonymizeRequest(BaseModel):
     dry_run: bool = False
 
 
+class PolicyMetadata(BaseModel):
+    id: str | None = None
+    version: str | None = None
+    hash: str | None = None
+
+
 class EntityDetail(BaseModel):
     type: str
     start: int
@@ -50,7 +56,10 @@ class AnonymizeResponse(BaseModel):
     pii_types_found: list[str]
     entities: list[EntityDetail]
     mode: str
+    policy: PolicyMetadata
+    safe: bool = True
     dry_run: bool = False
+    warnings: list[str] | None = None
 
 
 class BatchItemResult(BaseModel):
@@ -58,6 +67,26 @@ class BatchItemResult(BaseModel):
     status: str
     output: str | None = None
     error_code: str | None = None
+    warnings: list[str] | None = None
+
+
+class BatchItemRequest(BaseModel):
+    id: str
+    text: str
+    context_type: str | None = None
+    language: str | None = None
+    mode: str | None = None
+    policy: dict | None = None
+    dry_run: bool | None = None
+
+
+class BatchAnonymizeRequest(BaseModel):
+    items: list[BatchItemRequest]
+    context_type: str = "default"
+    language: str | None = None
+    mode: str | None = None
+    policy: dict | None = None
+    dry_run: bool = True
 
 
 class BatchAnonymizeResponse(BaseModel):
@@ -92,34 +121,44 @@ async def anonymize(
 
 @router.post("/anonymize/batch", response_model=BatchAnonymizeResponse)
 async def anonymize_batch(
-    body: dict,
+    body: BatchAnonymizeRequest,
     request: Request,
     api_key: ApiKey = Depends(require_service),
     db: AsyncSession = Depends(get_db),
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
 ):
-    items = body.get("items", [])
+    if len(body.items) > settings.batch_max_items:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "BATCH_LIMIT_EXCEEDED",
+                "message": f"Batch requests are limited to {settings.batch_max_items} items.",
+            },
+        )
+
     results: list[BatchItemResult] = []
-    default_context_type = body.get("context_type", "default")
-    default_language = body.get("language")
-    default_mode = body.get("mode")
-    default_policy = body.get("policy") if isinstance(body.get("policy"), dict) else None
-    default_dry_run = body.get("dry_run", True)
-    for item in items:
+    for item in body.items:
         try:
             item_body = AnonymizeRequest.model_validate({
-                "text": item.get("text", ""),
-                "context_id": item.get("id", ""),
-                "context_type": item.get("context_type", default_context_type),
-                "language": item.get("language", default_language),
-                "mode": item.get("mode", default_mode),
-                "policy": item.get("policy", default_policy),
-                "dry_run": item.get("dry_run", default_dry_run),
+                "text": item.text,
+                "context_id": item.id,
+                "context_type": item.context_type or body.context_type,
+                "language": item.language or body.language,
+                "mode": item.mode or body.mode,
+                "policy": item.policy or body.policy,
+                "dry_run": body.dry_run if item.dry_run is None else item.dry_run,
             })
             response = await _process_anonymization(item_body, request, api_key, db, anonymizer)
-            results.append(BatchItemResult(id=item.get("id", ""), status="processed", output=response.anonymized_text))
+            results.append(
+                BatchItemResult(
+                    id=item.id,
+                    status="processed",
+                    output=response.anonymized_text,
+                    warnings=response.warnings,
+                )
+            )
         except HTTPException as exc:
-            results.append(BatchItemResult(id=item.get("id", ""), status="failed", error_code=str(exc.detail)))
+            results.append(BatchItemResult(id=item.id, status="failed", error_code=str(exc.detail)))
     return BatchAnonymizeResponse(items=results)
 
 
@@ -244,6 +283,12 @@ async def _process_anonymization(
             pii_types_found=pii_types,
             entities=entities_out,
             mode=resolved_mode,
+            policy=PolicyMetadata(
+                id=policy["policy_id"],
+                version=policy["policy_version"],
+                hash=policy_hash,
+            ),
+            safe=True,
             dry_run=body.dry_run,
         )
     except HTTPException:
@@ -266,6 +311,32 @@ async def _process_anonymization(
             )
         except Exception:
             pass
+        if settings.failure_mode == "partial":
+            partial_response = await _build_partial_response(
+                body=body,
+                request=request,
+                anonymizer=anonymizer,
+                policy=policy if "policy" in locals() else None,
+            )
+            if partial_response is not None:
+                try:
+                    await usage_service.record(
+                        api_key_id=api_key.id,
+                        request_id=uuid.uuid4(),
+                        policy_id=partial_response.policy.id,
+                        policy_version=partial_response.policy.version,
+                        policy_hash=partial_response.policy.hash,
+                        chars_in=len(body.text),
+                        chars_out=len(partial_response.anonymized_text),
+                        entities_count=partial_response.entity_count,
+                        entity_types_summary=partial_response.pii_types_found,
+                        latency_ms=int((time.perf_counter() - started_at) * 1000),
+                        status="partial",
+                        error_code="PII_PROCESSING_PARTIAL",
+                    )
+                except Exception:
+                    pass
+                return partial_response
         if settings.failure_mode == "open":
             return AnonymizeResponse(
                 anonymized_text=body.text,
@@ -273,7 +344,14 @@ async def _process_anonymization(
                 pii_types_found=[],
                 entities=[],
                 mode=body.mode or "tag",
+                policy=PolicyMetadata(
+                    id=body.context_type,
+                    version=policy.get("policy_version") if "policy" in locals() else None,
+                    hash=policy.get("policy_hash") if "policy" in locals() else None,
+                ),
+                safe=False,
                 dry_run=body.dry_run,
+                warnings=["Returned original text because fail-open mode is enabled."],
             )
         raise HTTPException(
             status_code=503,
@@ -283,6 +361,48 @@ async def _process_anonymization(
                 "safe": False,
             },
         )
+
+
+async def _build_partial_response(
+    body: AnonymizeRequest,
+    request: Request,
+    anonymizer: PiiAnonymizer,
+    policy: dict | None,
+) -> AnonymizeResponse | None:
+    try:
+        lang = body.language or getattr(request.app.state, "default_language", "it")
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, anonymizer.detect_only, body.text, body.context_id, body.context_type, lang
+        )
+        final_text, mappings = _apply_replacements(body.text, result.entities, "tag", None)
+        pii_types = list({m.pii_type for m in mappings})
+        return AnonymizeResponse(
+            anonymized_text=final_text,
+            entity_count=len(mappings),
+            pii_types_found=pii_types,
+            entities=[
+                EntityDetail(
+                    type=m.pii_type,
+                    start=m.start,
+                    end=m.end,
+                    confidence=round(m.score, 4),
+                    replacement=m.token,
+                )
+                for m in mappings
+            ],
+            mode="tag",
+            policy=PolicyMetadata(
+                id=body.context_type,
+                version=policy.get("policy_version") if policy else None,
+                hash=policy.get("policy_hash") if policy else None,
+            ),
+            safe=False,
+            dry_run=True,
+            warnings=["Partial anonymization result returned after a processing failure."],
+        )
+    except Exception:
+        return None
 
 
 def _apply_replacements(

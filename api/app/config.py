@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     encryption_key: str
     admin_initial_key: str
     failure_mode: str = Field(default="closed", validation_alias=AliasChoices("FAILURE_MODE", "PII_FAILURE_MODE"))
+    batch_max_items: int = Field(default=50, validation_alias=AliasChoices("BATCH_MAX_ITEMS", "PII_BATCH_MAX_ITEMS"))
     spacy_model: str = "it_core_news_lg"
     privacy_filter_model: str = "openai/privacy-filter"
     ai4privacy_model: str = "Isotonic/distilbert_finetuned_ai4privacy_v2"

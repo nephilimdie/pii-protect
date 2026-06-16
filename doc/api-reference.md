@@ -64,6 +64,12 @@ curl -X POST http://localhost:15500/v1/anonymize \
   "entity_count": 3,
   "pii_types_found": ["PERSON", "FISCAL_CODE", "PHONE"],
   "mode": "tag",
+  "policy": {
+    "id": "fine_appeal",
+    "version": "context:3|domain:5",
+    "hash": "sha256:..."
+  },
+  "safe": true,
   "dry_run": false,
   "entities": [
     { "type": "PERSON", "start": 8, "end": 19, "confidence": 0.99, "replacement": "[PERSON_1]" }
@@ -154,6 +160,8 @@ Deletes expired mappings (older than `PII_MAPPING_TTL_DAYS` days).
 
 Context type responses include a monotonically increasing `version` field that changes on every update.
 
+| `GET` | `/v1/admin/context-types/{code}/versions` | Inspect historical versions for one context type |
+
 ### Domain Policies
 
 | Method | Path | Description |
@@ -163,6 +171,8 @@ Context type responses include a monotonically increasing `version` field that c
 | `DELETE` | `/v1/admin/domain-policies/{domain}` | Delete |
 
 Domain policy responses also include a `version` field that increments on every upsert.
+
+| `GET` | `/v1/admin/domain-policies/{domain}/versions` | Inspect historical versions for one domain policy |
 
 ### PII Type Registry
 

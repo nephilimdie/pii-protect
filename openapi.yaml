@@ -102,6 +102,30 @@ components:
             Controls sensitivity of the detection pipeline.
             - `permissive` — favour recall (more detections, may include borderline cases).
             - `strict` — favour precision (fewer false positives).
+        include_entity_values:
+          type: boolean
+          default: false
+          description: Return raw entity values only for privileged admin inspection.
+        dry_run:
+          type: boolean
+          default: false
+          description: Detect and score without persisting mappings.
+
+    PolicyMetadata:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+          example: "fine_appeal"
+        version:
+          type: string
+          nullable: true
+          example: "context:3|domain:5"
+        hash:
+          type: string
+          nullable: true
+          example: "8aaf0a4b5f..."
 
     EntityDetail:
       type: object
@@ -111,6 +135,7 @@ components:
           example: "EMAIL"
         value:
           type: string
+          nullable: true
           example: "mario.rossi@example.it"
         start:
           type: integer
@@ -150,6 +175,99 @@ components:
           enum: [tag, surrogate]
           description: The anonymization mode that was actually applied to this request.
           example: "tag"
+        policy:
+          $ref: '#/components/schemas/PolicyMetadata'
+        safe:
+          type: boolean
+          example: true
+        dry_run:
+          type: boolean
+          example: false
+        warnings:
+          type: array
+          nullable: true
+          items:
+            type: string
+
+    BatchItemRequest:
+      type: object
+      required: [id, text]
+      properties:
+        id:
+          type: string
+          example: "chunk-001"
+        text:
+          type: string
+          example: "Mario Rossi lives in Milan"
+        context_type:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          nullable: true
+          enum: [tag, surrogate]
+        policy:
+          type: object
+          nullable: true
+        dry_run:
+          type: boolean
+          nullable: true
+
+    BatchAnonymizeRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchItemRequest'
+        context_type:
+          type: string
+          default: default
+        language:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          nullable: true
+          enum: [tag, surrogate]
+        policy:
+          type: object
+          nullable: true
+        dry_run:
+          type: boolean
+          default: true
+
+    BatchItemResult:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          example: processed
+        output:
+          type: string
+          nullable: true
+        error_code:
+          type: string
+          nullable: true
+        warnings:
+          type: array
+          nullable: true
+          items:
+            type: string
+
+    BatchAnonymizeResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchItemResult'
 
     ReclassificationRule:
       type: object
@@ -247,6 +365,9 @@ components:
           type: string
           description: Unique domain identifier.
           example: "fine_appeal"
+        version:
+          type: integer
+          example: 5
         protect_types:
           type: array
           items:
@@ -300,6 +421,37 @@ components:
         enabled:
           type: boolean
           example: true
+        version:
+          type: integer
+          example: 3
+        created_at:
+          type: string
+          format: date-time
+
+    PolicyVersionEntry:
+      type: object
+      properties:
+        domain:
+          type: string
+        version:
+          type: integer
+        snapshot:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    ContextTypeVersionEntry:
+      type: object
+      properties:
+        code:
+          type: string
+        version:
+          type: integer
+        snapshot:
+          type: object
+          additionalProperties: true
         created_at:
           type: string
           format: date-time
@@ -323,23 +475,20 @@ components:
     DeanonymizeResponse:
       type: object
       properties:
-        original_text:
+        restored_text:
           type: string
           example: "Il sig. Mario Rossi, CF: RSSMRA80A01H501U"
 
     StatsResponse:
       type: object
       properties:
-        total_mappings:
+        total_anonymizations:
           type: integer
           example: 1240
-        active_mappings:
+        total_tokens_created:
           type: integer
           example: 980
-        expired_mappings:
-          type: integer
-          example: 260
-        entity_type_breakdown:
+        pii_types_breakdown:
           type: object
           additionalProperties:
             type: integer
@@ -347,17 +496,15 @@ components:
             PERSON: 420
             FISCAL_CODE: 310
             PHONE: 200
-            EMAIL: 150
-            IBAN: 100
-            TARGA: 60
-        layer_hit_rates:
-          type: object
-          additionalProperties:
-            type: number
-          example:
-            regex: 0.45
-            presidio: 0.38
-            privacy_filter: 0.17
+        requests_last_24h:
+          type: integer
+          example: 260
+        usage_events_total:
+          type: integer
+          example: 700
+        usage_chars_in_total:
+          type: integer
+          example: 1250000
 
     AuditLogEntry:
       type: object
@@ -410,6 +557,18 @@ components:
           format: date-time
           description: Optional expiry date. If omitted the key never expires.
           example: "2027-01-01T00:00:00Z"
+        max_requests_per_minute:
+          type: integer
+          nullable: true
+        max_requests_per_day:
+          type: integer
+          nullable: true
+        max_chars_per_request:
+          type: integer
+          nullable: true
+        max_chars_per_month:
+          type: integer
+          nullable: true
 
     CreateApiKeyResponse:
       type: object
@@ -424,6 +583,18 @@ components:
           type: string
           description: The raw API key. Shown only once — store it immediately.
           example: "pii_sk_a1b2c3d4e5f6..."
+        max_requests_per_minute:
+          type: integer
+          nullable: true
+        max_requests_per_day:
+          type: integer
+          nullable: true
+        max_chars_per_request:
+          type: integer
+          nullable: true
+        max_chars_per_month:
+          type: integer
+          nullable: true
         expires_at:
           type: string
           format: date-time
@@ -438,9 +609,23 @@ components:
           type: string
         role:
           type: string
+        active:
+          type: boolean
         created_at:
           type: string
           format: date-time
+        max_requests_per_minute:
+          type: integer
+          nullable: true
+        max_requests_per_day:
+          type: integer
+          nullable: true
+        max_chars_per_request:
+          type: integer
+          nullable: true
+        max_chars_per_month:
+          type: integer
+          nullable: true
         expires_at:
           type: string
           format: date-time
@@ -536,6 +721,8 @@ paths:
             <tr><td><code>mode</code></td><td><code>tag</code> | <code>surrogate</code></td><td>—</td><td>Overrides the mode defined on <code>context_type</code>. <code>tag</code> produces opaque placeholders; <code>surrogate</code> produces realistic fake values (coherent across the same <code>context_id</code>).</td></tr>
             <tr><td><code>policy</code></td><td>object</td><td>—</td><td>Inline policy override: <code>{"protect": [...], "keep": [...]}</code>. Overrides the domain policy linked to <code>context_type</code>.</td></tr>
             <tr><td><code>detection_mode</code></td><td><code>permissive</code> | <code>strict</code></td><td>—</td><td>Detection sensitivity. Default: <code>permissive</code>.</td></tr>
+            <tr><td><code>include_entity_values</code></td><td>boolean</td><td>—</td><td>Return raw entity values only for authorized admin inspection. Default: <code>false</code>.</td></tr>
+            <tr><td><code>dry_run</code></td><td>boolean</td><td>—</td><td>Detect and score without persisting mappings. Default: <code>false</code>.</td></tr>
           </tbody>
         </table>
       operationId: anonymize
@@ -567,6 +754,34 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: Validation error
+
+  /v1/anonymize/batch:
+    post:
+      summary: Batch anonymize text
+      description: |
+        Processes multiple texts in one request. Each item may override the top-level
+        context settings. Batch size is limited by `PII_BATCH_MAX_ITEMS`.
+      operationId: anonymizeBatch
+      tags: [Pseudonymization]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchAnonymizeRequest"
+      responses:
+        "200":
+          description: Per-item anonymization results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchAnonymizeResponse"
+        "400":
+          description: Batch size exceeded
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
 
   /v1/deanonymize:
     post:
@@ -813,7 +1028,7 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateApiKeyRequest"
       responses:
-        "201":
+        "200":
           description: Key created. Raw key value shown once.
           content:
             application/json:
@@ -1319,6 +1534,32 @@ paths:
         "404":
           description: Domain policy not found
 
+  /v1/admin/domain-policies/{domain}/versions:
+    get:
+      summary: List domain policy versions
+      description: Returns historical snapshots for the given domain policy ordered by newest version first.
+      operationId: listDomainPolicyVersions
+      tags: [Admin]
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Historical domain policy versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PolicyVersionEntry"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
+
   /v1/admin/context-types:
     get:
       summary: List context types
@@ -1481,6 +1722,32 @@ paths:
           description: Insufficient role (admin only)
         "404":
           description: Context type not found
+
+  /v1/admin/context-types/{code}/versions:
+    get:
+      summary: List context type versions
+      description: Returns historical snapshots for the given context type ordered by newest version first.
+      operationId: listContextTypeVersions
+      tags: [Admin]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Historical context type versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContextTypeVersionEntry"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role (admin only)
 
     delete:
       summary: Delete context type
