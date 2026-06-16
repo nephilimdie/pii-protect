@@ -58,3 +58,7 @@ docker/data/
 test-results/
 playwright-report/
 playwright/.cache/
+audit-results/
+audit-results/*
+audit-git-security.sh
+FEATURING-FOR-PROD.md
