@@ -12,7 +12,7 @@ YAML file: [`openapi.yaml`](../openapi.yaml)
 Every endpoint (except `/health`) requires the API key in the header:
 
 ```
-X-Api-Key: your-api-key-here
+X-Api-Key: $PII_API_KEY
 ```
 
 ### Roles
@@ -33,7 +33,7 @@ Detects PII in the text and replaces it with tokens or surrogates.
 
 ```bash
 curl -X POST http://localhost:15500/v1/anonymize \
-  -H "X-Api-Key: your-key" \
+  -H "X-Api-Key: $PII_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Il sig. Mario Rossi, CF: RSSMRA80A01H501U, tel: 333-1234567",
@@ -76,7 +76,7 @@ Restores original values in a previously anonymized text.
 
 ```bash
 curl -X POST http://localhost:15500/v1/deanonymize \
-  -H "X-Api-Key: your-key" \
+  -H "X-Api-Key: $PII_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Il sig. [PERSON_1], CF: [FISCAL_CODE_1]",
@@ -97,7 +97,7 @@ curl -X POST http://localhost:15500/v1/deanonymize \
 ### `GET /v1/admin/stats`
 
 ```bash
-curl http://localhost:15500/v1/admin/stats -H "X-Api-Key: your-key"
+curl http://localhost:15500/v1/admin/stats -H "X-Api-Key: $PII_API_KEY"
 ```
 
 ### `GET /v1/admin/audit-log`

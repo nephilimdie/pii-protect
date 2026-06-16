@@ -62,3 +62,4 @@ audit-results/
 audit-results/*
 audit-git-security.sh
 FEATURING-FOR-PROD.md
+.gitleaks.toml

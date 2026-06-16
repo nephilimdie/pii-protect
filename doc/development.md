@@ -145,7 +145,7 @@ python -m spacy download it_core_news_lg
 
 export DATABASE_URL="postgresql+asyncpg://pii_protect:changeme_secret@localhost:15433/pii_protect"
 export ENCRYPTION_KEY="your-fernet-key"
-export ADMIN_INITIAL_KEY="your-admin-key"
+export ADMIN_INITIAL_KEY="$PII_ADMIN_INITIAL_KEY"
 
 uvicorn app.main:app --reload --port 15500
 ```

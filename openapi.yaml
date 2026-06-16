@@ -11,7 +11,7 @@ info:
     Every endpoint except `/health` requires an API key passed in the `X-Api-Key` header.
 
     ```
-    X-Api-Key: your-api-key-here
+    X-Api-Key: $PII_API_KEY
     ```
 
     API keys are created by an `admin` user via `POST /v1/auth/api-keys`.
@@ -513,7 +513,7 @@ paths:
         **curl example:**
         ```bash
         curl -X POST http://localhost:15500/v1/anonymize \
-          -H "X-Api-Key: your-service-key" \
+          -H "X-Api-Key: $PII_SERVICE_API_KEY" \
           -H "Content-Type: application/json" \
           -d '{
             "text": "Il sig. Mario Rossi, CF: RSSMRA80A01H501U, IBAN: IT60X054281110100000123456",
@@ -581,7 +581,7 @@ paths:
         **curl example:**
         ```bash
         curl -X POST http://localhost:15500/v1/deanonymize \
-          -H "X-Api-Key: your-service-key" \
+          -H "X-Api-Key: $PII_SERVICE_API_KEY" \
           -H "Content-Type: application/json" \
           -d '{
             "text": "Il sig. [PERSON_1], CF: [FISCAL_CODE_1]",
@@ -636,7 +636,7 @@ paths:
         **curl example:**
         ```bash
         curl http://localhost:15500/v1/admin/stats \
-          -H "X-Api-Key: your-admin-or-auditor-key"
+          -H "X-Api-Key: $PII_API_KEY"
         ```
 
         **Parameters:** none — no query parameters.
@@ -664,7 +664,7 @@ paths:
         **curl example:**
         ```bash
         curl "http://localhost:15500/v1/admin/audit-log?page=1&page_size=20&context_type=case_file" \
-          -H "X-Api-Key: your-admin-or-auditor-key"
+          -H "X-Api-Key: $PII_API_KEY"
         ```
 
         **Query parameters:**
@@ -745,7 +745,7 @@ paths:
         **curl example:**
         ```bash
         curl -X POST http://localhost:15500/v1/admin/cleanup \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
 
         **Parameters:** none — no body or query parameters.
@@ -783,7 +783,7 @@ paths:
         **curl example:**
         ```bash
         curl -X POST http://localhost:15500/v1/auth/api-keys \
-          -H "X-Api-Key: your-admin-key" \
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
           -H "Content-Type: application/json" \
           -d '{
             "name": "lavvocato-backend",
@@ -834,7 +834,7 @@ paths:
         **curl example:**
         ```bash
         curl http://localhost:15500/v1/auth/api-keys \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
 
         **Parameters:** none.
@@ -864,7 +864,7 @@ paths:
         **curl example:**
         ```bash
         curl -X DELETE http://localhost:15500/v1/auth/api-keys/550e8400-e29b-41d4-a716-446655440000 \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
 
         **Path parameters:**
@@ -905,7 +905,7 @@ paths:
         **curl example:**
         ```bash
         curl http://localhost:15500/v1/admin/reclassification-rules \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
       operationId: listReclassificationRules
       tags: [Admin]
@@ -934,7 +934,7 @@ paths:
         **curl example:**
         ```bash
         curl -X POST http://localhost:15500/v1/admin/reclassification-rules \
-          -H "X-Api-Key: your-admin-key" \
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
           -H "Content-Type: application/json" \
           -d '{
             "from_type": "PERSON",
@@ -1016,7 +1016,7 @@ paths:
         **curl example:**
         ```bash
         curl -X PUT http://localhost:15500/v1/admin/reclassification-rules/a1b2c3d4-... \
-          -H "X-Api-Key: your-admin-key" \
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
           -H "Content-Type: application/json" \
           -d '{"enabled": false}'
         ```
@@ -1075,7 +1075,7 @@ paths:
         **curl example:**
         ```bash
         curl -X DELETE http://localhost:15500/v1/admin/reclassification-rules/a1b2c3d4-... \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
       operationId: deleteReclassificationRule
       tags: [Admin]
@@ -1106,7 +1106,7 @@ paths:
         **curl example:**
         ```bash
         curl http://localhost:15500/v1/admin/pii-types \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
       operationId: listPiiTypes
       tags: [Admin]
@@ -1134,7 +1134,7 @@ paths:
         **curl example:**
         ```bash
         curl -X PUT http://localhost:15500/v1/admin/pii-types/TARGA \
-          -H "X-Api-Key: your-admin-key" \
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
           -H "Content-Type: application/json" \
           -d '{"default_action": "keep"}'
         ```
@@ -1195,7 +1195,7 @@ paths:
         **curl example:**
         ```bash
         curl http://localhost:15500/v1/admin/domain-policies \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
       operationId: listDomainPolicies
       tags: [Admin]
@@ -1223,7 +1223,7 @@ paths:
         **curl example:**
         ```bash
         curl -X PUT http://localhost:15500/v1/admin/domain-policies/fine_appeal \
-          -H "X-Api-Key: your-admin-key" \
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
           -H "Content-Type: application/json" \
           -d '{
             "protect_types": ["PERSON", "FISCAL_CODE", "PHONE", "EMAIL"],
@@ -1299,7 +1299,7 @@ paths:
         **curl example:**
         ```bash
         curl -X DELETE http://localhost:15500/v1/admin/domain-policies/fine_appeal \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
       operationId: deleteDomainPolicy
       tags: [Admin]
@@ -1329,7 +1329,7 @@ paths:
         **curl example:**
         ```bash
         curl http://localhost:15500/v1/admin/context-types \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
       operationId: listContextTypes
       tags: [Admin]
@@ -1356,7 +1356,7 @@ paths:
         **curl example:**
         ```bash
         curl -X POST http://localhost:15500/v1/admin/context-types \
-          -H "X-Api-Key: your-admin-key" \
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
           -H "Content-Type: application/json" \
           -d '{
             "code": "hr",
@@ -1433,7 +1433,7 @@ paths:
         **curl example:**
         ```bash
         curl -X PUT http://localhost:15500/v1/admin/context-types/hr \
-          -H "X-Api-Key: your-admin-key" \
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
           -H "Content-Type: application/json" \
           -d '{"default_mode": "tag"}'
         ```
@@ -1491,7 +1491,7 @@ paths:
         **curl example:**
         ```bash
         curl -X DELETE http://localhost:15500/v1/admin/context-types/hr \
-          -H "X-Api-Key: your-admin-key"
+          -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY"
         ```
       operationId: deleteContextType
       tags: [Admin]
