@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.identity.dependencies import require_service
+from app.identity.tenant import get_tenant_id
 from app.identity.models import ApiKey
 from app.anonymization.deanonymizer import PiiDeanonymizer
 from app.mapping.repository import MappingRepository
@@ -31,12 +32,13 @@ async def deanonymize(
     body: DeanonymizeRequest,
     api_key: ApiKey = Depends(require_service),
     db: AsyncSession = Depends(get_db),
+    tenant_id: str | None = Depends(get_tenant_id),
 ):
     started_at = time.perf_counter()
     request_id = uuid.uuid4()
     usage_service = UsageService(db)
     await usage_service.ensure_within_limits(api_key, len(body.text))
-    policy = await PolicyService(db).resolve(body.context_type, None, None)
+    policy = await PolicyService(db, tenant_id=tenant_id).resolve(body.context_type, None, None)
 
     repo = MappingRepository(db)
     mappings = await repo.find_by_context(body.context_id, body.context_type)
@@ -49,6 +51,7 @@ async def deanonymize(
         action="deanonymize",
         context_id=body.context_id,
         char_count=len(body.text),
+        tenant_id=tenant_id,
     )
 
     policy_hash = policy["policy_hash"]

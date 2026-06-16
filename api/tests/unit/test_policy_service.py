@@ -29,31 +29,26 @@ class TestPolicyServiceResolve:
     async def test_no_context_type_returns_tag_mode(self):
         db = _make_db(fetchone_return=None)
         svc = PolicyService(db)
-        protect, keep, surrogate, mode = await svc.resolve(context_type=None)
-        assert mode == "tag"
-        assert protect is None
-        assert keep == set()
-        assert surrogate == set()
+        resolved = await svc.resolve(context_type=None)
+        assert resolved["mode"] == "tag"
+        assert resolved["protect_types"] is None
+        assert resolved["keep_types"] == set()
+        assert resolved["surrogate_types"] == set()
+        assert resolved["policy_version"] == "context:1|domain:1"
 
     @pytest.mark.asyncio
     async def test_unknown_context_type_returns_defaults(self):
         db = _make_db(fetchone_return=None)
         svc = PolicyService(db)
-        protect, keep, surrogate, mode = await svc.resolve(context_type="nonexistent")
-        assert mode == "tag"
-        assert protect is None
+        resolved = await svc.resolve(context_type="nonexistent")
+        assert resolved["mode"] == "tag"
+        assert resolved["protect_types"] is None
 
     @pytest.mark.asyncio
     async def test_context_type_with_domain_policy(self):
         # First call returns context_type row; second returns domain policy row
-        ct_row = MagicMock()
-        ct_row.__getitem__ = lambda self, i: ("fine_appeal" if i == 0 else "tag")
-
-        policy_row = MagicMock()
-        policy_row.__getitem__ = lambda self, i: (
-            ["PERSON", "FISCAL_CODE"] if i == 0
-            else (["DATE", "TARGA"] if i == 1 else [])
-        )
+        ct_row = ("fine_appeal", "tag", 2)
+        policy_row = (["PERSON", "FISCAL_CODE"], ["DATE", "TARGA"], [], 3)
 
         results = [MagicMock(fetchone=MagicMock(return_value=ct_row)),
                    MagicMock(fetchone=MagicMock(return_value=policy_row))]
@@ -61,34 +56,35 @@ class TestPolicyServiceResolve:
         db.execute = AsyncMock(side_effect=results)
 
         svc = PolicyService(db)
-        protect, keep, surrogate, mode = await svc.resolve(context_type="fine_appeal")
+        resolved = await svc.resolve(context_type="fine_appeal")
 
-        assert "PERSON" in protect
-        assert "FISCAL_CODE" in protect
-        assert "DATE" in keep
-        assert "TARGA" in keep
-        assert mode == "tag"
+        assert "PERSON" in resolved["protect_types"]
+        assert "FISCAL_CODE" in resolved["protect_types"]
+        assert "DATE" in resolved["keep_types"]
+        assert "TARGA" in resolved["keep_types"]
+        assert resolved["mode"] == "tag"
+        assert resolved["policy_version"] == "context:2|domain:3"
 
     @pytest.mark.asyncio
     async def test_inline_policy_overrides_domain(self):
         db = _make_db(fetchone_return=None)
         svc = PolicyService(db)
         inline = {"protect": ["EMAIL"], "keep": ["DATE"], "surrogate": ["PHONE"]}
-        protect, keep, surrogate, mode = await svc.resolve(
+        resolved = await svc.resolve(
             context_type=None, inline_policy=inline
         )
-        assert protect == {"EMAIL"}
-        assert keep == {"DATE"}
-        assert surrogate == {"PHONE"}
+        assert resolved["protect_types"] == {"EMAIL"}
+        assert resolved["keep_types"] == {"DATE"}
+        assert resolved["surrogate_types"] == {"PHONE"}
 
     @pytest.mark.asyncio
     async def test_inline_mode_overrides_context_type(self):
         db = _make_db(fetchone_return=None)
         svc = PolicyService(db)
-        protect, keep, surrogate, mode = await svc.resolve(
+        resolved = await svc.resolve(
             context_type=None, inline_mode="surrogate"
         )
-        assert mode == "surrogate"
+        assert resolved["mode"] == "surrogate"
 
     @pytest.mark.asyncio
     async def test_inline_policy_partial_override(self):
@@ -96,24 +92,18 @@ class TestPolicyServiceResolve:
         svc = PolicyService(db)
         # Only protect key in inline — keep and surrogate stay empty
         inline = {"protect": ["PERSON"]}
-        protect, keep, surrogate, mode = await svc.resolve(
+        resolved = await svc.resolve(
             context_type=None, inline_policy=inline
         )
-        assert protect == {"PERSON"}
-        assert keep == set()
-        assert surrogate == set()
+        assert resolved["protect_types"] == {"PERSON"}
+        assert resolved["keep_types"] == set()
+        assert resolved["surrogate_types"] == set()
 
     @pytest.mark.asyncio
     async def test_domain_policy_with_json_string_columns(self):
         # Some DB drivers return JSONB as raw JSON strings
-        ct_row = MagicMock()
-        ct_row.__getitem__ = lambda self, i: ("default" if i == 0 else "surrogate")
-
-        policy_row = MagicMock()
-        policy_row.__getitem__ = lambda self, i: (
-            '["PERSON"]' if i == 0
-            else ('["DATE"]' if i == 1 else '["EMAIL"]')
-        )
+        ct_row = ("default", "surrogate", 4)
+        policy_row = ('["PERSON"]', '["DATE"]', '["EMAIL"]', 5)
 
         results = [MagicMock(fetchone=MagicMock(return_value=ct_row)),
                    MagicMock(fetchone=MagicMock(return_value=policy_row))]
@@ -121,12 +111,13 @@ class TestPolicyServiceResolve:
         db.execute = AsyncMock(side_effect=results)
 
         svc = PolicyService(db)
-        protect, keep, surrogate, mode = await svc.resolve(context_type="default")
+        resolved = await svc.resolve(context_type="default")
 
-        assert "PERSON" in protect
-        assert "DATE" in keep
-        assert "EMAIL" in surrogate
-        assert mode == "surrogate"
+        assert "PERSON" in resolved["protect_types"]
+        assert "DATE" in resolved["keep_types"]
+        assert "EMAIL" in resolved["surrogate_types"]
+        assert resolved["mode"] == "surrogate"
+        assert resolved["policy_version"] == "context:4|domain:5"
 
 
 # ── get_faker_strategy() ──────────────────────────────────────────────────────
