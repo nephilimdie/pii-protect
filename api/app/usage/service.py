@@ -28,6 +28,12 @@ class UsageService:
             if requests >= api_key.max_requests_per_minute:
                 raise HTTPException(status_code=429, detail={"error": "RATE_LIMIT_EXCEEDED", "message": "This API key exceeded its allowed request rate.", "retry_after_seconds": 60})
 
+        if api_key.max_requests_per_hour is not None:
+            hour_start = now - timedelta(hours=1)
+            requests = await self._count_events(api_key.id, hour_start)
+            if requests >= api_key.max_requests_per_hour:
+                raise HTTPException(status_code=429, detail={"error": "RATE_LIMIT_EXCEEDED", "message": "This API key exceeded its hourly request limit.", "retry_after_seconds": 3600})
+
         if api_key.max_requests_per_day is not None:
             day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             requests = await self._count_events(api_key.id, day_start)
