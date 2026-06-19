@@ -29,6 +29,8 @@ services:
       ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-CHANGE_ME_generate_with_python_-c_from_cryptography.fernet_import_Fernet_print_Fernet.generate_key().decode()}
       ADMIN_INITIAL_KEY: ${PII_ADMIN_INITIAL_KEY:-CHANGE_ME_initial_admin_key}
       FAILURE_MODE: ${PII_FAILURE_MODE:-closed}
+      BATCH_MAX_ITEMS: ${PII_BATCH_MAX_ITEMS:-50}
+      MULTITENANCY_ENABLED: ${PII_MULTITENANCY_ENABLED:-false}
       SPACY_MODEL: it_core_news_lg
     volumes:
       - pii_hf_cache:/root/.cache/huggingface

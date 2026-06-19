@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 from app.detection.contracts.detector_contract import DetectorContract
 from app.detection.entities import PiiEntity

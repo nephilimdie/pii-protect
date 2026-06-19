@@ -1,15 +1,18 @@
 """Resolve which PII types to protect/keep for a given context_type + inline policy."""
 
+from __future__ import annotations
 import hashlib
 import json
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.scoped_config.service import ScopedConfigService
 
 
 class PolicyService:
     def __init__(self, db: AsyncSession, tenant_id: str | None = None) -> None:
         self._db = db
         self._tenant_id = tenant_id
+        self._scoped_config = ScopedConfigService(db)
 
     async def resolve(
         self,
@@ -32,16 +35,15 @@ class PolicyService:
         ct_version = 1
         if context_type:
             if self._tenant_id is not None:
-                result = await self._db.execute(
-                    text("SELECT domain, default_mode, version FROM context_types WHERE code = :c AND enabled = true AND tenant_id = :t"),
-                    {"c": context_type, "t": self._tenant_id},
-                )
+                context_rows = await self._scoped_config.effective_items("context-types", "tenant", self._tenant_id)
+                row_data = next((row for row in context_rows if row.get("code") == context_type and row.get("enabled", True)), None)
+                row = (row_data.get("domain"), row_data.get("default_mode"), row_data.get("version", 1)) if row_data else None
             else:
                 result = await self._db.execute(
                     text("SELECT domain, default_mode, version FROM context_types WHERE code = :c AND enabled = true AND tenant_id IS NULL"),
                     {"c": context_type},
                 )
-            row = result.fetchone()
+                row = result.fetchone()
             if row:
                 ct_domain, ct_mode, ct_version = row[0], row[1], row[2]
 
@@ -52,16 +54,20 @@ class PolicyService:
         domain_version = 1
         if ct_domain:
             if self._tenant_id is not None:
-                result = await self._db.execute(
-                    text("SELECT protect_types, keep_types, surrogate_types, version FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id = :t"),
-                    {"d": ct_domain, "t": self._tenant_id},
-                )
+                policy_rows = await self._scoped_config.effective_items("domain-policies", "tenant", self._tenant_id)
+                row_data = next((row for row in policy_rows if row.get("domain") == ct_domain and row.get("enabled", True)), None)
+                row = (
+                    row_data.get("protect_types", []),
+                    row_data.get("keep_types", []),
+                    row_data.get("surrogate_types", []),
+                    row_data.get("version", 1),
+                ) if row_data else None
             else:
                 result = await self._db.execute(
                     text("SELECT protect_types, keep_types, surrogate_types, version FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id IS NULL"),
                     {"d": ct_domain},
                 )
-            row = result.fetchone()
+                row = result.fetchone()
             if row:
                 protect_list   = row[0] if isinstance(row[0], list) else json.loads(row[0] or "[]")
                 keep_list      = row[1] if isinstance(row[1], list) else json.loads(row[1] or "[]")
@@ -109,6 +115,12 @@ class PolicyService:
         }
 
     async def get_faker_strategy(self, pii_type: str) -> str | None:
+        if self._tenant_id is not None:
+            pii_rows = await self._scoped_config.effective_items("pii-types", "tenant", self._tenant_id)
+            row = next((row for row in pii_rows if row.get("code") == pii_type and row.get("enabled", True)), None)
+            if row:
+                return row.get("faker_strategy")
+
         result = await self._db.execute(
             text("SELECT faker_strategy FROM pii_type_registry WHERE code = :c"),
             {"c": pii_type},

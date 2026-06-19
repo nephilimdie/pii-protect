@@ -61,11 +61,13 @@ class UsageService:
         latency_ms: int,
         status: str,
         error_code: str | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         entry = UsageEvent(
             id=uuid.uuid4(),
             request_id=request_id,
             api_key_id=api_key_id,
+            tenant_id=tenant_id,
             policy_id=policy_id,
             policy_version=policy_version,
             policy_hash=policy_hash,

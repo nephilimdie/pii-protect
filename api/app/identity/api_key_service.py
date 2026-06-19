@@ -1,3 +1,4 @@
+from __future__ import annotations
 import hashlib
 import secrets
 import uuid
@@ -64,10 +65,62 @@ class ApiKeyService:
         result = await self._db.execute(select(ApiKey).order_by(ApiKey.created_at.desc()))
         return list(result.scalars().all())
 
+    async def list_for_tenant(self, tenant_id: str) -> list[ApiKey]:
+        result = await self._db.execute(
+            select(ApiKey)
+            .where(ApiKey.tenant_id == tenant_id)
+            .order_by(ApiKey.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def revoke(self, key_id: uuid.UUID) -> None:
         stmt = update(ApiKey).where(ApiKey.id == key_id).values(active=False)
         await self._db.execute(stmt)
         await self._db.commit()
+
+    async def revoke_for_tenant(self, key_id: uuid.UUID, tenant_id: str) -> None:
+        stmt = (
+            update(ApiKey)
+            .where(ApiKey.id == key_id, ApiKey.tenant_id == tenant_id)
+            .values(active=False)
+        )
+        result = await self._db.execute(stmt)
+        await self._db.commit()
+        if result.rowcount == 0:
+            raise ValueError("key_not_found_for_tenant")
+
+    async def rotate(self, key_id: uuid.UUID, tenant_id: str | None = None) -> tuple[ApiKey, str]:
+        """Revoke existing key and return a new one with the same metadata."""
+        stmt = select(ApiKey).where(ApiKey.id == key_id)
+        if tenant_id is not None:
+            stmt = stmt.where(ApiKey.tenant_id == tenant_id)
+        result = await self._db.execute(stmt)
+        old_key = result.scalar_one_or_none()
+        if old_key is None:
+            raise ValueError("key_not_found")
+
+        revoke_stmt = update(ApiKey).where(ApiKey.id == key_id).values(active=False)
+        await self._db.execute(revoke_stmt)
+
+        new_key, plain = await self.create(
+            name=old_key.name,
+            role=old_key.role,
+            tenant_id=old_key.tenant_id,
+            max_requests_per_minute=old_key.max_requests_per_minute,
+            max_requests_per_hour=old_key.max_requests_per_hour,
+            max_requests_per_day=old_key.max_requests_per_day,
+            max_chars_per_request=old_key.max_chars_per_request,
+            max_chars_per_month=old_key.max_chars_per_month,
+            expires_at=old_key.expires_at,
+        )
+        return new_key, plain
+
+    async def find_active_for_tenant(self, tenant_id: str, role: str | None = None) -> ApiKey | None:
+        stmt = select(ApiKey).where(ApiKey.tenant_id == tenant_id, ApiKey.active == True)
+        if role:
+            stmt = stmt.where(ApiKey.role == role)
+        result = await self._db.execute(stmt.limit(1))
+        return result.scalar_one_or_none()
 
     async def count(self) -> int:
         from sqlalchemy import func

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import uuid
 import re
 from datetime import datetime

@@ -1,5 +1,6 @@
 """SurrogateService — DB-backed deterministic fake value generation."""
 
+from __future__ import annotations
 import hashlib
 
 from sqlalchemy import text

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import uuid
 from datetime import datetime
 from sqlalchemy import String, Integer, DateTime, ForeignKey, JSON
@@ -16,4 +17,5 @@ class AuditLog(Base):
     context_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pii_types_found: Mapped[list | None] = mapped_column(JSON, nullable=True)
     char_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    event_category: Mapped[str] = mapped_column(String(32), nullable=True, server_default="engine")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

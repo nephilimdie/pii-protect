@@ -1,5 +1,6 @@
 """Format-preserving fake value generators, seeded for determinism."""
 
+from __future__ import annotations
 import hashlib
 import random
 import string

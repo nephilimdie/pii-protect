@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time
 import uuid
 
@@ -41,7 +42,7 @@ async def deanonymize(
     policy = await PolicyService(db, tenant_id=tenant_id).resolve(body.context_type, None, None)
 
     repo = MappingRepository(db)
-    mappings = await repo.find_by_context(body.context_id, body.context_type)
+    mappings = await repo.find_by_context(body.context_id, body.context_type, tenant_id)
 
     restored = PiiDeanonymizer().deanonymize(body.text, mappings)
 
@@ -68,6 +69,7 @@ async def deanonymize(
             entity_types_summary=sorted({m.pii_type for m in mappings}),
             latency_ms=int((time.perf_counter() - started_at) * 1000),
             status="ok",
+            tenant_id=tenant_id,
         )
     except Exception:
         pass

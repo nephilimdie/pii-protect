@@ -1,3 +1,4 @@
+from __future__ import annotations
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
@@ -16,6 +17,7 @@ class AuditService:
         pii_types_found: list[str] | None = None,
         char_count: int | None = None,
         tenant_id: str | None = None,
+        event_category: str = "engine",
     ) -> None:
         entry = AuditLog(
             id=uuid.uuid4(),
@@ -25,6 +27,7 @@ class AuditService:
             pii_types_found=pii_types_found,
             char_count=char_count,
             tenant_id=tenant_id,
+            event_category=event_category,
         )
         self._db.add(entry)
         await self._db.commit()
@@ -34,9 +37,14 @@ class AuditService:
         page: int,
         per_page: int,
         action_filter: str | None = None,
+        tenant_id: str | None = None,
     ) -> tuple[list[AuditLog], int]:
         stmt = select(AuditLog)
         count_stmt = select(func.count()).select_from(AuditLog)
+
+        if tenant_id is not None:
+            stmt = stmt.where(AuditLog.tenant_id == tenant_id)
+            count_stmt = count_stmt.where(AuditLog.tenant_id == tenant_id)
 
         if action_filter:
             stmt = stmt.where(AuditLog.action == action_filter)
@@ -51,8 +59,10 @@ class AuditService:
         items = list(result.scalars().all())
         return items, total
 
-    async def delete_by_ids(self, ids: list[uuid.UUID]) -> int:
+    async def delete_by_ids(self, ids: list[uuid.UUID], tenant_id: str | None = None) -> int:
         stmt = delete(AuditLog).where(AuditLog.id.in_(ids))
+        if tenant_id is not None:
+            stmt = stmt.where(AuditLog.tenant_id == tenant_id)
         result = await self._db.execute(stmt)
         await self._db.commit()
         return result.rowcount

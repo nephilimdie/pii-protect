@@ -1,3 +1,4 @@
+from __future__ import annotations
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
@@ -21,6 +22,7 @@ class AuditLogEntry(BaseModel):
     context_id: str | None
     pii_types_found: list[str] | None
     char_count: int | None
+    event_category: str = "engine"
     created_at: datetime
 
     class Config:
@@ -75,7 +77,8 @@ async def get_stats(
     api_key: ApiKey = Depends(require_auditor),
     db: AsyncSession = Depends(get_db),
 ):
-    service = StatsService(db)
+    # Platform admin (no tenant on key) sees global stats; tenant-scoped key sees only its tenant
+    service = StatsService(db, tenant_id=api_key.tenant_id)
     return await service.get_summary()
 
 
@@ -88,7 +91,7 @@ async def get_audit_log(
     db: AsyncSession = Depends(get_db),
 ):
     service = AuditService(db)
-    items, total = await service.list_paginated(page, per_page, action)
+    items, total = await service.list_paginated(page, per_page, action, tenant_id=api_key.tenant_id)
     return AuditLogResponse(items=items, total=total, page=page)
 
 
@@ -99,7 +102,7 @@ async def cleanup(
     db: AsyncSession = Depends(get_db),
 ):
     repo = MappingRepository(db)
-    deleted = await repo.delete_expired(body.ttl_days)
+    deleted = await repo.delete_expired(body.ttl_days, tenant_id=api_key.tenant_id)
     return CleanupResponse(deleted_count=deleted)
 
 
@@ -110,7 +113,7 @@ async def delete_audit_log_bulk(
     db: AsyncSession = Depends(get_db),
 ):
     service = AuditService(db)
-    deleted = await service.delete_by_ids(body.ids)
+    deleted = await service.delete_by_ids(body.ids, tenant_id=api_key.tenant_id)
     return CleanupResponse(deleted_count=deleted)
 
 
@@ -122,7 +125,7 @@ async def list_mappings(
     db: AsyncSession = Depends(get_db),
 ):
     repo = MappingRepository(db)
-    items, total = await repo.list_paginated(page, per_page)
+    items, total = await repo.list_paginated(page, per_page, tenant_id=api_key.tenant_id)
     return MappingListResponse(items=items, total=total, page=page)
 
 
@@ -133,5 +136,5 @@ async def delete_mappings_bulk(
     db: AsyncSession = Depends(get_db),
 ):
     repo = MappingRepository(db)
-    deleted = await repo.delete_by_ids(body.ids)
+    deleted = await repo.delete_by_ids(body.ids, tenant_id=api_key.tenant_id)
     return CleanupResponse(deleted_count=deleted)

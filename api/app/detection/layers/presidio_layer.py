@@ -80,7 +80,12 @@ class PresidioDetector(DetectorContract):
         logger.info("Reloading Presidio with models: %s", [m["lang_code"] for m in lang_models])
         cls.preload(lang_models)
 
-    def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
+    def detect(
+        self,
+        text: str,
+        language: str = "it",
+        context_map: dict[str, list[str]] | None = None,
+    ) -> list[PiiEntity]:
         if self._analyzer is None:
             return []
         lang = language if language in self._supported_languages else self._supported_languages[0]
@@ -94,15 +99,21 @@ class PresidioDetector(DetectorContract):
             for r in results
             if r.entity_type in _LABEL_MAP
         ]
-        return self._apply_context_boost(entities, text)
+        effective_context = context_map if context_map is not None else self._context_map
+        return self._apply_context_boost(entities, text, effective_context)
 
-    def _apply_context_boost(self, entities: list[PiiEntity], text: str) -> list[PiiEntity]:
-        if not self._context_map:
+    def _apply_context_boost(
+        self,
+        entities: list[PiiEntity],
+        text: str,
+        context_map: dict[str, list[str]],
+    ) -> list[PiiEntity]:
+        if not context_map:
             return [e for e in entities if e.score >= _MIN_SCORE]
         result = []
         for entity in entities:
             score = entity.score
-            words = self._context_map.get(entity.pii_type, [])
+            words = context_map.get(entity.pii_type, [])
             if words:
                 window = text[max(0, entity.start - _CONTEXT_WINDOW):entity.start].lower()
                 if any(w in window for w in words):

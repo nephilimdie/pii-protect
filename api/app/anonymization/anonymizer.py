@@ -1,5 +1,7 @@
+from __future__ import annotations
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from types import SimpleNamespace
 
 from app.detection.detector_registry import DetectorRegistry
 from app.detection.entities import PiiEntity, MappingEntry
@@ -25,8 +27,7 @@ _HONORIFIC_RE = re.compile(
 _reclassify_rules: list[tuple[re.Pattern | None, re.Pattern | None, str, str | None, int]] = []
 
 
-def set_reclassify_rules(rules: list[dict]) -> None:
-    global _reclassify_rules
+def _compile_rules(rules: list[dict]) -> list:
     compiled = []
     for r in rules:
         try:
@@ -43,28 +44,13 @@ def set_reclassify_rules(rules: list[dict]) -> None:
             ))
         except re.error:
             pass
-    _reclassify_rules = compiled
+    return compiled
 
 
-def _reclassify(entity: "PiiEntity", text: str) -> "PiiEntity | None":
-    for context_re, entity_re, from_type, to_type, window_size in _reclassify_rules:
-        if entity.pii_type != from_type:
-            continue
-        if context_re is not None:
-            window = text[max(0, entity.start - window_size):entity.start]
-            if not context_re.search(window):
-                continue
-        if entity_re is not None:
-            if not entity_re.search(entity.text):
-                continue
-        if to_type is None:
-            return None
-        return PiiEntity(
-            start=entity.start, end=entity.end,
-            pii_type=to_type, text=entity.text, score=entity.score,
-            source=entity.source,
-        )
-    return entity
+def set_reclassify_rules(rules: list[dict]) -> None:
+    global _reclassify_rules
+    _reclassify_rules = _compile_rules(rules)
+
 
 
 # Kinship/relational prefixes that ML models include in PERSON entities by mistake
@@ -140,44 +126,98 @@ class DetectionResult:
 
 
 class PiiAnonymizer:
-    def __init__(self, registry: DetectorRegistry, denylist: dict[str, dict] | None = None) -> None:
+    def __init__(
+        self,
+        registry: DetectorRegistry,
+        denylist: dict[str, dict] | None = None,
+        reclassification_rules: list[dict] | None = None,
+        regex_patterns: list[dict] | None = None,
+        presidio_context: dict[str, list[str]] | None = None,
+    ) -> None:
         self._registry = registry
         self._merger = EntityMerger()
         self._denylist = denylist or {}
+        if reclassification_rules is not None:
+            self._reclassify_rules = _compile_rules(reclassification_rules)
+        else:
+            self._reclassify_rules = None
+        # Tenant-effective patterns/context; None = use registry's built-in detectors as-is
+        self._regex_patterns = regex_patterns
+        self._presidio_context = presidio_context
+
+    def _run_detectors(self, text: str, language: str) -> list[PiiEntity]:
+        """Run all detectors, applying per-tenant regex patterns and presidio context when set."""
+        from app.detection.layers.regex_layer import ItalianRegexDetector
+        from app.detection.layers.presidio_layer import PresidioDetector
+
+        detectors = self._registry.get_ordered()
+        all_entities: list[PiiEntity] = []
+
+        with ThreadPoolExecutor(max_workers=max(len(detectors) + 1, 1)) as pool:
+            futures = {}
+            for d in detectors:
+                if isinstance(d, ItalianRegexDetector) and self._regex_patterns is not None:
+                    continue  # replaced by tenant-effective patterns below
+                if isinstance(d, PresidioDetector) and self._presidio_context is not None:
+                    futures[pool.submit(d.detect, text, language, self._presidio_context)] = d
+                else:
+                    futures[pool.submit(d.detect, text, language)] = d
+
+            if self._regex_patterns is not None:
+                patterns = [SimpleNamespace(**p) for p in self._regex_patterns]
+                tenant_regex = ItalianRegexDetector(patterns)
+                futures[pool.submit(tenant_regex.detect, text, language)] = tenant_regex
+
+            for future in as_completed(futures):
+                all_entities.extend(future.result())
+
+        return all_entities
+
+    def _reclassify_entity(self, entity: PiiEntity, text: str) -> "PiiEntity | None":
+        rules = self._reclassify_rules if self._reclassify_rules is not None else _reclassify_rules
+        for context_re, entity_re, from_type, to_type, window_size in rules:
+            if entity.pii_type != from_type:
+                continue
+            if context_re is not None:
+                window = text[max(0, entity.start - window_size):entity.start]
+                if not context_re.search(window):
+                    continue
+            if entity_re is not None:
+                if not entity_re.search(entity.text):
+                    continue
+            if to_type is None:
+                return None
+            return PiiEntity(
+                text=entity.text,
+                start=entity.start,
+                end=entity.end,
+                pii_type=to_type,
+                score=entity.score,
+                source=getattr(entity, "source", "reclassification"),
+            )
+        return entity
 
     def detect_only(self, text: str, context_id: str, context_type: str, language: str = "it") -> DetectionResult:
         """Run detection pipeline and return merged/reclassified entities without token assignment.
         Called by the policy-aware anonymize router so it can filter by protect/keep lists."""
-        detectors = self._registry.get_ordered()
-        all_entities: list[PiiEntity] = []
-
-        with ThreadPoolExecutor(max_workers=len(detectors) or 1) as pool:
-            futures = {pool.submit(d.detect, text, language): d for d in detectors}
-            for future in as_completed(futures):
-                all_entities.extend(future.result())
+        all_entities: list[PiiEntity] = self._run_detectors(text, language)
 
         merged = self._merger.merge(all_entities, text)
-        reclassified = [r for e in merged if (r := _reclassify(e, text)) is not None]
+        reclassified = [r for e in merged if (r := self._reclassify_entity(e, text)) is not None]
         snapped = [_snap_to_word_boundary(text, e)
                    for e in reclassified if _is_valid_entity(e, self._denylist)]
         snapped = self._merger.merge(snapped, text)
         return DetectionResult(entities=snapped)
 
     def anonymize(self, text: str, context_id: str, context_type: str, language: str = "it") -> AnonymizationResult:
-        detectors = self._registry.get_ordered()
-        all_entities: list[PiiEntity] = []
-
-        with ThreadPoolExecutor(max_workers=len(detectors) or 1) as pool:
-            futures = {pool.submit(d.detect, text, language): d for d in detectors}
-            for future in as_completed(futures):
-                all_entities.extend(future.result())
+        all_entities: list[PiiEntity] = self._run_detectors(text, language)
 
         merged = self._merger.merge(all_entities, text)
 
         # Reclassify entities based on surrounding context (e.g. PERSON → ACCOUNT after "username:")
         reclassified = []
         for e in merged:
-            r = _reclassify(e, text)
+            r = self._reclassify_entity(e, text)
             if r is not None:
                 reclassified.append(r)
 

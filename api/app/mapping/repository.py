@@ -1,3 +1,4 @@
+from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,12 +15,19 @@ class MappingRepository:
         self._db = db
         self._encryptor = FieldEncryptor(settings.encryption_key)
 
-    async def save_many(self, mappings: list[MappingEntry], context_id: str, context_type: str) -> None:
+    async def save_many(
+        self,
+        mappings: list[MappingEntry],
+        context_id: str,
+        context_type: str,
+        tenant_id: str | None = None,
+    ) -> None:
         if not mappings:
             return
         rows = [
             {
                 "id": uuid.uuid4(),
+                "tenant_id": tenant_id,
                 "context_id": context_id,
                 "context_type": context_type,
                 "token": entry.token,
@@ -28,14 +36,18 @@ class MappingRepository:
             }
             for entry in mappings
         ]
-        stmt = pg_insert(PiiMapping).values(rows).on_conflict_do_nothing(
-            index_elements=["context_id", "context_type", "token"]
-        )
+        stmt = pg_insert(PiiMapping).values(rows).on_conflict_do_nothing()
         await self._db.execute(stmt)
         await self._db.commit()
 
-    async def find_by_context(self, context_id: str, context_type: str) -> list[MappingEntry]:
+    async def find_by_context(
+        self,
+        context_id: str,
+        context_type: str,
+        tenant_id: str | None = None,
+    ) -> list[MappingEntry]:
         stmt = select(PiiMapping).where(
+            PiiMapping.tenant_id == tenant_id,
             PiiMapping.context_id == context_id,
             PiiMapping.context_type == context_type,
         )
@@ -54,11 +66,20 @@ class MappingRepository:
             ))
         return entries
 
-    async def list_paginated(self, page: int, per_page: int) -> tuple[list[dict], int]:
-        count_stmt = select(func.count()).select_from(PiiMapping)
+    async def list_paginated(
+        self,
+        page: int,
+        per_page: int,
+        tenant_id: str | None = None,
+    ) -> tuple[list[dict], int]:
+        base_filter = PiiMapping.tenant_id == tenant_id if tenant_id is not None else True
+
+        count_stmt = select(func.count()).select_from(PiiMapping).where(base_filter)
         total = (await self._db.execute(count_stmt)).scalar_one()
+
         stmt = (
             select(PiiMapping)
+            .where(base_filter)
             .order_by(PiiMapping.created_at.desc())
             .offset((page - 1) * per_page)
             .limit(per_page)
@@ -82,15 +103,19 @@ class MappingRepository:
             })
         return items, total
 
-    async def delete_by_ids(self, ids: list[uuid.UUID]) -> int:
+    async def delete_by_ids(self, ids: list[uuid.UUID], tenant_id: str | None = None) -> int:
         stmt = delete(PiiMapping).where(PiiMapping.id.in_(ids))
+        if tenant_id is not None:
+            stmt = stmt.where(PiiMapping.tenant_id == tenant_id)
         result = await self._db.execute(stmt)
         await self._db.commit()
         return result.rowcount
 
-    async def delete_expired(self, ttl_days: int) -> int:
+    async def delete_expired(self, ttl_days: int, tenant_id: str | None = None) -> int:
         cutoff = datetime.utcnow() - timedelta(days=ttl_days)
         stmt = delete(PiiMapping).where(PiiMapping.created_at < cutoff)
+        if tenant_id is not None:
+            stmt = stmt.where(PiiMapping.tenant_id == tenant_id)
         result = await self._db.execute(stmt)
         await self._db.commit()
         return result.rowcount
