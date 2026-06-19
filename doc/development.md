@@ -161,9 +161,28 @@ npm run dev   # → http://localhost:5173
 
 ## Tests
 
+### Local (without Docker)
+
 ```bash
-make test
-# or
+cd api
+
+# Create and activate venv (first time only)
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# Install all dependencies (app + test tools)
+pip install -r requirements.txt -r requirements-dev.txt
+
+# Run tests
+pytest tests/unit/ -v
+pytest tests/e2e/ -v             # requires a running DB (see docker compose up postgres -d)
+```
+
+The venv must have both `requirements.txt` (fastapi, sqlalchemy, …) and `requirements-dev.txt` (pytest, httpx, …) installed. Installing only one will cause import errors.
+
+### In Docker
+
+```bash
 docker compose exec api pytest
 ```
 

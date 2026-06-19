@@ -40,8 +40,9 @@ Detects and pseudonymizes PII through a 4-layer detection pipeline (Presidio + s
 | **Reclassification rules** | Post-detection context rules (e.g. DATE near "nato a <City> il" → DATE_BORN). Visualized as a bipartite graph. |
 | **DB-configurable regex** | Patterns hot-reloaded from DB on every change. No restart needed. |
 | **Denylist** | Exclude recurring false positives (exact or substring match). |
+| **Batch anonymization** | Process multiple items in one request via `/v1/anonymize/batch` with configurable max items. |
 | **Audit log** | Every API call logged: action, entity count, context type, API key used. |
-| **API key management** | Roles: `admin`, `service`, `auditor`. Keys with optional expiry. |
+| **API key management** | Roles: `admin`, `service`, `auditor`. Keys support expiry and request/character limits. |
 | **Multi-language** | spaCy NER supports IT, EN, DE, FR, ES, PT. Faker surrogates adapt locale per request (`language` field). Models installable from admin UI. |
 | **Admin UI** | React + Tailwind. Full runtime management — no code changes required. |
 
@@ -61,6 +62,7 @@ cd pii-protect
 make setup
 # Edit .env — set PII_ENCRYPTION_KEY and PII_ADMIN_INITIAL_KEY:
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Optional: set SENTRY_DSN= to enable Sentry error tracking (leave empty to disable)
 
 make start   # builds images, starts services, runs migrations (~2 min first boot)
 ```
@@ -118,7 +120,7 @@ curl -s -X POST http://localhost:15500/v1/deanonymize \
     "text": "Il sig. [PERSON_1] (CF: [FISCAL_CODE_1])",
     "context_id": "demo-001",
     "context_type": "fine_appeal"
-  }' | jq .original_text
+  }' | jq .restored_text
 # → "Il sig. Mario Rossi (CF: RSSMRA80A01H501U)"
 ```
 
@@ -134,7 +136,7 @@ curl -s -X POST http://localhost:15500/v1/deanonymize \
 | `PII_API_PORT` | `15500` | API host port |
 | `PII_UI_PORT` | `15501` | Admin UI host port |
 | `PII_MAPPING_TTL_DAYS` | `30` | Days before mappings expire |
-| `PII_FAILURE_MODE` | `closed` | Fail-closed by default; set `open` only if you explicitly accept degraded protection |
+| `PII_FAILURE_MODE` | `closed` | Failure behavior: `closed` (block), `partial` (best-effort redaction), `open` (degraded pass-through) |
 | `PII_BATCH_MAX_ITEMS` | `50` | Maximum items accepted by the batch anonymize endpoint |
 
 ---
@@ -175,7 +177,8 @@ Evaluated on 120 synthetic Italian documents (legal, medical, HR) with manually 
 
 By default the system is **fail-closed**: if detection cannot complete safely, the request is blocked instead of returning potentially unsafe output. This is the recommended production posture because it prevents accidental leakage when a dependency is degraded.
 
-- **Operational override:** set `PII_FAILURE_MODE=open` only if your workflow can tolerate degraded protection and you have explicit downstream controls.
+- **Operational override:** set `PII_FAILURE_MODE=partial` for best-effort masked output on internal failures.
+- **Last-resort override:** set `PII_FAILURE_MODE=open` only if your workflow can tolerate degraded protection and you have explicit downstream controls.
 - **Monitoring:** alert on any 5xx response from anonymize/deanonymize and on repeated empty detections, because both can indicate configuration or model problems.
 
 ---
@@ -194,8 +197,8 @@ By default the system is **fail-closed**: if detection cannot complete safely, t
 | [Roadmap](doc/roadmap.md) | Planned features for v0.2, v0.3, v0.4, v0.5 |
 | [Benchmark Results](benchmark/results/italian_legal_v0.2.0.md) | Current reproducible synthetic benchmark output |
 | [Licensing Model](LICENSING.md) | Core license, allowed use, and reserved cloud rights |
-| [Plugins](PLUGINS.md) | Plugin strategy and author expectations |
-| [Marketplace Principles](MARKETPLACE.md) | Future marketplace rules and publisher expectations |
+| [Plugin Ecosystem](doc/plugin-ecosystem.md) | Plugin strategy and author expectations |
+| [Marketplace Vision](doc/marketplace-vision.md) | Future marketplace principles for plugin distribution |
 | [Security Policy](SECURITY.md) | Vulnerability reporting and security expectations |
 | [Privacy Policy](PRIVACY.md) | Data handling, telemetry, and user privacy posture |
 | [Data Retention](DATA_RETENTION.md) | Retention periods for mappings, audit logs, and usage events |

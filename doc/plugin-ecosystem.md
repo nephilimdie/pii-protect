@@ -29,4 +29,4 @@
 
 ## Marketplace note
 
-Plugins listed in an official marketplace may be subject to additional review, security, and commercial rules described in [MARKETPLACE.md](MARKETPLACE.md).
+Plugins listed in an official marketplace may be subject to additional review, security, and commercial rules (details to be published when the marketplace launches).
