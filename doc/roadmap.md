@@ -46,7 +46,22 @@ The hosted cloud service is built as a private module that connects to the same 
 
 ---
 
-## v0.5 — Enterprise features
+## v0.5 — Plugin ecosystem
+
+- [x] **Plugin foundation** — base plugin contract, in-memory registry, and admin listing endpoint
+- [ ] **Plugin manifest** — stable `plugin.json` schema with name, version, compatibility, permissions, and entrypoints
+- [ ] **Filesystem plugin loader** — discover and load plugins from a local `plugins/` directory
+- [ ] **Plugin lifecycle controls** — enable, disable, configure, and inspect plugins from the self-hosted admin UI
+- [ ] **Plugin package installer** — install local packages with checksum validation and safe extraction
+- [ ] **Signed package verification** — verify marketplace or private packages before installation
+- [ ] **Plugin SDK and template** — documented extension points, sample plugin, and compatibility tests
+- [ ] **Marketplace client** — browse a remote catalog and download free or entitled plugins into self-hosted deployments
+
+Commercial marketplace operations remain outside the core: accounts, payments, entitlements, publisher console, review workflow, package hosting, and revenue share belong to a separate remote marketplace service.
+
+---
+
+## v0.6 — Enterprise features
 
 - [ ] **Multi-tenancy** — namespace all data by tenant ID; per-tenant policy + model configuration
 - [ ] **RBAC expansion** — custom roles with per-endpoint permissions
