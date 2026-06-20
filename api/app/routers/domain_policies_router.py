@@ -1,10 +1,12 @@
 from __future__ import annotations
+import hashlib
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.audit.audit_service import AuditService
 from app.database import get_db
 from app.identity.dependencies import require_admin
 from app.identity.models import ApiKey
@@ -57,6 +59,18 @@ def _history_row(mapping) -> dict:
     }
 
 
+def _hash_payload(payload: dict | str) -> str:
+    if isinstance(payload, str):
+        value = payload
+    else:
+        value = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
 @router.get("/domain-policies", response_model=list[PolicyResponse])
 async def list_policies(
     api_key: ApiKey = Depends(require_admin),
@@ -73,6 +87,7 @@ async def list_policies(
 async def upsert_policy(
     domain: str,
     body: UpsertPolicyRequest,
+    request: Request,
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -109,6 +124,15 @@ async def upsert_policy(
         {"domain": row["domain"], "version": row["version"], "snapshot": json.dumps(row, default=str)},
     )
     await db.commit()
+    await AuditService(db).log(
+        api_key_id=api_key.id,
+        action="policy_update",
+        context_id=domain,
+        tenant_id=api_key.tenant_id,
+        event_category="policy",
+        document_hash=_hash_payload(row),
+        ip=_client_ip(request),
+    )
     return row
 
 
@@ -131,12 +155,22 @@ async def list_policy_versions(
 @router.delete("/domain-policies/{domain}", status_code=204)
 async def delete_policy(
     domain: str,
+    request: Request,
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
         text("DELETE FROM domain_policies WHERE domain = :d"), {"d": domain}
     )
-    await db.commit()
     if result.rowcount == 0:
+        await db.rollback()
         raise HTTPException(404, "not_found")
+    await AuditService(db).log(
+        api_key_id=api_key.id,
+        action="policy_delete",
+        context_id=domain,
+        tenant_id=api_key.tenant_id,
+        event_category="policy",
+        document_hash=_hash_payload(domain),
+        ip=_client_ip(request),
+    )

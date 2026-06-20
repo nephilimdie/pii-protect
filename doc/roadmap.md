@@ -29,9 +29,9 @@ The hosted cloud service is built as a private module that connects to the same 
 
 - [ ] **Policy versioning** — track and diff policy changes over time; rollback support
 - [ ] **Per-entity confidence threshold** — configurable minimum score per PII type
-- [ ] **Batch endpoint** — `POST /v1/anonymize/batch` for processing multiple documents in one call
+- [x] **Batch endpoint** — `POST /v1/anonymize/batch` for processing multiple documents in one call
 - [ ] **Async job endpoint** — long documents via background task + webhook notification
-- [ ] **Policy dry-run** — `POST /v1/anonymize?dry_run=true` returns detected entities without saving mappings
+- [x] **Policy dry-run** — `POST /v1/anonymize?dry_run=true` returns detected entities without saving mappings
 - [ ] **Entity allow-list** — whitelist specific values that should never be masked (e.g. company name in a contract)
 
 ---

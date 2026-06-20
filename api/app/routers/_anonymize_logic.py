@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 import uuid
@@ -34,6 +35,14 @@ from app.routers._anonymize_models import (
 
 def get_registry(request: Request) -> DetectorRegistry:
     return request.app.state.registry
+
+
+def _document_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 
 async def get_anonymizer(
@@ -223,6 +232,8 @@ async def _process_anonymization(
             pii_types_found=pii_types,
             char_count=len(body.text),
             tenant_id=tenant_id,
+            document_hash=_document_hash(body.text),
+            ip=_client_ip(request),
         )
 
         policy_hash = policy["policy_hash"]

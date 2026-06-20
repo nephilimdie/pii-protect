@@ -17,5 +17,8 @@ class AuditLog(Base):
     context_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pii_types_found: Mapped[list | None] = mapped_column(JSON, nullable=True)
     char_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    document_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     event_category: Mapped[str] = mapped_column(String(32), nullable=True, server_default="engine")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

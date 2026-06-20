@@ -22,6 +22,9 @@ class AuditLogEntry(BaseModel):
     context_id: str | None
     pii_types_found: list[str] | None
     char_count: int | None
+    document_hash: str | None = None
+    ip: str | None = None
+    reason: str | None = None
     event_category: str = "engine"
     created_at: datetime
 

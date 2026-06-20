@@ -18,6 +18,9 @@ class AuditService:
         char_count: int | None = None,
         tenant_id: str | None = None,
         event_category: str = "engine",
+        document_hash: str | None = None,
+        ip: str | None = None,
+        reason: str | None = None,
     ) -> None:
         entry = AuditLog(
             id=uuid.uuid4(),
@@ -28,6 +31,9 @@ class AuditService:
             char_count=char_count,
             tenant_id=tenant_id,
             event_category=event_category,
+            document_hash=document_hash,
+            ip=ip,
+            reason=reason,
         )
         self._db.add(entry)
         await self._db.commit()

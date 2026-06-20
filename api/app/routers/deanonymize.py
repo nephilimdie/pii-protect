@@ -1,8 +1,9 @@
 from __future__ import annotations
+import hashlib
 import time
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -22,6 +23,7 @@ class DeanonymizeRequest(BaseModel):
     text: str
     context_id: str
     context_type: str
+    reason: str | None = None
 
 
 class DeanonymizeResponse(BaseModel):
@@ -31,6 +33,7 @@ class DeanonymizeResponse(BaseModel):
 @router.post("/deanonymize", response_model=DeanonymizeResponse)
 async def deanonymize(
     body: DeanonymizeRequest,
+    request: Request,
     api_key: ApiKey = Depends(require_service),
     db: AsyncSession = Depends(get_db),
     tenant_id: str | None = Depends(get_tenant_id),
@@ -53,6 +56,9 @@ async def deanonymize(
         context_id=body.context_id,
         char_count=len(body.text),
         tenant_id=tenant_id,
+        document_hash=hashlib.sha256(body.text.encode("utf-8")).hexdigest(),
+        ip=request.client.host if request.client else None,
+        reason=body.reason,
     )
 
     policy_hash = policy["policy_hash"]
