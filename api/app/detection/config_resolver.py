@@ -26,6 +26,7 @@ class ResolvedDetectionConfig:
     reclassification_rules: list[dict]
     regex_patterns: list[dict]
     presidio_context: dict[str, list[str]]
+    enabled_layers: set[str] | None = None
 
 
 # In-process cache: cache_key (tenant_id or "") -> (timestamp, ResolvedDetectionConfig)
@@ -141,6 +142,35 @@ def _append_context_word(result: dict[str, list[str]], item: dict) -> None:
         bucket.append(word)
 
 
+def _apply_layer_overrides(
+    platform_raw: list[dict],
+    overrides: list[dict],
+) -> set[str] | None:
+    if not platform_raw:
+        return None
+
+    hidden: set[str] = set()
+    data_map: dict[str, dict] = {}
+
+    for ov in overrides:
+        key = str(ov["item_key"])
+        if ov["action"] == "hidden":
+            hidden.add(key)
+            continue
+        if ov["action"] == "override" and ov.get("data"):
+            data_map[key] = ov["data"] if isinstance(ov["data"], dict) else {}
+
+    enabled = set()
+    for layer in platform_raw:
+        code = str(layer.get("code") or "")
+        if not code or code in hidden:
+            continue
+        row = {**layer, **data_map.get(code, {})}
+        if row.get("enabled", True):
+            enabled.add(code)
+    return enabled
+
+
 # ── GlobalDetectionConfigResolver ────────────────────────────────────────────
 
 class GlobalDetectionConfigResolver:
@@ -162,6 +192,7 @@ class GlobalDetectionConfigResolver:
             reclassification_rules=getattr(app_state, "reclassification_rules_raw", []),
             regex_patterns=getattr(app_state, "regex_patterns_raw", []),
             presidio_context=getattr(app_state, "presidio_context", {}),
+            enabled_layers=None,
         )
         _cache[cache_key] = (time.monotonic(), config)
         return config
@@ -225,6 +256,10 @@ class CloudScopedDetectionConfigResolver:
                 getattr(app_state, "presidio_context_raw", []),
                 overrides.get("context-words", []),
             ),
+            enabled_layers=_apply_layer_overrides(
+                getattr(app_state, "detection_layers_raw", []),
+                overrides.get("detection-layers", []),
+            ),
         )
 
     async def _load_overrides(self) -> dict[str, list[dict]]:
@@ -233,7 +268,7 @@ class CloudScopedDetectionConfigResolver:
                 "SELECT collection, item_key, action, data"
                 " FROM scoped_config_overrides"
                 " WHERE scope_type = 'tenant' AND scope_key = :tenant_id"
-                " AND collection IN ('regex-patterns', 'denylist', 'context-words', 'reclassification')"
+                " AND collection IN ('regex-patterns', 'denylist', 'context-words', 'reclassification', 'detection-layers')"
             ),
             {"tenant_id": self._tenant_id},
         )

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +49,7 @@ async def get_anonymizer(
         reclassification_rules=cfg.reclassification_rules,
         regex_patterns=cfg.regex_patterns if tenant_id is not None else None,
         presidio_context=cfg.presidio_context if tenant_id is not None else None,
+        enabled_layers=cfg.enabled_layers,
     )
 
 
@@ -257,6 +261,7 @@ async def _process_anonymization(
     except HTTPException:
         raise
     except Exception:
+        logger.exception("anonymize failed for context_id=%s", request_id)
         try:
             await usage_service.record(
                 api_key_id=api_key.id,

@@ -96,6 +96,22 @@ def fake_session(overrides):
                 }
             ])
 
+        if "AS detection_layers" in sql:
+            return result_with_rows([
+                {
+                    "code": "regex",
+                    "display_name": "Regex",
+                    "description": "Deterministic regex layer",
+                    "enabled": True,
+                },
+                {
+                    "code": "privacy_filter",
+                    "display_name": "Privacy Filter",
+                    "description": "ONNX privacy filter",
+                    "enabled": True,
+                },
+            ])
+
         if "FROM scoped_config_overrides" in sql:
             key = (params["scope_type"], params["scope_key"], params["collection"])
             return result_with_rows(list(overrides.get(key, {}).values()))
@@ -156,3 +172,53 @@ async def get_regex(client, tenant):
         headers={"X-Api-Key": tenant},
         params={"scope_type": "tenant", "scope_key": tenant},
     )
+
+
+@pytest.mark.asyncio
+async def test_detection_layers_can_be_overridden_per_tenant():
+    app = FastAPI()
+    app.include_router(router, prefix="/v1/admin")
+    overrides = {}
+
+    async def fake_admin(x_api_key: str = Header(..., alias="X-Api-Key")):
+        return ApiKey(name=x_api_key, role="admin", tenant_id=x_api_key)
+
+    async def fake_db():
+        yield fake_session(overrides)
+
+    def fake_settings():
+        return SimpleNamespace(multitenancy_enabled=True)
+
+    app.dependency_overrides[require_admin] = fake_admin
+    app.dependency_overrides[_scoped_config_module.get_db] = fake_db
+    app.dependency_overrides[get_settings] = fake_settings
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        updated = await client.put(
+            "/v1/admin/scoped-config/detection-layers/privacy_filter",
+            headers={"X-Api-Key": "tenant-a"},
+            json={
+                "scope_type": "tenant",
+                "scope_key": "tenant-a",
+                "item_key": "privacy_filter",
+                "action": "override",
+                "data": {
+                    "code": "privacy_filter",
+                    "display_name": "Privacy Filter",
+                    "enabled": False,
+                    "description": "Disable for realtime benchmark",
+                },
+            },
+        )
+        listed = await client.get(
+            "/v1/admin/scoped-config/detection-layers",
+            headers={"X-Api-Key": "tenant-a"},
+            params={"scope_type": "tenant", "scope_key": "tenant-a"},
+        )
+
+    assert updated.status_code == 200
+    assert listed.status_code == 200
+    items = {item["_item_key"]: item for item in listed.json()["items"]}
+    assert items["regex"]["enabled"] is True
+    assert items["privacy_filter"]["enabled"] is False
+    assert items["privacy_filter"]["_scope"] == "tenant:tenant-a"

@@ -133,10 +133,12 @@ class PiiAnonymizer:
         reclassification_rules: list[dict] | None = None,
         regex_patterns: list[dict] | None = None,
         presidio_context: dict[str, list[str]] | None = None,
+        enabled_layers: set[str] | None = None,
     ) -> None:
         self._registry = registry
         self._merger = EntityMerger()
         self._denylist = denylist or {}
+        self._enabled_layers = enabled_layers
         if reclassification_rules is not None:
             self._reclassify_rules = _compile_rules(reclassification_rules)
         else:
@@ -150,7 +152,10 @@ class PiiAnonymizer:
         from app.detection.layers.regex_layer import ItalianRegexDetector
         from app.detection.layers.presidio_layer import PresidioDetector
 
-        detectors = self._registry.get_ordered()
+        detectors = [
+            detector for detector in self._registry.get_ordered()
+            if self._enabled_layers is None or detector.layer_name in self._enabled_layers
+        ]
         all_entities: list[PiiEntity] = []
 
         with ThreadPoolExecutor(max_workers=max(len(detectors) + 1, 1)) as pool:

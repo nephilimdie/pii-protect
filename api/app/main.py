@@ -60,6 +60,24 @@ def _layer_enabled(name: str) -> bool:
     return bool(settings.detection_layers.get(name, {}).get("enabled", True))
 
 
+def _detection_layers_raw() -> list[dict]:
+    meta = {
+        "regex": ("Regex", "Deterministic database and built-in regular-expression detection"),
+        "presidio": ("Presidio/spaCy", "NER and recognizer-based detection through Presidio and spaCy"),
+        "privacy_filter": ("Privacy Filter", "ONNX privacy-filter model for broad PII detection"),
+        "ai4privacy": ("AI4Privacy", "Transformer layer with wider PII category coverage"),
+    }
+    return [
+        {
+            "code": code,
+            "display_name": label,
+            "description": description,
+            "enabled": _layer_enabled(code),
+        }
+        for code, (label, description) in meta.items()
+    ]
+
+
 class _JsonFormatter(logging.Formatter):
     _EXTRA_FIELDS = ("request_id", "tenant_id", "status")
 
@@ -179,6 +197,7 @@ async def lifespan(app: FastAPI):
         reclass_rules = await ReclassificationRepository(db).find_enabled()
     set_reclassify_rules(reclass_rules)
     app.state.default_language = default_lang
+    app.state.detection_layers_raw = _detection_layers_raw()
 
     context_map: dict[str, list[str]] = {}
     for e in ctx_entries:

@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings, Settings
 from app.database import get_db
+from app.detection.config_resolver import DetectionConfigResolver
 from app.identity.dependencies import require_admin
 from app.identity.models import ApiKey
 from app.audit.audit_service import AuditService
@@ -55,7 +56,7 @@ async def create_scoped_config(
     ensure_collection(collection)
     authorize_scope(api_key, body.scope_type, body.scope_key)
 
-    return await ScopedConfigService(db).create(
+    result = await ScopedConfigService(db).create(
         collection,
         body.scope_type,
         body.scope_key,
@@ -63,6 +64,8 @@ async def create_scoped_config(
         body.data,
         body.item_key,
     )
+    _invalidate_detection_cache(collection, body.scope_type, body.scope_key)
+    return result
 
 
 @router.put("/scoped-config/{collection}/{item_key}")
@@ -85,6 +88,7 @@ async def update_scoped_config(
         body.action,
         body.data,
     )
+    _invalidate_detection_cache(collection, body.scope_type, body.scope_key)
     await AuditService(db).log(
         api_key_id=api_key.id,
         action="config.update",
@@ -108,6 +112,7 @@ async def hide_scoped_config(
     authorize_scope(api_key, scope_type, scope_key)
 
     result = await ScopedConfigService(db).hide(collection, item_key, scope_type, scope_key)
+    _invalidate_detection_cache(collection, scope_type, scope_key)
     await AuditService(db).log(
         api_key_id=api_key.id,
         action="config.delete",
@@ -115,3 +120,16 @@ async def hide_scoped_config(
         tenant_id=scope_key if scope_type == "tenant" else None,
     )
     return result
+
+
+def _invalidate_detection_cache(collection: str, scope_type: str, scope_key: str) -> None:
+    detection_collections = {
+        "regex-patterns",
+        "denylist",
+        "context-words",
+        "reclassification",
+        "detection-layers",
+    }
+    if collection not in detection_collections:
+        return
+    DetectionConfigResolver.invalidate(scope_key if scope_type == "tenant" else None)

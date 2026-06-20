@@ -176,6 +176,33 @@ def test_context_word_overrides_use_platform_item_ids():
     assert result["PERSON"] == ["cliente"]
 
 
+def test_detection_layer_overrides_disable_selected_layer_only():
+    from app.detection.config_resolver import _apply_layer_overrides
+
+    platform_rows = [
+        {"code": "regex", "enabled": True},
+        {"code": "presidio", "enabled": True},
+        {"code": "privacy_filter", "enabled": True},
+        {"code": "ai4privacy", "enabled": True},
+    ]
+    overrides = [
+        {
+            "item_key": "privacy_filter",
+            "action": "override",
+            "data": {"enabled": False},
+        },
+        {
+            "item_key": "ai4privacy",
+            "action": "override",
+            "data": {"enabled": False},
+        },
+    ]
+
+    result = _apply_layer_overrides(platform_rows, overrides)
+
+    assert result == {"regex", "presidio"}
+
+
 @pytest.mark.asyncio
 async def test_same_input_creates_separate_tenant_mappings(async_session):
     """
