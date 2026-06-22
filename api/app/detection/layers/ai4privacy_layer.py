@@ -101,8 +101,14 @@ class Ai4PrivacyDetector(DetectorContract):
         except Exception as exc:
             logger.warning("Ai4Privacy model unavailable: %s", exc)
 
-    def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
-        if self._pipeline is None or len(text) < _MIN_CHARS:
+    def detect(self, text: str, language: str = "it", layer_config: dict | None = None) -> list[PiiEntity]:
+        cfg = layer_config or {}
+        min_score = cfg.get("min_score", _MIN_SCORE)
+        min_chars = cfg.get("min_chars", _MIN_CHARS)
+        enabled_types: set[str] | None = (
+            set(cfg["enabled_types"]) if "enabled_types" in cfg else None
+        )
+        if self._pipeline is None or len(text) < min_chars:
             return []
         try:
             results = self._pipeline(text)
@@ -113,10 +119,12 @@ class Ai4PrivacyDetector(DetectorContract):
         entities = []
         for item in results:
             score = float(item["score"])
-            if score < _MIN_SCORE:
+            if score < min_score:
                 continue
             pii_type = _LABEL_MAP.get(item.get("entity_group", ""), "SECRET")
             if pii_type is None:
+                continue
+            if enabled_types is not None and pii_type not in enabled_types:
                 continue
             entities.append(PiiEntity(
                 start=item["start"],

@@ -103,6 +103,44 @@ class MappingRepository:
             })
         return items, total
 
+    async def find_all_by_context_id(
+        self,
+        context_id: str,
+        tenant_id: str | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> tuple[list[dict], int]:
+        """Return paginated mappings for a context_id across all context_types (Art. 20 export)."""
+        base = select(PiiMapping).where(PiiMapping.context_id == context_id)
+        if tenant_id is not None:
+            base = base.where(PiiMapping.tenant_id == tenant_id)
+
+        count_stmt = select(func.count()).select_from(PiiMapping).where(PiiMapping.context_id == context_id)
+        if tenant_id is not None:
+            count_stmt = count_stmt.where(PiiMapping.tenant_id == tenant_id)
+        total = (await self._db.execute(count_stmt)).scalar_one()
+
+        stmt = base.order_by(PiiMapping.created_at.asc()).offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        result = await self._db.execute(stmt)
+        rows = result.scalars().all()
+        items = []
+        for row in rows:
+            try:
+                original = self._encryptor.decrypt(row.original_encrypted)
+            except ValueError:
+                original = "***"
+            items.append({
+                "id": str(row.id),
+                "context_type": row.context_type,
+                "token": row.token,
+                "pii_type": row.pii_type,
+                "original": original,
+                "created_at": row.created_at.isoformat(),
+            })
+        return items, total
+
     async def delete_by_ids(self, ids: list[uuid.UUID], tenant_id: str | None = None) -> int:
         stmt = delete(PiiMapping).where(PiiMapping.id.in_(ids))
         if tenant_id is not None:

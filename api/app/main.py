@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 
 _sentry_dsn = os.getenv("SENTRY_DSN", "")
 if _sentry_dsn:
@@ -33,6 +35,8 @@ from app.routers import pii_types_router
 from app.routers import domain_policies_router
 from app.routers import context_types_router
 from app.routers import scoped_config as scoped_config_router
+from app.routers import retention as retention_router
+from app.routers import layer_settings as layer_settings_router
 from app.routers import plugins_router
 from app.detection.layers.presidio_layer import PresidioDetector
 from app.settings_repository import SettingsRepository
@@ -134,6 +138,55 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             extra={"request_id": request_id, "tenant_id": tenant_id, "status": response.status_code},
         )
         return response
+
+
+async def _run_gdpr_cleanup() -> None:
+    """One pass of GDPR cleanup. Each table uses an independent session so a failure in one
+    does not roll back the others — partial cleanup is better than no cleanup."""
+    from app.mapping.repository import MappingRepository as _MR
+    from app.audit.audit_service import AuditService as _AS
+    from app.usage.models import UsageEvent as _UE
+    from app.settings_repository import SettingsRepository as _SR
+    from sqlalchemy import delete as _delete
+
+    async with AsyncSessionLocal() as db:
+        cfg = await _SR(db).all()
+
+    mapping_ttl = int(cfg.get("mapping_ttl_days",     "30"))
+    audit_ttl   = int(cfg.get("audit_log_ttl_days",   "365"))
+    usage_ttl   = int(cfg.get("usage_event_ttl_days", "395"))
+
+    async with AsyncSessionLocal() as db:
+        m_del = await _MR(db).delete_expired(mapping_ttl)
+
+    async with AsyncSessionLocal() as db:
+        a_del = await _AS(db).delete_expired(audit_ttl)
+
+    async with AsyncSessionLocal() as db:
+        cutoff = datetime.utcnow() - timedelta(days=usage_ttl)
+        u_res  = await db.execute(_delete(_UE).where(_UE.created_at < cutoff))
+        await db.commit()
+        u_del  = u_res.rowcount
+
+    logger.info(
+        "GDPR cleanup done: mappings=%d audit=%d usage=%d",
+        m_del, a_del, u_del,
+    )
+
+
+async def _nightly_cleanup_loop() -> None:
+    """Art. 5 §1e GDPR — cleanup runs immediately at startup, then every 24 h."""
+    try:
+        await _run_gdpr_cleanup()
+    except Exception:
+        logger.exception("GDPR startup cleanup failed")
+
+    while True:
+        await asyncio.sleep(24 * 3600)
+        try:
+            await _run_gdpr_cleanup()
+        except Exception:
+            logger.exception("GDPR nightly cleanup failed")
 
 
 async def _ensure_admin_key() -> None:
@@ -244,7 +297,22 @@ async def lifespan(app: FastAPI):
     app.state.reclassification_rules_raw = reclass_rules
 
     await _ensure_admin_key()
+
+    # Load retention settings into app state for zero-overhead access per request
+    async with AsyncSessionLocal() as db:
+        from app.settings_repository import SettingsRepository as _SR
+        _s = await _SR(db).all()
+        app.state.ip_anonymization_enabled = _s.get("ip_anonymization_enabled", "true") == "true"
+
+    _cleanup_task = asyncio.create_task(_nightly_cleanup_loop())
+
     yield
+
+    _cleanup_task.cancel()
+    try:
+        await _cleanup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="pii-protect", version="1.0.0", lifespan=lifespan)
@@ -328,3 +396,5 @@ app.include_router(domain_policies_router.router, prefix="/v1/admin")
 app.include_router(context_types_router.router, prefix="/v1/admin")
 app.include_router(scoped_config_router.router, prefix="/v1/admin")
 app.include_router(plugins_router.router, prefix="/v1/admin")
+app.include_router(retention_router.router, prefix="/v1/admin")
+app.include_router(layer_settings_router.router, prefix="/v1/admin")

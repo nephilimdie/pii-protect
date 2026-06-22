@@ -134,11 +134,13 @@ class PiiAnonymizer:
         regex_patterns: list[dict] | None = None,
         presidio_context: dict[str, list[str]] | None = None,
         enabled_layers: set[str] | None = None,
+        layer_configs: dict[str, dict] | None = None,
     ) -> None:
         self._registry = registry
         self._merger = EntityMerger()
         self._denylist = denylist or {}
         self._enabled_layers = enabled_layers
+        self._layer_configs = layer_configs or {}
         if reclassification_rules is not None:
             self._reclassify_rules = _compile_rules(reclassification_rules)
         else:
@@ -148,7 +150,7 @@ class PiiAnonymizer:
         self._presidio_context = presidio_context
 
     def _run_detectors(self, text: str, language: str) -> list[PiiEntity]:
-        """Run all detectors, applying per-tenant regex patterns and presidio context when set."""
+        """Run all detectors, applying per-tenant regex patterns, presidio context, and layer configs."""
         from app.detection.layers.regex_layer import ItalianRegexDetector
         from app.detection.layers.presidio_layer import PresidioDetector
 
@@ -161,12 +163,14 @@ class PiiAnonymizer:
         with ThreadPoolExecutor(max_workers=max(len(detectors) + 1, 1)) as pool:
             futures = {}
             for d in detectors:
+                cfg = self._layer_configs.get(d.layer_name)
                 if isinstance(d, ItalianRegexDetector) and self._regex_patterns is not None:
                     continue  # replaced by tenant-effective patterns below
-                if isinstance(d, PresidioDetector) and self._presidio_context is not None:
-                    futures[pool.submit(d.detect, text, language, self._presidio_context)] = d
+                if isinstance(d, PresidioDetector):
+                    ctx = self._presidio_context if self._presidio_context is not None else None
+                    futures[pool.submit(d.detect, text, language, ctx, cfg)] = d
                 else:
-                    futures[pool.submit(d.detect, text, language)] = d
+                    futures[pool.submit(d.detect, text, language, cfg)] = d
 
             if self._regex_patterns is not None:
                 patterns = [SimpleNamespace(**p) for p in self._regex_patterns]

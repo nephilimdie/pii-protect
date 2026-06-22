@@ -50,8 +50,11 @@ async def get_anonymizer(
     db: AsyncSession = Depends(get_db),
     tenant_id: str | None = Depends(get_tenant_id),
 ) -> PiiAnonymizer:
+    from app.detection.layer_settings_repository import LayerSettingsRepository
     resolver = DetectionConfigResolver(db, tenant_id)
     cfg = await resolver.resolve(request.app.state)
+    layer_repo = LayerSettingsRepository(db)
+    layer_configs = await layer_repo.get_effective(tenant_id)
     return PiiAnonymizer(
         request.app.state.registry,
         denylist=cfg.denylist,
@@ -59,6 +62,7 @@ async def get_anonymizer(
         regex_patterns=cfg.regex_patterns if tenant_id is not None else None,
         presidio_context=cfg.presidio_context if tenant_id is not None else None,
         enabled_layers=cfg.enabled_layers,
+        layer_configs=layer_configs,
     )
 
 
@@ -224,7 +228,8 @@ async def _process_anonymization(
             repo = MappingRepository(db)
             await repo.save_many(mappings, body.context_id, body.context_type, tenant_id)
 
-        audit = AuditService(db)
+        ip_anon = getattr(request.app.state, "ip_anonymization_enabled", True)
+        audit = AuditService(db, ip_anonymization=ip_anon)
         await audit.log(
             api_key_id=api_key.id,
             action="anonymize_dry_run" if body.dry_run else "anonymize",

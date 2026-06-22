@@ -17,7 +17,7 @@ _LABEL_MAP: dict[str, str] = {
     "CREDIT_CARD":       "CREDIT_CARD",
     "NRP":               "NRP",
     "URL":               "URL",
-    # LOCATION excluded: spaCy produces too many false positives on generic words
+    "LOCATION":          "LOCATION",
 }
 
 _MIN_SCORE = 0.65
@@ -85,31 +85,47 @@ class PresidioDetector(DetectorContract):
         text: str,
         language: str = "it",
         context_map: dict[str, list[str]] | None = None,
+        layer_config: dict | None = None,
     ) -> list[PiiEntity]:
         if self._analyzer is None:
             return []
+        cfg = layer_config or {}
+        min_score = cfg.get("min_score", _MIN_SCORE)
+        location_enabled = cfg.get("location_enabled", False)
+        enabled_types: set[str] | None = (
+            set(cfg["enabled_types"]) if "enabled_types" in cfg else None
+        )
+
         lang = language if language in self._supported_languages else self._supported_languages[0]
         try:
             results = self._analyzer.analyze(text=text, language=lang)
         except Exception as exc:
             logger.warning("Presidio analyze error: %s", exc)
             return []
-        entities = [
-            self._to_entity(r, text)
-            for r in results
-            if r.entity_type in _LABEL_MAP
-        ]
+
+        entities = []
+        for r in results:
+            if r.entity_type not in _LABEL_MAP:
+                continue
+            pii_type = _LABEL_MAP[r.entity_type]
+            if pii_type == "LOCATION" and not location_enabled:
+                continue
+            if enabled_types is not None and pii_type not in enabled_types:
+                continue
+            entities.append(self._to_entity(r, text))
+
         effective_context = context_map if context_map is not None else self._context_map
-        return self._apply_context_boost(entities, text, effective_context)
+        return self._apply_context_boost(entities, text, effective_context, min_score)
 
     def _apply_context_boost(
         self,
         entities: list[PiiEntity],
         text: str,
         context_map: dict[str, list[str]],
+        min_score: float = _MIN_SCORE,
     ) -> list[PiiEntity]:
         if not context_map:
-            return [e for e in entities if e.score >= _MIN_SCORE]
+            return [e for e in entities if e.score >= min_score]
         result = []
         for entity in entities:
             score = entity.score
@@ -118,7 +134,7 @@ class PresidioDetector(DetectorContract):
                 window = text[max(0, entity.start - _CONTEXT_WINDOW):entity.start].lower()
                 if any(w in window for w in words):
                     score = max(score, 0.90)
-            if score >= _MIN_SCORE:
+            if score >= min_score:
                 if score != entity.score:
                     entity = PiiEntity(
                         start=entity.start, end=entity.end,

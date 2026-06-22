@@ -6,6 +6,17 @@ This roadmap reflects current priorities. Items may shift based on community fee
 
 ---
 
+## v0.next — gRPC transport (pii-protect ↔ pii-cloud)
+
+- [ ] **gRPC server** — expose a gRPC endpoint alongside the existing HTTP API on a separate port (default `50051`); proto definition in `proto/pii_protect.proto`
+- [ ] **AnonymizationService** — `Anonymize`, `AnonymizeBatch`, `Detect`, `Ping` RPCs mirroring the existing REST endpoints
+- [ ] **AdminConfigService** — `ListConfig`, `GetConfig`, `SetConfig`, `DeleteConfig` RPCs for scoped config CRUD
+- [ ] **StatsService** — `GetStats` RPC
+- [ ] **gRPC metadata auth** — read `x-api-key`, `x-pii-tenant-id`, `x-router-auth` from gRPC request metadata (mirrors HTTP headers)
+- [ ] **pii-cloud GrpcTransport** — pii-cloud already has `GrpcTransport` + generated stub placeholder; activate once the engine exposes the gRPC port
+
+---
+
 ## Architecture — Option B (open-core + cloud private module)
 
 The engine follows an **open-core, self-hosted-first** model. Running with `MULTITENANCY_ENABLED=false` (the default) gives a fully isolated single-tenant deployment: no cloud dependency, no tenant headers, no shared state. The Plugin Manager foundation (shipped in v0.1) defines the extension boundary between core and optional modules.

@@ -141,3 +141,28 @@ async def delete_mappings_bulk(
     repo = MappingRepository(db)
     deleted = await repo.delete_by_ids(body.ids, tenant_id=api_key.tenant_id)
     return CleanupResponse(deleted_count=deleted)
+
+
+class AnomalyEntry(BaseModel):
+    type: str
+    description: str
+
+
+class AnomalyStats(BaseModel):
+    checked_at: str
+    last_hour_events: int
+    hourly_avg_7d: float
+    threshold: float
+    anomalies_detected: bool
+    anomalies: list[AnomalyEntry]
+
+
+@router.get("/audit/anomalies", response_model=AnomalyStats)
+async def get_anomaly_stats(
+    threshold: float = Query(default=3.0, ge=1.0, le=100.0),
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Art. 33 GDPR — breach notification base: surface anomalous activity patterns."""
+    svc = AuditService(db)
+    return await svc.get_anomaly_stats(tenant_id=api_key.tenant_id, threshold=threshold)

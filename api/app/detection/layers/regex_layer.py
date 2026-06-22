@@ -26,7 +26,7 @@ class ItalianRegexDetector(DetectorContract):
     def priority(self) -> int:
         return 30
 
-    def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
+    def detect(self, text: str, language: str = "it", layer_config: dict | None = None) -> list[PiiEntity]:
         entities: list[PiiEntity] = []
         for cp in self._compiled:
             for match in cp.pattern.finditer(text):

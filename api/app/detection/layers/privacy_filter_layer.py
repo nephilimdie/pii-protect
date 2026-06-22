@@ -135,27 +135,35 @@ class PrivacyFilterDetector(DetectorContract):
         except Exception as exc:
             logger.warning("PrivacyFilter model unavailable: %s", exc)
 
-    def detect(self, text: str, language: str = "it") -> list[PiiEntity]:
+    def detect(self, text: str, language: str = "it", layer_config: dict | None = None) -> list[PiiEntity]:
+        cfg = layer_config or {}
+        min_score = cfg.get("min_score", _MIN_SCORE)
+        min_chars = cfg.get("min_chars", None)
+        enabled_types: set[str] | None = (
+            set(cfg["enabled_types"]) if "enabled_types" in cfg else None
+        )
         if not self.is_available():
             return []
+        if min_chars is not None and len(text) < min_chars:
+            return []
         try:
-            return self._run(text)
+            return self._run(text, min_score=min_score, enabled_types=enabled_types)
         except Exception as exc:
             logger.warning("PrivacyFilter inference error: %s", exc)
             return []
 
-    def _run(self, text: str) -> list[PiiEntity]:
+    def _run(self, text: str, min_score: float = _MIN_SCORE, enabled_types: set[str] | None = None) -> list[PiiEntity]:
         entities: list[PiiEntity] = []
         cursor = 0
         for line in text.splitlines(keepends=True):
             line_stripped = line.rstrip("\n\r")
             if line_stripped.strip():
-                for e in self._run_line(line_stripped, cursor):
+                for e in self._run_line(line_stripped, cursor, min_score=min_score, enabled_types=enabled_types):
                     entities.append(e)
             cursor += len(line)
         return entities
 
-    def _run_line(self, line: str, global_offset: int) -> list[PiiEntity]:
+    def _run_line(self, line: str, global_offset: int, min_score: float = _MIN_SCORE, enabled_types: set[str] | None = None) -> list[PiiEntity]:
         import numpy as np
 
         enc = self._tokenizer.encode(line, add_special_tokens=False)
@@ -192,10 +200,12 @@ class PrivacyFilterDetector(DetectorContract):
             if not span["scores"]:
                 continue
             avg_score = sum(span["scores"]) / len(span["scores"])
-            if avg_score < _MIN_SCORE:
+            if avg_score < min_score:
                 continue
             pii_type = _LABEL_MAP.get(span["group"])
             if pii_type is None:
+                continue
+            if enabled_types is not None and pii_type not in enabled_types:
                 continue
             start = global_offset + span["start"]
             end = global_offset + span["end"]
