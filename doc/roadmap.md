@@ -91,6 +91,7 @@ Commercial marketplace operations remain outside the core: accounts, payments, e
 - On-device mode (SQLite + smaller models) for air-gapped environments
 - Differential privacy noise on numeric aggregates (salaries, ages)
 - Active learning loop: flag uncertain entities for human review
+- **Image PII redaction layer** — extend the detection pipeline to images (JPEG, PNG, PDF pages). The layer runs in two passes: (1) an OCR pass (e.g. Tesseract / EasyOCR) extracts text tokens with their bounding-box coordinates, feeds them through the existing text pipeline, and blacks out regions that contain PII; (2) a vision pass (e.g. face detector via OpenCV/MediaPipe or a YOLO variant) detects biometric data (faces, hands, signatures) and applies pixel-level redaction. The output is the original image with sensitive regions replaced by solid fills or blurred patches. API contract: `POST /v1/anonymize/image` accepts multipart or base64, returns the redacted image (same format) plus a JSON sidecar listing detected regions, types, and confidence scores — same shape as the text endpoint for pipeline consistency. The image layer is opt-in and ships as a plugin to keep core dependencies lean.
 
 ---
 

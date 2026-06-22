@@ -68,7 +68,7 @@ async def get_layer_settings(
             "schema": lc.SCHEMA[layer],
             "all_types": lc.ALL_TYPES[layer],
         }
-    return {"ok": True, "data": layers}
+    return layers
 
 
 @router.put("/layer-settings/{layer}")
