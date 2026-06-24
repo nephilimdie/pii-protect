@@ -6,14 +6,44 @@ from sqlalchemy import select, delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.mapping.models import PiiMapping
 from app.mapping.encryptor import FieldEncryptor
+from app.mapping.key_provider import KeyProvider
 from app.detection.entities import MappingEntry
 from app.config import settings
 
 
 class MappingRepository:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, key_provider: KeyProvider) -> None:
         self._db = db
-        self._encryptor = FieldEncryptor(settings.encryption_key)
+        self._key_provider = key_provider
+        # KEK encryptor kept for fallback decryption of pre-migration rows.
+        self._kek_encryptor = FieldEncryptor(settings.encryption_key)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    async def _encryptor(self, tenant_id: str | None) -> FieldEncryptor:
+        dek = await self._key_provider.get_dek(tenant_id)
+        return FieldEncryptor(dek)
+
+    async def _decrypt(self, value: str, tenant_id: str | None) -> str:
+        """Decrypt *value* using the tenant DEK, falling back to the KEK.
+
+        The fallback covers rows that were encrypted with the global KEK before
+        the DEK/KEK migration (042_tenant_dek). Only attempted when tenant_id
+        is not None, since for None the DEK *is* the KEK.
+        """
+        enc = await self._encryptor(tenant_id)
+        try:
+            return enc.decrypt(value)
+        except ValueError:
+            if tenant_id is not None:
+                return self._kek_encryptor.decrypt(value)
+            raise
+
+    # ------------------------------------------------------------------
+    # Write
+    # ------------------------------------------------------------------
 
     async def save_many(
         self,
@@ -24,6 +54,7 @@ class MappingRepository:
     ) -> None:
         if not mappings:
             return
+        enc = await self._encryptor(tenant_id)
         rows = [
             {
                 "id": uuid.uuid4(),
@@ -31,7 +62,7 @@ class MappingRepository:
                 "context_id": context_id,
                 "context_type": context_type,
                 "token": entry.token,
-                "original_encrypted": self._encryptor.encrypt(entry.original),
+                "original_encrypted": enc.encrypt(entry.original),
                 "pii_type": entry.pii_type,
             }
             for entry in mappings
@@ -39,6 +70,10 @@ class MappingRepository:
         stmt = pg_insert(PiiMapping).values(rows).on_conflict_do_nothing()
         await self._db.execute(stmt)
         await self._db.commit()
+
+    # ------------------------------------------------------------------
+    # Read
+    # ------------------------------------------------------------------
 
     async def find_by_context(
         self,
@@ -56,7 +91,7 @@ class MappingRepository:
         entries = []
         for row in rows:
             try:
-                original = self._encryptor.decrypt(row.original_encrypted)
+                original = await self._decrypt(row.original_encrypted, tenant_id)
             except ValueError:
                 continue
             entries.append(MappingEntry(
@@ -89,7 +124,7 @@ class MappingRepository:
         items = []
         for row in rows:
             try:
-                original = self._encryptor.decrypt(row.original_encrypted)
+                original = await self._decrypt(row.original_encrypted, tenant_id)
             except ValueError:
                 original = "***"
             items.append({
@@ -128,7 +163,7 @@ class MappingRepository:
         items = []
         for row in rows:
             try:
-                original = self._encryptor.decrypt(row.original_encrypted)
+                original = await self._decrypt(row.original_encrypted, tenant_id)
             except ValueError:
                 original = "***"
             items.append({
@@ -140,6 +175,10 @@ class MappingRepository:
                 "created_at": row.created_at.isoformat(),
             })
         return items, total
+
+    # ------------------------------------------------------------------
+    # Delete
+    # ------------------------------------------------------------------
 
     async def delete_by_ids(self, ids: list[uuid.UUID], tenant_id: str | None = None) -> int:
         stmt = delete(PiiMapping).where(PiiMapping.id.in_(ids))

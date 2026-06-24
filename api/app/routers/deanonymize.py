@@ -12,6 +12,8 @@ from app.identity.tenant import get_tenant_id
 from app.identity.models import ApiKey
 from app.anonymization.deanonymizer import PiiDeanonymizer
 from app.mapping.repository import MappingRepository
+from app.mapping.key_provider import KeyProvider
+from app.mapping.dependencies import get_key_provider
 from app.audit.audit_service import AuditService
 from app.surrogates.policy_service import PolicyService
 from app.usage.service import UsageService
@@ -37,6 +39,7 @@ async def deanonymize(
     api_key: ApiKey = Depends(require_service),
     db: AsyncSession = Depends(get_db),
     tenant_id: str | None = Depends(get_tenant_id),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
     started_at = time.perf_counter()
     request_id = uuid.uuid4()
@@ -44,7 +47,7 @@ async def deanonymize(
     await usage_service.ensure_within_limits(api_key, len(body.text))
     policy = await PolicyService(db, tenant_id=tenant_id).resolve(body.context_type, None, None)
 
-    repo = MappingRepository(db)
+    repo = MappingRepository(db, key_provider)
     mappings = await repo.find_by_context(body.context_id, body.context_type, tenant_id)
 
     restored = PiiDeanonymizer().deanonymize(body.text, mappings)

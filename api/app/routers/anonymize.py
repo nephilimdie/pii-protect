@@ -19,6 +19,8 @@ from app.routers._anonymize_models import (
     EntityDetail,
     PolicyMetadata,
 )
+from app.mapping.key_provider import KeyProvider
+from app.mapping.dependencies import get_key_provider
 from app.routers._anonymize_logic import (
     get_anonymizer,
     get_registry,
@@ -36,8 +38,9 @@ async def anonymize(
     db: AsyncSession = Depends(get_db),
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
     tenant_id: str | None = Depends(get_tenant_id),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
-    return await _process_anonymization(body, request, api_key, db, anonymizer, tenant_id)
+    return await _process_anonymization(body, request, api_key, db, anonymizer, tenant_id, key_provider)
 
 
 @router.post("/anonymize/batch", response_model=BatchAnonymizeResponse)
@@ -48,6 +51,7 @@ async def anonymize_batch(
     db: AsyncSession = Depends(get_db),
     anonymizer: PiiAnonymizer = Depends(get_anonymizer),
     tenant_id: str | None = Depends(get_tenant_id),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
     if len(body.items) > settings.batch_max_items:
         raise HTTPException(
@@ -70,7 +74,7 @@ async def anonymize_batch(
                 "policy": item.policy or body.policy,
                 "dry_run": body.dry_run if item.dry_run is None else item.dry_run,
             })
-            response = await _process_anonymization(item_body, request, api_key, db, anonymizer, tenant_id)
+            response = await _process_anonymization(item_body, request, api_key, db, anonymizer, tenant_id, key_provider)
             results.append(
                 BatchItemResult(
                     id=item.id,

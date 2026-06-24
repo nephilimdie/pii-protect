@@ -19,6 +19,7 @@ from app.detection.detector_registry import DetectorRegistry
 from app.detection.config_resolver import DetectionConfigResolver
 from app.anonymization.anonymizer import PiiAnonymizer
 from app.mapping.repository import MappingRepository
+from app.mapping.key_provider import EnvKekKeyProvider, KeyProvider
 from app.audit.audit_service import AuditService
 from app.surrogates.policy_service import PolicyService
 from app.surrogates.surrogate_service import SurrogateService
@@ -154,6 +155,7 @@ async def _process_anonymization(
     db: AsyncSession,
     anonymizer: PiiAnonymizer,
     tenant_id: str | None = None,
+    key_provider: KeyProvider | None = None,
 ) -> AnonymizeResponse:
     lang = body.language or getattr(request.app.state, "default_language", "it")
     locale = language_to_locale(lang)
@@ -225,7 +227,8 @@ async def _process_anonymization(
         ]
 
         if not body.dry_run:
-            repo = MappingRepository(db)
+            _kp = key_provider if key_provider is not None else EnvKekKeyProvider(db, settings.encryption_key)
+            repo = MappingRepository(db, _kp)
             await repo.save_many(mappings, body.context_id, body.context_type, tenant_id)
 
         ip_anon = getattr(request.app.state, "ip_anonymization_enabled", True)

@@ -15,6 +15,8 @@ from app.database import get_db
 from app.identity.dependencies import require_admin
 from app.identity.models import ApiKey
 from app.mapping.repository import MappingRepository
+from app.mapping.key_provider import KeyProvider
+from app.mapping.dependencies import get_key_provider
 from app.settings_repository import SettingsRepository
 from app.usage.models import UsageEvent
 
@@ -113,13 +115,14 @@ async def update_retention(
 async def run_cleanup(
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
     repo = SettingsRepository(db)
     cfg = await _load(repo)
     tenant_id = api_key.tenant_id
 
     # Mappings
-    mapping_repo = MappingRepository(db)
+    mapping_repo = MappingRepository(db, key_provider)
     mappings_deleted = await mapping_repo.delete_expired(cfg.mapping_ttl_days, tenant_id=tenant_id)
 
     # Audit logs
@@ -206,12 +209,13 @@ async def export_by_context(
     per_page: int = Query(default=100, ge=1, le=500),
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
     """Art. 20 GDPR — data portability: export paginated data for a context_id as JSON or CSV."""
     tenant_id = api_key.tenant_id
     offset = (page - 1) * per_page
 
-    mappings, total_mappings = await MappingRepository(db).find_all_by_context_id(
+    mappings, total_mappings = await MappingRepository(db, key_provider).find_all_by_context_id(
         context_id, tenant_id, offset=offset, limit=per_page,
     )
     audit_entries, total_audit_logs = await AuditService(db).find_by_context(

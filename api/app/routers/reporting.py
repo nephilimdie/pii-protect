@@ -10,6 +10,8 @@ from app.identity.models import ApiKey
 from app.reporting.stats_service import StatsService
 from app.audit.audit_service import AuditService
 from app.mapping.repository import MappingRepository
+from app.mapping.key_provider import KeyProvider
+from app.mapping.dependencies import get_key_provider
 from app.config import settings
 
 router = APIRouter()
@@ -103,8 +105,9 @@ async def cleanup(
     body: CleanupRequest,
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
-    repo = MappingRepository(db)
+    repo = MappingRepository(db, key_provider)
     deleted = await repo.delete_expired(body.ttl_days, tenant_id=api_key.tenant_id)
     return CleanupResponse(deleted_count=deleted)
 
@@ -126,8 +129,9 @@ async def list_mappings(
     per_page: int = Query(50, ge=1, le=200),
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
-    repo = MappingRepository(db)
+    repo = MappingRepository(db, key_provider)
     items, total = await repo.list_paginated(page, per_page, tenant_id=api_key.tenant_id)
     return MappingListResponse(items=items, total=total, page=page)
 
@@ -137,8 +141,9 @@ async def delete_mappings_bulk(
     body: BulkDeleteRequest,
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    key_provider: KeyProvider = Depends(get_key_provider),
 ):
-    repo = MappingRepository(db)
+    repo = MappingRepository(db, key_provider)
     deleted = await repo.delete_by_ids(body.ids, tenant_id=api_key.tenant_id)
     return CleanupResponse(deleted_count=deleted)
 

@@ -7,6 +7,19 @@ from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
 
 
+class TenantKey(Base):
+    """Stores one DEK per tenant, encrypted with the global KEK (ENCRYPTION_KEY env var).
+
+    Self-hosted deployments (tenant_id=None) never write here — the KEK is used
+    directly as the DEK for backward compatibility.
+    """
+    __tablename__ = "tenant_keys"
+
+    tenant_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    dek_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class PiiMapping(Base):
     __tablename__ = "pii_mappings"
     __table_args__ = (
