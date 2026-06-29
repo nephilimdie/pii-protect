@@ -457,6 +457,87 @@ components:
           type: string
           format: date-time
 
+    DetectRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Plain text to analyse for PII.
+          example: "Mario Rossi, nato il 12/03/1985, vive a Milano. Email: mario@example.com"
+        context_type:
+          type: string
+          default: default
+          description: |
+            Optional context type hint. Used only when `policy` is omitted to infer
+            which PII types are relevant to surface. Has no effect on what is detected —
+            all layers always run.
+          example: "default"
+        language:
+          type: string
+          description: Language hint for the NER detection layer. Defaults to `it`.
+          example: "it"
+        policy:
+          type: object
+          description: |
+            Optional filter. If provided, only entities matching the protect/keep rules are
+            returned — same semantics as the inline policy in `/v1/anonymize`. If omitted,
+            **all** detected entities are returned regardless of type.
+          properties:
+            protect:
+              type: array
+              items:
+                type: string
+              description: Return only these PII types.
+              example: ["PERSON", "FISCAL_CODE"]
+            keep:
+              type: array
+              items:
+                type: string
+              description: Exclude these PII types from the response.
+              example: ["TARGA"]
+
+    DetectedEntity:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "PERSON"
+        start:
+          type: integer
+          description: Start character offset (inclusive) in the original text.
+          example: 0
+        end:
+          type: integer
+          description: End character offset (exclusive) in the original text.
+          example: 11
+        value:
+          type: string
+          description: Exact substring of the original text that was identified as PII.
+          example: "Mario Rossi"
+        confidence:
+          type: number
+          format: float
+          example: 0.95
+
+    DetectResponse:
+      type: object
+      properties:
+        entity_count:
+          type: integer
+          example: 4
+        pii_types_found:
+          type: array
+          items:
+            type: string
+          description: Sorted list of unique PII type codes found.
+          example: ["DATE_BORN", "EMAIL", "LOCATION", "PERSON"]
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectedEntity"
+          description: All detected entities ordered by position (start offset ascending).
+
     DeanonymizeRequest:
       type: object
       required: [text, context_id, context_type]
@@ -514,7 +595,7 @@ components:
           type: string
         action:
           type: string
-          enum: [anonymize, deanonymize, cleanup, key_created, key_revoked]
+          enum: [anonymize, deanonymize, detect, cleanup, key_created, key_revoked]
         context_id:
           type: string
         context_type:
@@ -782,6 +863,68 @@ paths:
           description: Missing or invalid API key
         "403":
           description: Insufficient role
+
+  /v1/detect:
+    post:
+      summary: Detect PII in text
+      description: |
+        Runs the full detection pipeline on the input text and returns all PII entities found —
+        their type, position, raw value, and confidence score. **The original text is never
+        modified** and **no mappings are stored**.
+
+        Useful for document analysis, pre-anonymization inspection, compliance auditing,
+        or surfacing PII before deciding how to handle it.
+
+        The detection cascade is identical to `/v1/anonymize`:
+        1. **Regex** — deterministic Italian patterns (CF, IBAN, P.IVA, targa, phone, email).
+        2. **AI4Privacy** — fine-tuned multilingual PII transformer.
+        3. **PrivacyFilter** — broad ONNX model for secrets and free-form sensitive text.
+        4. **Presidio + spaCy** — NER for PERSON, ADDRESS, DATE.
+
+        Reclassification rules and the denylist are applied post-detection, exactly as in
+        `/v1/anonymize`.
+
+        **curl example:**
+        ```bash
+        curl -X POST http://localhost:15500/v1/detect \
+          -H "X-Api-Key: $PII_SERVICE_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "text": "Mario Rossi, nato il 12/03/1985. Email: mario@example.com",
+            "language": "it"
+          }'
+        ```
+
+        **Differences from `/v1/anonymize`:**
+
+        | | `/v1/detect` | `/v1/anonymize` |
+        |---|---|---|
+        | Text modified | No | Yes |
+        | Mappings saved | No | Yes (unless `dry_run: true`) |
+        | `value` returned | Always | Only with `include_entity_values: true` + admin role |
+        | `context_id` required | No | Yes |
+        | Audit action | `detect` | `anonymize` |
+      operationId: detect
+      tags: [Pseudonymization]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetectRequest"
+      responses:
+        "200":
+          description: Detection results with entity positions and values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetectResponse"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+        "422":
+          description: Validation error
 
   /v1/deanonymize:
     post:

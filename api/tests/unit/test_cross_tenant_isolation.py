@@ -98,9 +98,8 @@ async def async_session():
     """Yield a fully-initialised SQLite in-memory async session."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 
-    # Create tables using the stub Base that PiiMapping is attached to
     async with engine.begin() as conn:
-        await conn.run_sync(_Base.metadata.create_all)
+        await conn.run_sync(lambda c: PiiMapping.__table__.create(c, checkfirst=True))
 
     async_session_factory = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
@@ -114,9 +113,14 @@ async def async_session():
 
 def _make_repo(session: AsyncSession) -> MappingRepository:
     """Return a repository wired to the given session."""
+    class _FakeKeyProvider:
+        async def get_dek(self, tenant_id: str | None) -> str:
+            return ENCRYPTION_KEY
+
     repo = MappingRepository.__new__(MappingRepository)
     repo._db = session
-    repo._encryptor = _NoOpEncryptor(ENCRYPTION_KEY)
+    repo._key_provider = _FakeKeyProvider()
+    repo._kek_encryptor = _NoOpEncryptor(ENCRYPTION_KEY)
     return repo
 
 

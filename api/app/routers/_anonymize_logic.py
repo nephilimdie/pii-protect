@@ -46,6 +46,42 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+async def run_detection(
+    anonymizer: PiiAnonymizer,
+    text: str,
+    context_id: str,
+    context_type: str,
+    language: str,
+):
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, anonymizer.detect_only, text, context_id, context_type, language
+    )
+    return result.entities
+
+
+def filter_detected_entities(
+    entities: list,
+    keep_types: set[str] | None = None,
+    protect_types: set[str] | None = None,
+    always_include_types: set[str] | None = None,
+) -> list:
+    keep = keep_types or set()
+    include_always = always_include_types or set()
+    filtered = []
+    for entity in entities:
+        if entity.pii_type in keep:
+            continue
+        if (
+            protect_types is not None
+            and entity.pii_type not in protect_types
+            and entity.pii_type not in include_always
+        ):
+            continue
+        filtered.append(entity)
+    return filtered
+
+
 async def get_anonymizer(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -114,11 +150,14 @@ async def _build_partial_response(
 ) -> AnonymizeResponse | None:
     try:
         lang = body.language or getattr(request.app.state, "default_language", "it")
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, anonymizer.detect_only, body.text, body.context_id, body.context_type, lang
+        entities = await run_detection(
+            anonymizer=anonymizer,
+            text=body.text,
+            context_id=body.context_id,
+            context_type=body.context_type,
+            language=lang,
         )
-        final_text, mappings = _apply_replacements(body.text, result.entities, "tag", None)
+        final_text, mappings = _apply_replacements(body.text, entities, "tag", None)
         pii_types = list({m.pii_type for m in mappings})
         return AnonymizeResponse(
             anonymized_text=final_text,
@@ -180,18 +219,20 @@ async def _process_anonymization(
         if body.include_entity_values and api_key.role != "admin":
             raise HTTPException(status_code=403, detail="insufficient_role")
 
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, anonymizer.detect_only, body.text, body.context_id, body.context_type, lang
+        entities = await run_detection(
+            anonymizer=anonymizer,
+            text=body.text,
+            context_id=body.context_id,
+            context_type=body.context_type,
+            language=lang,
         )
 
-        entities_to_protect = []
-        for entity in result.entities:
-            if entity.pii_type in keep_types:
-                continue
-            if protect_types is not None and entity.pii_type not in protect_types and entity.pii_type not in surrogate_types:
-                continue
-            entities_to_protect.append(entity)
+        entities_to_protect = filter_detected_entities(
+            entities=entities,
+            keep_types=keep_types,
+            protect_types=protect_types,
+            always_include_types=surrogate_types,
+        )
 
         needs_surrogate = resolved_mode == "surrogate" or bool(surrogate_types)
         if needs_surrogate:

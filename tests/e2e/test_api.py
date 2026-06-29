@@ -336,3 +336,112 @@ class TestReporting:
     def test_service_key_cannot_access_stats(self, client: httpx.Client, service_headers: dict):
         r = client.get("/v1/admin/stats", headers=service_headers)
         assert r.status_code == 403
+
+
+# ─── detect ──────────────────────────────────────────────────────────────────
+
+class TestDetect:
+    def test_fiscal_code_detected(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/detect",
+            json={"text": "Il codice fiscale è RSSMRA80A01H501U", "context_type": "case_file"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert "FISCAL_CODE" in body["pii_types_found"]
+        assert body["entity_count"] >= 1
+
+    def test_entities_contain_position_and_value(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/detect",
+            json={"text": "email: mario@test.com", "context_type": "default"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["entity_count"] >= 1
+        entity = next(e for e in body["entities"] if e["type"] == "EMAIL")
+        assert entity["value"] == "mario@test.com"
+        assert entity["start"] >= 0
+        assert entity["end"] > entity["start"]
+        assert 0.0 <= entity["confidence"] <= 1.0
+
+    def test_entities_sorted_by_start(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/detect",
+            json={"text": "CF RSSMRA80A01H501U email mario@test.com targa AB123CD", "context_type": "case_file"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        starts = [e["start"] for e in r.json()["entities"]]
+        assert starts == sorted(starts)
+
+    def test_no_pii_returns_empty(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/detect",
+            json={"text": "Il cielo è azzurro.", "context_type": "default"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["entity_count"] == 0
+        assert body["pii_types_found"] == []
+        assert body["entities"] == []
+
+    def test_text_not_modified(self, client: httpx.Client, service_headers: dict):
+        original = "CF RSSMRA80A01H501U"
+        r = client.post(
+            "/v1/detect",
+            json={"text": original, "context_type": "case_file"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        assert "anonymized_text" not in r.json()
+
+    def test_policy_keep_excludes_types(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/detect",
+            json={
+                "text": "CF RSSMRA80A01H501U email mario@test.com",
+                "context_type": "case_file",
+                "policy": {"keep": ["FISCAL_CODE"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        types = body["pii_types_found"]
+        assert "FISCAL_CODE" not in types
+        assert "EMAIL" in types
+
+    def test_policy_protect_limits_types(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/detect",
+            json={
+                "text": "CF RSSMRA80A01H501U email mario@test.com",
+                "context_type": "case_file",
+                "policy": {"protect": ["EMAIL"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        types = body["pii_types_found"]
+        assert "EMAIL" in types
+        assert "FISCAL_CODE" not in types
+
+    def test_missing_key_returns_401(self, client: httpx.Client):
+        r = client.post("/v1/detect", json={"text": "test", "context_type": "default"})
+        assert r.status_code == 401
+
+    def test_audit_log_records_detect_action(self, client: httpx.Client, service_headers: dict, admin_headers: dict):
+        client.post(
+            "/v1/detect",
+            json={"text": "CF RSSMRA80A01H501U", "context_type": "case_file"},
+            headers=service_headers,
+        )
+        r = client.get("/v1/admin/audit-log?action=detect&per_page=1", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.json()["total"] >= 1
+        assert r.json()["items"][0]["action"] == "detect"

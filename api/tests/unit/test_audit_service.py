@@ -41,7 +41,7 @@ async def test_log_persists_metadata_without_plaintext_document():
     session.commit = AsyncMock()
 
     api_key_id = uuid.uuid4()
-    await AuditService(session).log(
+    await AuditService(session, ip_anonymization=False).log(
         api_key_id=api_key_id,
         action="deanonymize",
         context_id="ctx-1",

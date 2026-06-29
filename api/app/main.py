@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.routers import anonymize, deanonymize, health
+from app.routers import anonymize, deanonymize, detect as detect_router, health
 from app.routers import identity as identity_router
 from app.routers import reporting as reporting_router
 from app.routers import regex_patterns as regex_patterns_router
@@ -370,7 +370,11 @@ async def tenant_guard_middleware(request: Request, call_next):
     else:
         # Internal API key check: must come BEFORE tenant-id handling
         if settings.internal_api_key:
-            incoming_key = request.headers.get("x-api-key", "")
+            incoming_key = (
+                request.headers.get("x-internal-api-key")
+                or request.headers.get("x-pii-internal-key")
+                or request.headers.get("x-api-key", "")
+            )
             if incoming_key != settings.internal_api_key:
                 return JSONResponse({"detail": "internal_key_required"}, status_code=403)
 
@@ -385,6 +389,7 @@ app.include_router(health.router)
 app.include_router(identity_router.router, prefix="/v1/auth")
 app.include_router(anonymize.router, prefix="/v1")
 app.include_router(deanonymize.router, prefix="/v1")
+app.include_router(detect_router.router, prefix="/v1")
 app.include_router(reporting_router.router, prefix="/v1/admin")
 app.include_router(regex_patterns_router.router, prefix="/v1/admin")
 app.include_router(denylist_router.router, prefix="/v1/admin")

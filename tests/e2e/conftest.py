@@ -1,10 +1,20 @@
 import uuid
 import pytest
 import httpx
+import os
 
 BASE_URL = "http://localhost:15500"
 UI_URL = "http://localhost:15501"
-ADMIN_KEY = "pii-admin-local-dev-key"
+ADMIN_KEY = os.getenv("E2E_ADMIN_KEY", "pii-admin-local-dev-key")
+INTERNAL_KEY = os.getenv("E2E_INTERNAL_API_KEY") or os.getenv("PII_INTERNAL_API_KEY")
+
+
+def _with_internal(headers: dict[str, str]) -> dict[str, str]:
+    if not INTERNAL_KEY:
+        return headers
+    out = dict(headers)
+    out["X-Internal-Api-Key"] = INTERNAL_KEY
+    return out
 
 
 @pytest.fixture(scope="session")
@@ -15,7 +25,7 @@ def client() -> httpx.Client:
 
 @pytest.fixture(scope="session")
 def admin_headers() -> dict:
-    return {"X-Api-Key": ADMIN_KEY}
+    return _with_internal({"X-Api-Key": ADMIN_KEY})
 
 
 @pytest.fixture(scope="session")
@@ -28,7 +38,7 @@ def service_key(client: httpx.Client, admin_headers: dict) -> str:
 
 @pytest.fixture(scope="session")
 def service_headers(service_key: str) -> dict:
-    return {"X-Api-Key": service_key}
+    return _with_internal({"X-Api-Key": service_key})
 
 
 @pytest.fixture
