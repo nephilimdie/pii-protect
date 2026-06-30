@@ -40,6 +40,7 @@ Detects and pseudonymizes PII through a 4-layer detection pipeline (Presidio + s
 | **Reclassification rules** | Post-detection context rules (e.g. DATE near "nato a <City> il" → DATE_BORN). Visualized as a bipartite graph. |
 | **DB-configurable regex** | Patterns hot-reloaded from DB on every change. No restart needed. |
 | **Denylist** | Exclude recurring false positives (exact or substring match). |
+| **Mask mode** | Irreversible redaction via `POST /v1/mask`. Fill style (length-preserving `████`) or label style (`[PERSON]`). No mappings stored. |
 | **Batch anonymization** | Process multiple items in one request via `/v1/anonymize/batch` with configurable max items. |
 | **Audit log** | Every API call logged: action, entity count, context type, API key used. |
 | **API key management** | Roles: `admin`, `service`, `auditor`. Keys support expiry and request/character limits. |
@@ -111,6 +112,26 @@ curl -s -X POST http://localhost:15500/v1/anonymize \
     "mode": "surrogate"
   }' | jq .anonymized_text
 # → "Michael Johnson, email: m.johnson@acme.com, phone: +1-555-9847"
+
+# Mask — irreversible redaction (fill style, length-preserving)
+curl -s -X POST http://localhost:15500/v1/mask \
+  -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Mario Rossi, CF RSSMRA80A01H501U, email mario@example.com",
+    "context_type": "case_file"
+  }' | jq .masked_text
+# → "████████████, CF ████████████████, email ████████████████"
+
+# Mask — label style (human-readable redaction markers)
+curl -s -X POST http://localhost:15500/v1/mask \
+  -H "X-Api-Key: $PII_ADMIN_INITIAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Mario Rossi, CF RSSMRA80A01H501U, email mario@example.com",
+    "mask_style": "label"
+  }' | jq .masked_text
+# → "[PERSON], CF [FISCAL_CODE], email [EMAIL]"
 
 # De-anonymize — restore original from tag
 curl -s -X POST http://localhost:15500/v1/deanonymize \

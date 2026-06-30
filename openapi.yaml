@@ -538,6 +538,107 @@ components:
             $ref: "#/components/schemas/DetectedEntity"
           description: All detected entities ordered by position (start offset ascending).
 
+    MaskRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Plain text whose PII will be masked irreversibly.
+          example: "Mario Rossi, CF RSSMRA80A01H501U, email mario@example.com"
+        context_type:
+          type: string
+          default: default
+          description: Optional context type hint for policy resolution.
+          example: "default"
+        language:
+          type: string
+          description: Language hint for the NER layer. Defaults to `it`.
+          example: "it"
+        policy:
+          type: object
+          description: |
+            Optional filter — same `protect`/`keep` semantics as `/v1/anonymize`.
+            If omitted, all detected PII types are masked.
+          properties:
+            protect:
+              type: array
+              items:
+                type: string
+              description: Mask only these PII types.
+              example: ["PERSON", "FISCAL_CODE"]
+            keep:
+              type: array
+              items:
+                type: string
+              description: Exclude these PII types from masking.
+              example: ["TARGA"]
+        mask_char:
+          type: string
+          default: "█"
+          maxLength: 4
+          description: |
+            Character(s) repeated per-character to fill masked spans (used when
+            `mask_style` is `fill`). Default is `█`; common alternatives: `*`, `X`.
+          example: "█"
+        mask_style:
+          type: string
+          enum: [fill, label]
+          default: fill
+          description: |
+            - `fill` — each character in the PII span is replaced by `mask_char`, preserving
+              the original length (e.g. `mario@example.com` → `████████████████`).
+            - `label` — the entire PII span is replaced by `[TYPE]` (e.g. `[EMAIL]`).
+              Length is **not** preserved; use when human-readable redaction markers are needed.
+          example: "fill"
+
+    MaskedEntity:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "PERSON"
+        start:
+          type: integer
+          description: Start character offset (inclusive) in the **original** (pre-mask) text.
+          example: 0
+        end:
+          type: integer
+          description: End character offset (exclusive) in the **original** (pre-mask) text.
+          example: 11
+        value:
+          type: string
+          description: Exact substring of the original text that was masked.
+          example: "Mario Rossi"
+        confidence:
+          type: number
+          format: float
+          example: 0.95
+
+    MaskResponse:
+      type: object
+      properties:
+        masked_text:
+          type: string
+          description: Input text with PII replaced by the chosen mask. Not reversible — no mappings are stored.
+          example: "████████████, CF ████████████████, email ████████████████"
+        entity_count:
+          type: integer
+          example: 3
+        pii_types_found:
+          type: array
+          items:
+            type: string
+          description: Sorted list of unique PII type codes that were masked.
+          example: ["EMAIL", "FISCAL_CODE", "PERSON"]
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaskedEntity"
+          description: |
+            Entities ordered by position (start offset ascending) in the original text.
+            Offsets are always relative to the original, unmasked input.
+
     DeanonymizeRequest:
       type: object
       required: [text, context_id, context_type]
@@ -595,7 +696,7 @@ components:
           type: string
         action:
           type: string
-          enum: [anonymize, deanonymize, detect, cleanup, key_created, key_revoked]
+          enum: [anonymize, deanonymize, detect, mask, cleanup, key_created, key_revoked]
         context_id:
           type: string
         context_type:
@@ -925,6 +1026,83 @@ paths:
           description: Insufficient role
         "422":
           description: Validation error
+
+  /v1/mask:
+    post:
+      summary: Mask PII in text (irreversible)
+      description: |
+        Runs the full detection pipeline and **irreversibly replaces** every PII span with
+        a masking character or a redaction label. No mappings are stored and the original
+        values cannot be recovered from the output.
+
+        Two masking styles are available:
+
+        | Style | Behaviour | Example |
+        |-------|-----------|---------|
+        | `fill` (default) | Each character replaced by `mask_char` — **length-preserving** | `mario@example.com` → `████████████████` |
+        | `label` | Entire span replaced by `[TYPE]` — **length changes** | `mario@example.com` → `[EMAIL]` |
+
+        The `entities` array in the response always carries offsets relative to the
+        **original** (pre-mask) text so callers can highlight or audit what was masked.
+
+        **Use cases:** export-safe documents, display redaction, log sanitization,
+        compliance screenshots, clipboard guards.
+
+        **curl example (fill):**
+        ```bash
+        curl -X POST http://localhost:15500/v1/mask \
+          -H "X-Api-Key: $PII_SERVICE_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "text": "Mario Rossi, CF RSSMRA80A01H501U, email mario@example.com",
+            "context_type": "case_file"
+          }'
+        # → {"masked_text":"████████████, CF ████████████████, email ████████████████", ...}
+        ```
+
+        **curl example (label):**
+        ```bash
+        curl -X POST http://localhost:15500/v1/mask \
+          -H "X-Api-Key: $PII_SERVICE_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "text": "Mario Rossi, CF RSSMRA80A01H501U, email mario@example.com",
+            "mask_style": "label"
+          }'
+        # → {"masked_text":"[PERSON], CF [FISCAL_CODE], email [EMAIL]", ...}
+        ```
+
+        **Differences from related endpoints:**
+
+        | | `/v1/mask` | `/v1/detect` | `/v1/anonymize` |
+        |---|---|---|---|
+        | Text modified | Yes — irreversibly | No | Yes — reversibly |
+        | Mappings saved | **No** | No | Yes (unless `dry_run`) |
+        | `value` returned | Always | Always | Admin only |
+        | `context_id` required | No | No | Yes |
+        | Reversible | **No** | — | Yes (via `/v1/deanonymize`) |
+        | Audit action | `mask` | `detect` | `anonymize` |
+      operationId: mask
+      tags: [Pseudonymization]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaskRequest"
+      responses:
+        "200":
+          description: Masking successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaskResponse"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+        "422":
+          description: Validation error (e.g. invalid `mask_style`)
 
   /v1/deanonymize:
     post:

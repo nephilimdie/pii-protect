@@ -24,6 +24,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.routers import anonymize, deanonymize, detect as detect_router, health
+from app.routers import mask as mask_router
 from app.routers import identity as identity_router
 from app.routers import reporting as reporting_router
 from app.routers import regex_patterns as regex_patterns_router
@@ -390,6 +391,7 @@ app.include_router(identity_router.router, prefix="/v1/auth")
 app.include_router(anonymize.router, prefix="/v1")
 app.include_router(deanonymize.router, prefix="/v1")
 app.include_router(detect_router.router, prefix="/v1")
+app.include_router(mask_router.router, prefix="/v1")
 app.include_router(reporting_router.router, prefix="/v1/admin")
 app.include_router(regex_patterns_router.router, prefix="/v1/admin")
 app.include_router(denylist_router.router, prefix="/v1/admin")

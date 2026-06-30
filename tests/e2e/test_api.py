@@ -445,3 +445,121 @@ class TestDetect:
         assert r.status_code == 200
         assert r.json()["total"] >= 1
         assert r.json()["items"][0]["action"] == "detect"
+
+
+# ─── mask ─────────────────────────────────────────────────────────────────────
+
+class TestMask:
+    def test_fill_style_replaces_with_blocks(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/mask",
+            json={"text": "email: mario@test.com", "context_type": "default"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert "mario@test.com" not in body["masked_text"]
+        assert "EMAIL" in body["pii_types_found"]
+
+    def test_fill_is_length_preserving(self, client: httpx.Client, service_headers: dict):
+        text = "CF RSSMRA80A01H501U"
+        r = client.post(
+            "/v1/mask",
+            json={"text": text, "context_type": "case_file", "mask_style": "fill"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        assert len(r.json()["masked_text"]) == len(text)
+
+    def test_label_style_replaces_with_type_label(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/mask",
+            json={"text": "email: mario@test.com", "context_type": "default", "mask_style": "label"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        assert "[EMAIL]" in r.json()["masked_text"]
+
+    def test_custom_mask_char(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/mask",
+            json={"text": "CF RSSMRA80A01H501U", "context_type": "case_file", "mask_char": "*"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        assert "RSSMRA80A01H501U" not in r.json()["masked_text"]
+        assert "*" in r.json()["masked_text"]
+
+    def test_entities_have_original_positions_and_value(self, client: httpx.Client, service_headers: dict):
+        text = "email: mario@test.com fine"
+        r = client.post(
+            "/v1/mask",
+            json={"text": text, "context_type": "default"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        entity = next(e for e in body["entities"] if e["type"] == "EMAIL")
+        assert entity["value"] == "mario@test.com"
+        assert text[entity["start"]:entity["end"]] == "mario@test.com"
+
+    def test_no_pii_returns_original_text(self, client: httpx.Client, service_headers: dict):
+        text = "Il cielo è azzurro."
+        r = client.post(
+            "/v1/mask",
+            json={"text": text, "context_type": "default"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["masked_text"] == text
+        assert body["entity_count"] == 0
+
+    def test_response_has_no_context_id(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/mask",
+            json={"text": "CF RSSMRA80A01H501U", "context_type": "case_file"},
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert "context_id" not in body
+        assert "anonymized_text" not in body
+
+    def test_policy_keep_skips_type(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/mask",
+            json={
+                "text": "CF RSSMRA80A01H501U email mario@test.com",
+                "context_type": "case_file",
+                "policy": {"keep": ["FISCAL_CODE"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert "RSSMRA80A01H501U" in body["masked_text"]
+        assert "mario@test.com" not in body["masked_text"]
+
+    def test_invalid_mask_style_returns_422(self, client: httpx.Client, service_headers: dict):
+        r = client.post(
+            "/v1/mask",
+            json={"text": "test", "context_type": "default", "mask_style": "invalid"},
+            headers=service_headers,
+        )
+        assert r.status_code == 422
+
+    def test_missing_key_returns_401(self, client: httpx.Client):
+        r = client.post("/v1/mask", json={"text": "test", "context_type": "default"})
+        assert r.status_code == 401
+
+    def test_audit_log_records_mask_action(self, client: httpx.Client, service_headers: dict, admin_headers: dict):
+        client.post(
+            "/v1/mask",
+            json={"text": "CF RSSMRA80A01H501U", "context_type": "case_file"},
+            headers=service_headers,
+        )
+        r = client.get("/v1/admin/audit-log?action=mask&per_page=1", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.json()["total"] >= 1
+        assert r.json()["items"][0]["action"] == "mask"
