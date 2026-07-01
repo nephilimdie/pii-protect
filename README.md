@@ -35,7 +35,9 @@ Detects and pseudonymizes PII through a 4-layer detection pipeline (Presidio + s
 | **Surrogate mode** | Replaces PII with realistic, format-preserving fakes (name, CF, IBAN, plate, email). Deterministic: same input + same context → same output. |
 | **Coherent profiles** | PERSON and FISCAL_CODE share a synthetic persona per `context_id`: the fake CF encodes the same name/gender/birth as the fake name. |
 | **Context types** | Pass a single `context_type` field; the system auto-configures policy, mode, and surrogate rules. |
-| **Domain policies** | Per-domain lists (fine_appeal, contract, medical…) of protect / keep / surrogate types. Editable at runtime from admin UI. |
+| **Domain policies** | Per-domain lists (fine_appeal, contract, medical…) of protect / keep / surrogate / remove / block types. Editable at runtime from admin UI. |
+| **Remove mode** | Irreversible erasure: PII span replaced with `""`. No mapping stored — cannot be deanonymized. Configurable per type via `policy.remove` or domain policy `remove_types`. |
+| **Block mode** | Reject the request (HTTP 422) if any entity of a blocked type is detected. Runs before policy filtering — acts as a hard security gate. Default for `CREDIT_CARD` and `SECRET`. |
 | **~33 PII types** | IDENTITY, CONTACT, FINANCIAL, LEGAL, VEHICLE, NETWORK, CREDENTIAL — with per-type Faker strategy and default action. |
 | **Reclassification rules** | Post-detection context rules (e.g. DATE near "nato a <City> il" → DATE_BORN). Visualized as a bipartite graph. |
 | **DB-configurable regex** | Patterns hot-reloaded from DB on every change. No restart needed. |

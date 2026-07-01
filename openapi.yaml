@@ -381,6 +381,28 @@ components:
             type: string
           description: PII types left unchanged in this domain (typically domain-relevant identifiers).
           example: ["TARGA"]
+        surrogate_types:
+          type: array
+          items:
+            type: string
+          description: PII types always replaced with realistic fake values, regardless of mode.
+          example: ["PERSON"]
+        remove_types:
+          type: array
+          items:
+            type: string
+          description: |
+            PII types whose spans are removed (replaced with empty string). Irreversible —
+            no mapping is stored. The resulting text is shorter at the redacted positions.
+          example: ["EMAIL"]
+        block_types:
+          type: array
+          items:
+            type: string
+          description: |
+            PII types that cause the request to be rejected with HTTP 422 if detected.
+            The block check runs on ALL detected entities before any policy filtering.
+          example: ["CREDIT_CARD", "SECRET"]
         description:
           type: string
           nullable: true
@@ -583,13 +605,16 @@ components:
           example: "█"
         mask_style:
           type: string
-          enum: [fill, label]
+          enum: [fill, label, partial]
           default: fill
           description: |
             - `fill` — each character in the PII span is replaced by `mask_char`, preserving
               the original length (e.g. `mario@example.com` → `████████████████`).
             - `label` — the entire PII span is replaced by `[TYPE]` (e.g. `[EMAIL]`).
               Length is **not** preserved; use when human-readable redaction markers are needed.
+            - `partial` — reveals the first character of the span and appends `***`.
+              For email addresses the `@domain` part is kept visible
+              (e.g. `mario@example.com` → `m***@example.com`).
           example: "fill"
 
     MaskedEntity:
@@ -1777,6 +1802,9 @@ paths:
           <tbody>
             <tr><td><code>protect_types</code></td><td>string[]</td><td>✓</td><td>PII type codes to anonymize in this domain.</td></tr>
             <tr><td><code>keep_types</code></td><td>string[]</td><td>✓</td><td>PII type codes to leave unchanged in this domain.</td></tr>
+            <tr><td><code>surrogate_types</code></td><td>string[]</td><td>—</td><td>Types always replaced with realistic fake values, regardless of mode.</td></tr>
+            <tr><td><code>remove_types</code></td><td>string[]</td><td>—</td><td>Types whose spans are erased (empty string). Irreversible — no mapping stored.</td></tr>
+            <tr><td><code>block_types</code></td><td>string[]</td><td>—</td><td>Types that cause the request to be rejected with HTTP 422 if detected.</td></tr>
             <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description of the domain.</td></tr>
             <tr><td><code>enabled</code></td><td>boolean</td><td>—</td><td>Whether this policy is active. Default: true.</td></tr>
           </tbody>
@@ -1808,6 +1836,21 @@ paths:
                   items:
                     type: string
                   example: ["TARGA"]
+                surrogate_types:
+                  type: array
+                  items:
+                    type: string
+                  example: ["PERSON"]
+                remove_types:
+                  type: array
+                  items:
+                    type: string
+                  example: ["EMAIL"]
+                block_types:
+                  type: array
+                  items:
+                    type: string
+                  example: ["CREDIT_CARD", "SECRET"]
                 description:
                   type: string
                   nullable: true

@@ -11,7 +11,7 @@ class MaskRequest(BaseModel):
     language: str | None = None
     policy: dict | None = None
     mask_char: str = Field(default="█", max_length=4)
-    mask_style: str = "fill"  # "fill" | "label"
+    mask_style: str = "fill"  # "fill" | "label" | "partial"
 
 
 class MaskedEntity(BaseModel):

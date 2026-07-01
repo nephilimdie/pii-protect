@@ -27,13 +27,23 @@ from app.routers._mask_models import MaskRequest, MaskResponse, MaskedEntity
 
 router = APIRouter()
 
-_VALID_STYLES = {"fill", "label"}
+_VALID_STYLES = {"fill", "label", "partial"}
+
+
+def _partial_replacement(span: str) -> str:
+    """Show first char; if span contains '@' keep the domain part visible."""
+    at = span.find("@")
+    if at > 0:
+        return span[0] + "***" + span[at:]
+    return span[0] + "***" if len(span) > 1 else "***"
 
 
 def _apply_mask(text: str, entities: list, style: str, mask_char: str) -> str:
     for entity in sorted(entities, key=lambda e: e.start, reverse=True):
         if style == "label":
             replacement = f"[{entity.pii_type}]"
+        elif style == "partial":
+            replacement = _partial_replacement(entity.text)
         else:
             replacement = mask_char * (entity.end - entity.start)
         text = text[: entity.start] + replacement + text[entity.end :]

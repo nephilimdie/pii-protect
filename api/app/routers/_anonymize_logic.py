@@ -65,9 +65,11 @@ def filter_detected_entities(
     keep_types: set[str] | None = None,
     protect_types: set[str] | None = None,
     always_include_types: set[str] | None = None,
+    remove_types: set[str] | None = None,
 ) -> list:
     keep = keep_types or set()
-    include_always = always_include_types or set()
+    # remove entities must pass through the filter so they can be erased
+    include_always = (always_include_types or set()) | (remove_types or set())
     filtered = []
     for entity in entities:
         if entity.pii_type in keep:
@@ -108,16 +110,20 @@ def _apply_replacements(
     entities: list,
     mode: str,
     replacement_map: dict[str, str] | None,
+    remove_types: set[str] | None = None,
 ) -> tuple[str, list[MappingEntry]]:
     from app.detection.token_generator import TokenGenerator
     generator = TokenGenerator()
+    _remove = remove_types or set()
     stable_map: dict[str, str] = {}
 
     for entity in entities:
         key = entity.text.lower().strip()
         if key in stable_map:
             continue
-        if mode == "surrogate" and replacement_map:
+        if entity.pii_type in _remove:
+            stable_map[key] = ""
+        elif mode == "surrogate" and replacement_map:
             stable_map[key] = replacement_map.get(key, entity.text)
         else:
             stable_map[key] = generator.next_token(entity.pii_type)
@@ -214,6 +220,8 @@ async def _process_anonymization(
         protect_types = policy["protect_types"]
         keep_types = policy["keep_types"]
         surrogate_types = policy["surrogate_types"]
+        remove_types = policy["remove_types"]
+        block_types = policy["block_types"]
         resolved_mode = policy["mode"]
 
         if body.include_entity_values and api_key.role != "admin":
@@ -227,11 +235,25 @@ async def _process_anonymization(
             language=lang,
         )
 
+        # Block check runs on ALL detected entities (before policy filtering)
+        if block_types:
+            blocked = [e.pii_type for e in entities if e.pii_type in block_types]
+            if blocked:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "PII_BLOCKED",
+                        "message": "Request rejected: blocked PII type(s) detected.",
+                        "blocked_types": list(set(blocked)),
+                    },
+                )
+
         entities_to_protect = filter_detected_entities(
             entities=entities,
             keep_types=keep_types,
             protect_types=protect_types,
             always_include_types=surrogate_types,
+            remove_types=remove_types,
         )
 
         needs_surrogate = resolved_mode == "surrogate" or bool(surrogate_types)
@@ -240,6 +262,8 @@ async def _process_anonymization(
             replacement_map: dict[str, str] = {}
             for entity in entities_to_protect:
                 if resolved_mode != "surrogate" and entity.pii_type not in surrogate_types:
+                    continue
+                if entity.pii_type in remove_types:
                     continue
                 key = entity.text.lower().strip()
                 if key not in replacement_map:
@@ -251,7 +275,7 @@ async def _process_anonymization(
             replacement_map = None
 
         final_text, mappings = _apply_replacements(
-            body.text, entities_to_protect, resolved_mode, replacement_map
+            body.text, entities_to_protect, resolved_mode, replacement_map, remove_types
         )
 
         pii_types = list({m.pii_type for m in mappings})
@@ -270,7 +294,9 @@ async def _process_anonymization(
         if not body.dry_run:
             _kp = key_provider if key_provider is not None else EnvKekKeyProvider(db, settings.encryption_key)
             repo = MappingRepository(db, _kp)
-            await repo.save_many(mappings, body.context_id, body.context_type, tenant_id)
+            # Removed entities have token="" — don't store (irreversible, no deanonymization possible)
+            mappings_to_save = [m for m in mappings if m.token]
+            await repo.save_many(mappings_to_save, body.context_id, body.context_type, tenant_id)
 
         ip_anon = getattr(request.app.state, "ip_anonymization_enabled", True)
         audit = AuditService(db, ip_anonymization=ip_anon)

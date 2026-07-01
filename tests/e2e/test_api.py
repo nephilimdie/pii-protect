@@ -563,3 +563,151 @@ class TestMask:
         assert r.status_code == 200
         assert r.json()["total"] >= 1
         assert r.json()["items"][0]["action"] == "mask"
+
+
+# ─── remove mode ─────────────────────────────────────────────────────────────
+
+class TestRemove:
+    def test_pii_span_erased(self, client: httpx.Client, service_headers: dict, ctx_id: str):
+        r = client.post(
+            "/v1/anonymize",
+            json={
+                "text": "Contattami a mario@test.com per informazioni.",
+                "context_id": ctx_id,
+                "context_type": "case_file",
+                "policy": {"remove": ["EMAIL"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert "mario@test.com" not in body["anonymized_text"]
+        # length shorter (span removed, not replaced)
+        assert len(body["anonymized_text"]) < len("Contattami a mario@test.com per informazioni.")
+
+    def test_removed_token_is_empty_string(self, client: httpx.Client, service_headers: dict, ctx_id: str):
+        r = client.post(
+            "/v1/anonymize",
+            json={
+                "text": "email: mario@test.com",
+                "context_id": ctx_id,
+                "context_type": "case_file",
+                "policy": {"remove": ["EMAIL"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        email_entity = next((e for e in body["entities"] if e["type"] == "EMAIL"), None)
+        assert email_entity is not None
+        assert email_entity["replacement"] == ""
+
+    def test_remove_does_not_store_mapping(self, client: httpx.Client, service_headers: dict, admin_headers: dict):
+        ctx = "remove-no-store-" + uuid.uuid4().hex[:8]
+        client.post(
+            "/v1/anonymize",
+            json={
+                "text": "email: mario@test.com",
+                "context_id": ctx,
+                "context_type": "case_file",
+                "policy": {"remove": ["EMAIL"]},
+            },
+            headers=service_headers,
+        )
+        r = client.post(
+            "/v1/deanonymize",
+            json={"text": "email: ", "context_id": ctx, "context_type": "case_file"},
+            headers=service_headers,
+        )
+        # No mapping stored — deanonymize returns text unchanged
+        assert r.status_code == 200
+        assert r.json()["restored_text"] == "email: "
+
+    def test_remove_leaves_non_pii_intact(self, client: httpx.Client, service_headers: dict, ctx_id: str):
+        r = client.post(
+            "/v1/anonymize",
+            json={
+                "text": "Scrivi a mario@test.com grazie",
+                "context_id": ctx_id,
+                "context_type": "case_file",
+                "policy": {"remove": ["EMAIL"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert "Scrivi" in body["anonymized_text"]
+        assert "grazie" in body["anonymized_text"]
+
+    def test_missing_key_returns_401(self, client: httpx.Client):
+        r = client.post(
+            "/v1/anonymize",
+            json={"text": "test", "context_id": "x", "context_type": "default", "policy": {"remove": ["EMAIL"]}},
+        )
+        assert r.status_code == 401
+
+
+# ─── block mode ──────────────────────────────────────────────────────────────
+
+class TestBlock:
+    def test_blocked_type_returns_422(self, client: httpx.Client, service_headers: dict, ctx_id: str):
+        r = client.post(
+            "/v1/anonymize",
+            json={
+                "text": "Il numero di carta è 4111111111111111.",
+                "context_id": ctx_id,
+                "context_type": "case_file",
+                "policy": {"block": ["CREDIT_CARD"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 422
+
+    def test_block_response_contains_blocked_types(self, client: httpx.Client, service_headers: dict, ctx_id: str):
+        r = client.post(
+            "/v1/anonymize",
+            json={
+                "text": "Il numero di carta è 4111111111111111.",
+                "context_id": ctx_id,
+                "context_type": "case_file",
+                "policy": {"block": ["CREDIT_CARD"]},
+            },
+            headers=service_headers,
+        )
+        body = r.json()
+        assert body["error"] == "PII_BLOCKED"
+        assert "CREDIT_CARD" in body["blocked_types"]
+
+    def test_no_blocked_pii_passes(self, client: httpx.Client, service_headers: dict, ctx_id: str):
+        r = client.post(
+            "/v1/anonymize",
+            json={
+                "text": "Testo senza PII sensibile.",
+                "context_id": ctx_id,
+                "context_type": "case_file",
+                "policy": {"block": ["CREDIT_CARD"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 200
+
+    def test_block_runs_before_policy_filter(self, client: httpx.Client, service_headers: dict, ctx_id: str):
+        # EMAIL is in keep but also in block — block wins (check runs on ALL entities)
+        r = client.post(
+            "/v1/anonymize",
+            json={
+                "text": "Contatta mario@test.com",
+                "context_id": ctx_id,
+                "context_type": "case_file",
+                "policy": {"keep": ["EMAIL"], "block": ["EMAIL"]},
+            },
+            headers=service_headers,
+        )
+        assert r.status_code == 422
+
+    def test_missing_key_returns_401(self, client: httpx.Client):
+        r = client.post(
+            "/v1/anonymize",
+            json={"text": "test", "context_id": "x", "context_type": "default", "policy": {"block": ["EMAIL"]}},
+        )
+        assert r.status_code == 401

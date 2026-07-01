@@ -48,7 +48,7 @@ class TestPolicyServiceResolve:
     async def test_context_type_with_domain_policy(self):
         # First call returns context_type row; second returns domain policy row
         ct_row = ("fine_appeal", "tag", 2)
-        policy_row = (["PERSON", "FISCAL_CODE"], ["DATE", "TARGA"], [], 3)
+        policy_row = (["PERSON", "FISCAL_CODE"], ["DATE", "TARGA"], [], [], [], 3)
 
         results = [MagicMock(fetchone=MagicMock(return_value=ct_row)),
                    MagicMock(fetchone=MagicMock(return_value=policy_row))]
@@ -103,7 +103,7 @@ class TestPolicyServiceResolve:
     async def test_domain_policy_with_json_string_columns(self):
         # Some DB drivers return JSONB as raw JSON strings
         ct_row = ("default", "surrogate", 4)
-        policy_row = ('["PERSON"]', '["DATE"]', '["EMAIL"]', 5)
+        policy_row = ('["PERSON"]', '["DATE"]', '["EMAIL"]', '[]', '[]', 5)
 
         results = [MagicMock(fetchone=MagicMock(return_value=ct_row)),
                    MagicMock(fetchone=MagicMock(return_value=policy_row))]

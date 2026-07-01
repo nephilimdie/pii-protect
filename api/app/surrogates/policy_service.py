@@ -51,6 +51,8 @@ class PolicyService:
         protect: set[str] | None = None
         keep: set[str] = set()
         surrogate: set[str] = set()
+        remove: set[str] = set()
+        block: set[str] = set()
         domain_version = 1
         if ct_domain:
             if self._tenant_id is not None:
@@ -60,11 +62,16 @@ class PolicyService:
                     row_data.get("protect_types", []),
                     row_data.get("keep_types", []),
                     row_data.get("surrogate_types", []),
+                    row_data.get("remove_types", []),
+                    row_data.get("block_types", []),
                     row_data.get("version", 1),
                 ) if row_data else None
             else:
                 result = await self._db.execute(
-                    text("SELECT protect_types, keep_types, surrogate_types, version FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id IS NULL"),
+                    text(
+                        "SELECT protect_types, keep_types, surrogate_types, remove_types, block_types, version"
+                        " FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id IS NULL"
+                    ),
                     {"d": ct_domain},
                 )
                 row = result.fetchone()
@@ -72,10 +79,14 @@ class PolicyService:
                 protect_list   = row[0] if isinstance(row[0], list) else json.loads(row[0] or "[]")
                 keep_list      = row[1] if isinstance(row[1], list) else json.loads(row[1] or "[]")
                 surrogate_list = row[2] if isinstance(row[2], list) else json.loads(row[2] or "[]")
-                domain_version = row[3] or 1
+                remove_list    = row[3] if isinstance(row[3], list) else json.loads(row[3] or "[]")
+                block_list     = row[4] if isinstance(row[4], list) else json.loads(row[4] or "[]")
+                domain_version = row[5] or 1
                 protect   = set(protect_list)
                 keep      = set(keep_list)
                 surrogate = set(surrogate_list)
+                remove    = set(remove_list)
+                block     = set(block_list)
 
         # 3. Inline policy overrides domain policy
         if inline_policy:
@@ -85,6 +96,10 @@ class PolicyService:
                 keep      = set(inline_policy.get("keep", []))
             if "surrogate" in inline_policy:
                 surrogate = set(inline_policy.get("surrogate", []))
+            if "remove" in inline_policy:
+                remove    = set(inline_policy.get("remove", []))
+            if "block" in inline_policy:
+                block     = set(inline_policy.get("block", []))
 
         # 4. Mode: inline > context_type default > "tag"
         mode = inline_mode or ct_mode or "tag"
@@ -99,6 +114,8 @@ class PolicyService:
                 "protect": sorted(protect) if protect is not None else None,
                 "keep": sorted(keep),
                 "surrogate": sorted(surrogate),
+                "remove": sorted(remove),
+                "block": sorted(block),
             },
             sort_keys=True,
         )
@@ -108,6 +125,8 @@ class PolicyService:
             "protect_types": protect,
             "keep_types": keep,
             "surrogate_types": surrogate,
+            "remove_types": remove,
+            "block_types": block,
             "mode": mode,
             "policy_id": context_type,
             "policy_version": f"context:{ct_version}|domain:{domain_version}",

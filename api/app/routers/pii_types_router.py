@@ -1,11 +1,13 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.identity.dependencies import require_admin
 from app.identity.models import ApiKey
+
+_VALID_ACTIONS = {"protect", "keep", "surrogate", "remove", "block"}
 
 router = APIRouter()
 
@@ -28,6 +30,13 @@ class UpdatePiiTypeRequest(BaseModel):
     reversible: bool | None = None
     enabled: bool | None = None
     description: str | None = None
+
+    @field_validator("default_action")
+    @classmethod
+    def _validate_action(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_ACTIONS:
+            raise ValueError(f"default_action must be one of: {sorted(_VALID_ACTIONS)}")
+        return v
 
 
 @router.get("/pii-types", response_model=list[PiiTypeResponse])

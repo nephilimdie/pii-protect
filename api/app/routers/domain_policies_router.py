@@ -20,6 +20,8 @@ class PolicyResponse(BaseModel):
     protect_types: list[str]
     keep_types: list[str]
     surrogate_types: list[str]
+    remove_types: list[str]
+    block_types: list[str]
     description: str | None
     enabled: bool
     updated_at: datetime
@@ -36,13 +38,15 @@ class UpsertPolicyRequest(BaseModel):
     protect_types: list[str]
     keep_types: list[str]
     surrogate_types: list[str] = []
+    remove_types: list[str] = []
+    block_types: list[str] = []
     description: str | None = None
     enabled: bool = True
 
 
 def _row(mapping) -> dict:
     d = dict(mapping)
-    for k in ("protect_types", "keep_types", "surrogate_types"):
+    for k in ("protect_types", "keep_types", "surrogate_types", "remove_types", "block_types"):
         if isinstance(d.get(k), str):
             d[k] = json.loads(d[k])
         elif d.get(k) is None:
@@ -77,7 +81,8 @@ async def list_policies(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text(
-        "SELECT domain, version, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
+        "SELECT domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types,"
+        " description, enabled, updated_at"
         " FROM domain_policies ORDER BY domain"
     ))
     return [_row(r._mapping) for r in result.fetchall()]
@@ -93,23 +98,32 @@ async def upsert_policy(
 ):
     result = await db.execute(
         text(
-            "INSERT INTO domain_policies (domain, version, protect_types, keep_types, surrogate_types, description, enabled, updated_at)"
-            " VALUES (:domain, 1, CAST(:protect AS jsonb), CAST(:keep AS jsonb), CAST(:surrogate AS jsonb), :desc, :enabled, now())"
+            "INSERT INTO domain_policies"
+            " (domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types, description, enabled, updated_at)"
+            " VALUES (:domain, 1,"
+            "   CAST(:protect AS jsonb), CAST(:keep AS jsonb), CAST(:surrogate AS jsonb),"
+            "   CAST(:remove AS jsonb), CAST(:block AS jsonb),"
+            "   :desc, :enabled, now())"
             " ON CONFLICT (domain) DO UPDATE SET"
             "   version         = domain_policies.version + 1,"
             "   protect_types   = CAST(:protect AS jsonb),"
             "   keep_types      = CAST(:keep AS jsonb),"
             "   surrogate_types = CAST(:surrogate AS jsonb),"
+            "   remove_types    = CAST(:remove AS jsonb),"
+            "   block_types     = CAST(:block AS jsonb),"
             "   description     = :desc,"
             "   enabled         = :enabled,"
             "   updated_at      = now()"
-            " RETURNING domain, version, protect_types, keep_types, surrogate_types, description, enabled, updated_at"
+            " RETURNING domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types,"
+            "           description, enabled, updated_at"
         ),
         {
-            "domain": domain,
+            "domain":    domain,
             "protect":   json.dumps(body.protect_types),
             "keep":      json.dumps(body.keep_types),
             "surrogate": json.dumps(body.surrogate_types),
+            "remove":    json.dumps(body.remove_types),
+            "block":     json.dumps(body.block_types),
             "desc":      body.description,
             "enabled":   body.enabled,
         },

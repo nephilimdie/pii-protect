@@ -31,7 +31,7 @@ BASE_QUERIES = {
         ") AS detection_layers(code, display_name, description, enabled)"
     ),
     "pii-types": "SELECT code, category, display_name, default_action, faker_strategy, reversible, enabled, description FROM pii_type_registry ORDER BY category, code",
-    "domain-policies": "SELECT domain, version, protect_types, keep_types, surrogate_types, description, enabled, updated_at FROM domain_policies WHERE tenant_id IS NULL ORDER BY domain",
+    "domain-policies": "SELECT domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types, description, enabled, updated_at FROM domain_policies WHERE tenant_id IS NULL ORDER BY domain",
     "context-types": "SELECT code, display_name, domain, default_mode, description, enabled, version, created_at FROM context_types WHERE tenant_id IS NULL ORDER BY code",
 }
 
