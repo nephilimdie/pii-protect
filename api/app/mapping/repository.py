@@ -12,7 +12,7 @@ from app.config import settings
 
 
 class MappingRepository:
-    def __init__(self, db: AsyncSession, key_provider: KeyProvider) -> None:
+    def __init__(self, db: AsyncSession, key_provider: KeyProvider | None = None) -> None:
         self._db = db
         self._key_provider = key_provider
         # KEK encryptor kept for fallback decryption of pre-migration rows.
