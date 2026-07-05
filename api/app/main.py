@@ -193,7 +193,7 @@ async def _nightly_cleanup_loop() -> None:
 async def _ensure_admin_key() -> None:
     import hashlib
     import uuid
-    from sqlalchemy import select, update
+    from sqlalchemy import select
     from app.identity.models import ApiKey
 
     key_hash = hashlib.sha256(settings.admin_initial_key.encode()).hexdigest()
@@ -203,15 +203,21 @@ async def _ensure_admin_key() -> None:
         all_admin = list(result.scalars().all())
 
         if all_admin:
-            # Keep the oldest, delete duplicates created by failed restarts
-            keep = all_admin[0]
-            for dup in all_admin[1:]:
-                await db.delete(dup)
+            # Keep startup idempotent and non-destructive: API keys may be referenced
+            # by audit/usage rows, so deleting duplicates can block on large FK scans.
+            keep = next((key for key in all_admin if key.key_hash == key_hash), all_admin[0])
             if keep.key_hash != key_hash:
                 keep.key_hash = key_hash
                 logger.info("Admin initial key synchronized from environment")
             else:
                 logger.info("Admin initial key unchanged")
+            disabled = 0
+            for dup in all_admin:
+                if dup.id != keep.id and dup.active:
+                    dup.active = False
+                    disabled += 1
+            if disabled:
+                logger.info("Disabled %d duplicate admin API keys", disabled)
             await db.commit()
         else:
             key = ApiKey(
