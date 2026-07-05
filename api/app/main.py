@@ -192,25 +192,37 @@ async def _nightly_cleanup_loop() -> None:
 
 async def _ensure_admin_key() -> None:
     import hashlib
-    from sqlalchemy import update
+    import uuid
+    from sqlalchemy import select, update
     from app.identity.models import ApiKey
 
     key_hash = hashlib.sha256(settings.admin_initial_key.encode()).hexdigest()
-    async with AsyncSessionLocal() as db:
-        stmt = update(ApiKey).where(ApiKey.name == "admin").values(key_hash=key_hash)
-        result = await db.execute(stmt)
-        await db.commit()
-        if result.rowcount > 0:
-            logger.info("Admin initial key synchronized from environment")
-            return
 
     async with AsyncSessionLocal() as db:
-        service = ApiKeyService(db)
-        await service.create("admin", "admin")
-        stmt = update(ApiKey).where(ApiKey.name == "admin").values(key_hash=key_hash)
-        await db.execute(stmt)
-        await db.commit()
-    logger.info("Admin initial key created from environment")
+        result = await db.execute(select(ApiKey).where(ApiKey.name == "admin").order_by(ApiKey.created_at))
+        all_admin = list(result.scalars().all())
+
+        if all_admin:
+            # Keep the oldest, delete duplicates created by failed restarts
+            keep = all_admin[0]
+            for dup in all_admin[1:]:
+                await db.delete(dup)
+            if keep.key_hash != key_hash:
+                keep.key_hash = key_hash
+                logger.info("Admin initial key synchronized from environment")
+            else:
+                logger.info("Admin initial key unchanged")
+            await db.commit()
+        else:
+            key = ApiKey(
+                id=uuid.uuid4(),
+                name="admin",
+                key_hash=key_hash,
+                role="admin",
+            )
+            db.add(key)
+            await db.commit()
+            logger.info("Admin initial key created from environment")
 
 
 @asynccontextmanager
@@ -243,11 +255,17 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping Ai4Privacy detector preload because layer is disabled")
 
+    logger.info("Connecting to database…")
     async with AsyncSessionLocal() as db:
+        logger.info("Loading patterns from DB…")
         patterns = await RegexPatternRepository(db).find_enabled()
+        logger.info("Loading denylist from DB…")
         denylist_entries = await DenylistRepository(db).find_enabled()
+        logger.info("Loading settings from DB…")
         default_lang = await SettingsRepository(db).get("default_language", "it")
+        logger.info("Loading presidio context from DB…")
         ctx_entries = await PresidioContextRepository(db).find_enabled()
+        logger.info("Loading reclassification rules from DB…")
         reclass_rules = await ReclassificationRepository(db).find_enabled()
     set_reclassify_rules(reclass_rules)
     app.state.default_language = default_lang
@@ -297,14 +315,17 @@ async def lifespan(app: FastAPI):
     ]
     app.state.reclassification_rules_raw = reclass_rules
 
+    logger.info("Ensuring admin key…")
     await _ensure_admin_key()
 
+    logger.info("Loading retention settings…")
     # Load retention settings into app state for zero-overhead access per request
     async with AsyncSessionLocal() as db:
         from app.settings_repository import SettingsRepository as _SR
         _s = await _SR(db).all()
         app.state.ip_anonymization_enabled = _s.get("ip_anonymization_enabled", "true") == "true"
 
+    logger.info("Starting cleanup loop…")
     _cleanup_task = asyncio.create_task(_nightly_cleanup_loop())
 
     yield
