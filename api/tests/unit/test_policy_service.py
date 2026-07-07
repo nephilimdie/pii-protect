@@ -119,6 +119,57 @@ class TestPolicyServiceResolve:
         assert resolved["mode"] == "surrogate"
         assert resolved["policy_version"] == "context:4|domain:5"
 
+    @pytest.mark.asyncio
+    async def test_domain_direct_uses_policy_default_mode(self):
+        # Calling by `domain` skips the context_type lookup entirely: only the
+        # domain policy row is fetched, and mode comes from its default_mode.
+        policy_row = (["PERSON"], ["DATE"], [], [], [], 7, "surrogate")
+        db = _make_db(fetchone_return=policy_row)
+
+        svc = PolicyService(db)
+        resolved = await svc.resolve(context_type=None, domain="condominio")
+
+        assert "PERSON" in resolved["protect_types"]
+        assert "DATE" in resolved["keep_types"]
+        assert resolved["mode"] == "surrogate"
+        assert resolved["policy_id"] == "domain:condominio"
+        # Exactly one DB round-trip (no context_type lookup)
+        assert db.execute.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_domain_direct_defaults_to_tag_when_policy_mode_missing(self):
+        # Legacy 6-tuple (no default_mode column) falls back to "tag".
+        policy_row = (["PERSON"], ["DATE"], [], [], [], 2)
+        db = _make_db(fetchone_return=policy_row)
+
+        svc = PolicyService(db)
+        resolved = await svc.resolve(context_type=None, domain="condominio")
+
+        assert resolved["mode"] == "tag"
+
+    @pytest.mark.asyncio
+    async def test_domain_wins_over_context_type(self):
+        # When both are given, `domain` is used and context_type is ignored.
+        policy_row = (["EMAIL"], [], [], [], [], 1, "tag")
+        db = _make_db(fetchone_return=policy_row)
+
+        svc = PolicyService(db)
+        resolved = await svc.resolve(context_type="fine_appeal", domain="medical")
+
+        assert "EMAIL" in resolved["protect_types"]
+        assert resolved["policy_id"] == "fine_appeal"  # metadata keeps caller's context_type
+        assert db.execute.await_count == 1  # context_type lookup skipped
+
+    @pytest.mark.asyncio
+    async def test_inline_mode_overrides_domain_default(self):
+        policy_row = (["PERSON"], [], [], [], [], 1, "surrogate")
+        db = _make_db(fetchone_return=policy_row)
+
+        svc = PolicyService(db)
+        resolved = await svc.resolve(context_type=None, domain="condominio", inline_mode="tag")
+
+        assert resolved["mode"] == "tag"
+
 
 # ── get_faker_strategy() ──────────────────────────────────────────────────────
 

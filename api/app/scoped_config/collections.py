@@ -31,8 +31,8 @@ BASE_QUERIES = {
         ") AS detection_layers(code, display_name, description, enabled)"
     ),
     "pii-types": "SELECT code, category, display_name, default_action, faker_strategy, reversible, enabled, description FROM pii_type_registry ORDER BY category, code",
-    "domain-policies": "SELECT domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types, description, enabled, updated_at FROM domain_policies WHERE tenant_id IS NULL ORDER BY domain",
-    "context-types": "SELECT code, display_name, domain, default_mode, description, enabled, version, created_at FROM context_types WHERE tenant_id IS NULL ORDER BY code",
+    "domain-policies": "SELECT domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types, remove_types, block_types, visible_to_clients, description, enabled, updated_at FROM domain_policies WHERE tenant_id IS NULL ORDER BY domain",
+    "context-types": "SELECT code, display_name, domain, default_mode, description, visible_to_clients, enabled, version, created_at FROM context_types WHERE tenant_id IS NULL ORDER BY code",
 }
 
 
@@ -71,7 +71,7 @@ def normalize(row: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, datetime):
             output[key] = value.isoformat()
             continue
-        if isinstance(value, str) and key.endswith("_types"):
+        if isinstance(value, str) and (key.endswith("_types") or key == "visible_to_clients"):
             output[key] = parse_list(value)
     return output
 

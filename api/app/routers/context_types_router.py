@@ -17,6 +17,7 @@ class ContextTypeResponse(BaseModel):
     domain: str | None
     default_mode: str
     description: str | None
+    visible_to_clients: list[str] | None
     enabled: bool
     version: int
     created_at: datetime
@@ -44,6 +45,7 @@ class CreateContextTypeRequest(BaseModel):
     domain: str | None = None
     default_mode: str = "tag"
     description: str | None = None
+    visible_to_clients: list[str] | None = None
 
 
 class UpdateContextTypeRequest(BaseModel):
@@ -51,6 +53,7 @@ class UpdateContextTypeRequest(BaseModel):
     domain: str | None = None
     default_mode: str | None = None
     description: str | None = None
+    visible_to_clients: list[str] | None = None
     enabled: bool | None = None
 
 
@@ -60,7 +63,7 @@ async def list_context_types(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text(
-        "SELECT code, display_name, domain, default_mode, description, enabled, version, created_at"
+        "SELECT code, display_name, domain, default_mode, description, visible_to_clients, enabled, version, created_at"
         " FROM context_types ORDER BY code"
     ))
     return [dict(r._mapping) for r in result.fetchall()]
@@ -74,13 +77,14 @@ async def create_context_type(
 ):
     result = await db.execute(
         text(
-            "INSERT INTO context_types (code, display_name, domain, default_mode, description, version)"
-            " VALUES (:code, :display_name, :domain, :mode, :desc, 1)"
+            "INSERT INTO context_types (code, display_name, domain, default_mode, description, visible_to_clients, version)"
+            " VALUES (:code, :display_name, :domain, :mode, :desc, CAST(:visible AS jsonb), 1)"
             " ON CONFLICT (code) DO NOTHING"
-            " RETURNING code, display_name, domain, default_mode, description, enabled, version, created_at"
+            " RETURNING code, display_name, domain, default_mode, description, visible_to_clients, enabled, version, created_at"
         ),
         {"code": body.code, "display_name": body.display_name,
-         "domain": body.domain, "mode": body.default_mode, "desc": body.description},
+         "domain": body.domain, "mode": body.default_mode, "desc": body.description,
+         "visible": json.dumps(body.visible_to_clients) if body.visible_to_clients else None},
     )
     row = result.fetchone()
     if not row:
@@ -108,11 +112,22 @@ async def update_context_type(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(400, "no_fields")
-    sets = ", ".join(f"{k} = :{k}" for k in updates)
+
+    # visible_to_clients is JSONB — cast it and serialise the value.
+    params = {"code": code}
+    set_clauses = []
+    for k, v in updates.items():
+        if k == "visible_to_clients":
+            set_clauses.append("visible_to_clients = CAST(:visible_to_clients AS jsonb)")
+            params["visible_to_clients"] = json.dumps(v)
+        else:
+            set_clauses.append(f"{k} = :{k}")
+            params[k] = v
+    sets = ", ".join(set_clauses)
     result = await db.execute(
            text(f"UPDATE context_types SET {sets}, version = version + 1 WHERE code = :code"
-               " RETURNING code, display_name, domain, default_mode, description, enabled, version, created_at"),
-        {"code": code, **updates},
+               " RETURNING code, display_name, domain, default_mode, description, visible_to_clients, enabled, version, created_at"),
+        params,
     )
     row = result.fetchone()
     if not row:

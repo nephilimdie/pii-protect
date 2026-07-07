@@ -181,7 +181,7 @@ async def _build_partial_response(
             ],
             mode="tag",
             policy=PolicyMetadata(
-                id=body.context_type,
+                id=body.context_type or body.domain,
                 version=policy.get("policy_version") if policy else None,
                 hash=policy.get("policy_hash") if policy else None,
             ),
@@ -216,6 +216,7 @@ async def _process_anonymization(
             context_type=body.context_type,
             inline_policy=body.policy,
             inline_mode=body.mode,
+            domain=body.domain,
         )
         protect_types = policy["protect_types"]
         keep_types = policy["keep_types"]
@@ -227,11 +228,16 @@ async def _process_anonymization(
         if body.include_entity_values and api_key.role != "admin":
             raise HTTPException(status_code=403, detail="insufficient_role")
 
+        # Detection/mapping need a non-null context label; when the caller
+        # invoked a domain (or nothing) directly, fall back to the domain slug
+        # then "generic".
+        effective_context = body.context_type or body.domain or "generic"
+
         entities = await run_detection(
             anonymizer=anonymizer,
             text=body.text,
             context_id=body.context_id,
-            context_type=body.context_type,
+            context_type=effective_context,
             language=lang,
         )
 
@@ -296,7 +302,7 @@ async def _process_anonymization(
             repo = MappingRepository(db, _kp)
             # Removed entities have token="" — don't store (irreversible, no deanonymization possible)
             mappings_to_save = [m for m in mappings if m.token]
-            await repo.save_many(mappings_to_save, body.context_id, body.context_type, tenant_id)
+            await repo.save_many(mappings_to_save, body.context_id, effective_context, tenant_id)
 
         ip_anon = getattr(request.app.state, "ip_anonymization_enabled", True)
         audit = AuditService(db, ip_anonymization=ip_anon)
@@ -352,7 +358,7 @@ async def _process_anonymization(
             await usage_service.record(
                 api_key_id=api_key.id,
                 request_id=request_id,
-                policy_id=body.context_type,
+                policy_id=body.context_type or body.domain,
                 policy_version=policy.get("policy_version") if "policy" in locals() else None,
                 policy_hash=None,
                 chars_in=len(body.text),
@@ -401,7 +407,7 @@ async def _process_anonymization(
                 entities=[],
                 mode=body.mode or "tag",
                 policy=PolicyMetadata(
-                    id=body.context_type,
+                    id=body.context_type or body.domain,
                     version=policy.get("policy_version") if "policy" in locals() else None,
                     hash=policy.get("policy_hash") if "policy" in locals() else None,
                 ),
