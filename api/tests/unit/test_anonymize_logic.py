@@ -30,7 +30,7 @@ _database_stub.get_db = _get_db
 sys.modules["app.database"] = _database_stub
 
 from app.detection.entities import PiiEntity
-from app.routers._anonymize_logic import filter_detected_entities
+from app.routers._anonymize_logic import filter_detected_entities, _apply_replacements
 
 
 def _entity(pii_type: str, text: str = "x", start: int = 0, end: int = 1) -> PiiEntity:
@@ -93,3 +93,29 @@ class TestFilterDetectedEntities:
         entities = [_entity("EMAIL"), _entity("PHONE")]
         result = filter_detected_entities(entities, always_include_types={"FISCAL_CODE"})
         assert len(result) == 2
+
+
+class TestApplyReplacements:
+    def test_surrogate_types_honoured_in_tag_mode(self):
+        # PERSON is in surrogate_types (present in replacement_map) while the
+        # global mode is "tag". PERSON must get the surrogate; EMAIL a tag token.
+        text = "Mario Rossi wrote mario@test.com"
+        entities = [
+            _entity("PERSON", "Mario Rossi", 0, 11),
+            _entity("EMAIL", "mario@test.com", 18, 32),
+        ]
+        replacement_map = {"mario rossi": "Bob Smith"}
+
+        result, mappings = _apply_replacements(text, entities, "tag", replacement_map)
+
+        assert "Bob Smith" in result       # PERSON surrogated despite tag mode
+        assert "Mario Rossi" not in result
+        assert "[EMAIL" in result          # EMAIL still tagged
+        person = next(m for m in mappings if m.pii_type == "PERSON")
+        assert person.token == "Bob Smith"
+
+    def test_tag_mode_without_replacement_map_tags_all(self):
+        text = "Mario Rossi"
+        entities = [_entity("PERSON", "Mario Rossi", 0, 11)]
+        result, _ = _apply_replacements(text, entities, "tag", None)
+        assert "[PERSON" in result
