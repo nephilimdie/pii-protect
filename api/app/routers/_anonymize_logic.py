@@ -123,8 +123,11 @@ def _apply_replacements(
             continue
         if entity.pii_type in _remove:
             stable_map[key] = ""
-        elif mode == "surrogate" and replacement_map:
-            stable_map[key] = replacement_map.get(key, entity.text)
+        elif replacement_map and key in replacement_map:
+            # replacement_map already holds only the entities that must be
+            # surrogated (all protected types in surrogate mode, or just the
+            # per-type surrogate_types in tag mode). Honour it regardless of mode.
+            stable_map[key] = replacement_map[key]
         else:
             stable_map[key] = generator.next_token(entity.pii_type)
 
