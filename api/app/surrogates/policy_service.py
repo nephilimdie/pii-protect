@@ -19,6 +19,7 @@ class PolicyService:
         context_type: str | None,
         inline_policy: dict | None = None,
         inline_mode: str | None = None,
+        domain: str | None = None,
     ) -> dict:
         """
         Returns (protect_types, keep_types, surrogate_types, mode).
@@ -26,14 +27,23 @@ class PolicyService:
         surrogate_types = types that are always replaced with a fake value,
                           regardless of the context-level mode.
 
+        A direct `domain` invokes a domain policy as a self-contained unit,
+        bypassing the context_type indirection. When both are given, `domain`
+        wins. With `domain` the mode comes from the policy's own default_mode
+        (unless overridden by inline_mode).
+
         When tenant_id is set (cloud mode), policy and context lookups are
         scoped to that tenant. When None (self-hosted), behaviour is unchanged.
         """
-        # 1. Load context_type config from DB
+        # 1. Resolve which domain policy to load.
+        #    Direct `domain` short-circuits the context_type lookup; ct_mode stays
+        #    None so the policy's own default_mode applies downstream.
         ct_domain = None
-        ct_mode = "tag"
+        ct_mode = None
         ct_version = 1
-        if context_type:
+        if domain:
+            ct_domain = domain
+        elif context_type:
             if self._tenant_id is not None:
                 context_rows = await self._scoped_config.effective_items("context-types", "tenant", self._tenant_id)
                 row_data = next((row for row in context_rows if row.get("code") == context_type and row.get("enabled", True)), None)
@@ -54,6 +64,7 @@ class PolicyService:
         remove: set[str] = set()
         block: set[str] = set()
         domain_version = 1
+        policy_default_mode = None
         if ct_domain:
             if self._tenant_id is not None:
                 policy_rows = await self._scoped_config.effective_items("domain-policies", "tenant", self._tenant_id)
@@ -65,11 +76,12 @@ class PolicyService:
                     row_data.get("remove_types", []),
                     row_data.get("block_types", []),
                     row_data.get("version", 1),
+                    row_data.get("default_mode"),
                 ) if row_data else None
             else:
                 result = await self._db.execute(
                     text(
-                        "SELECT protect_types, keep_types, surrogate_types, remove_types, block_types, version"
+                        "SELECT protect_types, keep_types, surrogate_types, remove_types, block_types, version, default_mode"
                         " FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id IS NULL"
                     ),
                     {"d": ct_domain},
@@ -82,6 +94,7 @@ class PolicyService:
                 remove_list    = row[3] if isinstance(row[3], list) else json.loads(row[3] or "[]")
                 block_list     = row[4] if isinstance(row[4], list) else json.loads(row[4] or "[]")
                 domain_version = row[5] or 1
+                policy_default_mode = row[6] if len(row) > 6 else None
                 protect   = set(protect_list)
                 keep      = set(keep_list)
                 surrogate = set(surrogate_list)
@@ -101,8 +114,10 @@ class PolicyService:
             if "block" in inline_policy:
                 block     = set(inline_policy.get("block", []))
 
-        # 4. Mode: inline > context_type default > "tag"
-        mode = inline_mode or ct_mode or "tag"
+        # 4. Mode precedence: inline > context_type default > policy default_mode > "tag"
+        #    (ct_mode is None when the caller invoked a domain directly, so the
+        #     policy's own default_mode drives the render style.)
+        mode = inline_mode or ct_mode or policy_default_mode or "tag"
 
         policy_hash_payload = json.dumps(
             {
@@ -128,7 +143,7 @@ class PolicyService:
             "remove_types": remove,
             "block_types": block,
             "mode": mode,
-            "policy_id": context_type,
+            "policy_id": context_type or (f"domain:{ct_domain}" if ct_domain else None),
             "policy_version": f"context:{ct_version}|domain:{domain_version}",
             "policy_hash": policy_hash,
         }

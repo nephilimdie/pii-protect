@@ -16,12 +16,15 @@ router = APIRouter()
 
 class PolicyResponse(BaseModel):
     domain: str
+    display_name: str | None
+    default_mode: str
     version: int
     protect_types: list[str]
     keep_types: list[str]
     surrogate_types: list[str]
     remove_types: list[str]
     block_types: list[str]
+    visible_to_clients: list[str] | None
     description: str | None
     enabled: bool
     updated_at: datetime
@@ -41,16 +44,19 @@ class UpsertPolicyRequest(BaseModel):
     remove_types: list[str] = []
     block_types: list[str] = []
     description: str | None = None
+    display_name: str | None = None
+    default_mode: str = "tag"
+    visible_to_clients: list[str] = []
     enabled: bool = True
 
 
 def _row(mapping) -> dict:
     d = dict(mapping)
-    for k in ("protect_types", "keep_types", "surrogate_types", "remove_types", "block_types"):
+    for k in ("protect_types", "keep_types", "surrogate_types", "remove_types", "block_types", "visible_to_clients"):
         if isinstance(d.get(k), str):
             d[k] = json.loads(d[k])
         elif d.get(k) is None:
-            d[k] = []
+            d[k] = [] if k != "visible_to_clients" else None
     return d
 
 
@@ -81,8 +87,8 @@ async def list_policies(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text(
-        "SELECT domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types,"
-        " description, enabled, updated_at"
+        "SELECT domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types,"
+        " remove_types, block_types, visible_to_clients, description, enabled, updated_at"
         " FROM domain_policies ORDER BY domain"
     ))
     return [_row(r._mapping) for r in result.fetchall()]
@@ -99,33 +105,39 @@ async def upsert_policy(
     result = await db.execute(
         text(
             "INSERT INTO domain_policies"
-            " (domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types, description, enabled, updated_at)"
-            " VALUES (:domain, 1,"
+            " (domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types, remove_types, block_types, visible_to_clients, description, enabled, updated_at)"
+            " VALUES (:domain, :display_name, :default_mode, 1,"
             "   CAST(:protect AS jsonb), CAST(:keep AS jsonb), CAST(:surrogate AS jsonb),"
-            "   CAST(:remove AS jsonb), CAST(:block AS jsonb),"
+            "   CAST(:remove AS jsonb), CAST(:block AS jsonb), CAST(:visible AS jsonb),"
             "   :desc, :enabled, now())"
             " ON CONFLICT (domain) DO UPDATE SET"
-            "   version         = domain_policies.version + 1,"
-            "   protect_types   = CAST(:protect AS jsonb),"
-            "   keep_types      = CAST(:keep AS jsonb),"
-            "   surrogate_types = CAST(:surrogate AS jsonb),"
-            "   remove_types    = CAST(:remove AS jsonb),"
-            "   block_types     = CAST(:block AS jsonb),"
-            "   description     = :desc,"
-            "   enabled         = :enabled,"
-            "   updated_at      = now()"
-            " RETURNING domain, version, protect_types, keep_types, surrogate_types, remove_types, block_types,"
-            "           description, enabled, updated_at"
+            "   display_name       = :display_name,"
+            "   default_mode       = :default_mode,"
+            "   version            = domain_policies.version + 1,"
+            "   protect_types      = CAST(:protect AS jsonb),"
+            "   keep_types         = CAST(:keep AS jsonb),"
+            "   surrogate_types    = CAST(:surrogate AS jsonb),"
+            "   remove_types       = CAST(:remove AS jsonb),"
+            "   block_types        = CAST(:block AS jsonb),"
+            "   visible_to_clients = CAST(:visible AS jsonb),"
+            "   description        = :desc,"
+            "   enabled            = :enabled,"
+            "   updated_at         = now()"
+            " RETURNING domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types,"
+            "           remove_types, block_types, visible_to_clients, description, enabled, updated_at"
         ),
         {
-            "domain":    domain,
-            "protect":   json.dumps(body.protect_types),
-            "keep":      json.dumps(body.keep_types),
-            "surrogate": json.dumps(body.surrogate_types),
-            "remove":    json.dumps(body.remove_types),
-            "block":     json.dumps(body.block_types),
-            "desc":      body.description,
-            "enabled":   body.enabled,
+            "domain":       domain,
+            "display_name": body.display_name or domain,
+            "default_mode": body.default_mode or "tag",
+            "protect":      json.dumps(body.protect_types),
+            "keep":         json.dumps(body.keep_types),
+            "surrogate":    json.dumps(body.surrogate_types),
+            "remove":       json.dumps(body.remove_types),
+            "block":        json.dumps(body.block_types),
+            "visible":      json.dumps(body.visible_to_clients) if body.visible_to_clients else None,
+            "desc":         body.description,
+            "enabled":      body.enabled,
         },
     )
     row = _row(result.fetchone()._mapping)

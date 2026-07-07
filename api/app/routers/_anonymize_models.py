@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 MAX_TEXT_CHARS = 500_000  # ~400 pages; hard limit enforced before ML layers
 
@@ -8,13 +8,22 @@ MAX_TEXT_CHARS = 500_000  # ~400 pages; hard limit enforced before ML layers
 class AnonymizeRequest(BaseModel):
     text: str = Field(max_length=MAX_TEXT_CHARS)
     context_id: str
-    context_type: str
+    context_type: str | None = None  # optional when `domain` or inline `policy` is given
+    domain: str | None = None        # invoke a domain policy directly (bypasses context_type)
     language: str | None = None
-    mode: str | None = None          # tag | surrogate — overrides context_type default
+    mode: str | None = None          # tag | surrogate — overrides context_type/policy default
     policy: dict | None = None       # {"protect": [...], "keep": [...]} — inline override
     detection_mode: str = "permissive"  # permissive | strict
     include_entity_values: bool = False
     dry_run: bool = False
+
+    @model_validator(mode="after")
+    def _require_a_policy_source(self) -> "AnonymizeRequest":
+        # At least one way to resolve the policy must be present. Default to the
+        # "generic" context_type to preserve prior behaviour for bare callers.
+        if not self.context_type and not self.domain and not self.policy:
+            self.context_type = "generic"
+        return self
 
 
 class PolicyMetadata(BaseModel):
