@@ -6,6 +6,9 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+- Batch multiline Privacy Filter inference to reduce ONNX overhead while preserving entity offsets and single-line fallback compatibility.
+
 ### Planned
 - See [Roadmap](doc/roadmap.md)
 

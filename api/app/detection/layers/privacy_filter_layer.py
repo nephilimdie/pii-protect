@@ -45,6 +45,10 @@ _LABEL_MAP: dict[str, str | None] = {
 }
 
 _MIN_SCORE = 0.70
+_MAX_TOKENS = 512
+_LINE_BATCH_SIZE = 16
+
+PreparedLine = tuple[str, int, list[int], list[tuple[int, int]]]
 
 
 def _bioes_to_spans(label_ids: list[int], scores: list[float], offsets: list[tuple[int, int]]) -> list[dict]:
@@ -153,34 +157,98 @@ class PrivacyFilterDetector(DetectorContract):
             return []
 
     def _run(self, text: str, min_score: float = _MIN_SCORE, enabled_types: set[str] | None = None) -> list[PiiEntity]:
-        entities: list[PiiEntity] = []
+        prepared: list[PreparedLine] = []
         cursor = 0
         for line in text.splitlines(keepends=True):
             line_stripped = line.rstrip("\n\r")
             if line_stripped.strip():
-                for e in self._run_line(line_stripped, cursor, min_score=min_score, enabled_types=enabled_types):
-                    entities.append(e)
+                item = self._prepare_line(line_stripped, cursor)
+                if item is not None:
+                    prepared.append(item)
             cursor += len(line)
+
+        entities: list[PiiEntity] = []
+        for start in range(0, len(prepared), _LINE_BATCH_SIZE):
+            entities.extend(self._run_batch(
+                prepared[start:start + _LINE_BATCH_SIZE],
+                min_score,
+                enabled_types,
+            ))
         return entities
 
     def _run_line(self, line: str, global_offset: int, min_score: float = _MIN_SCORE, enabled_types: set[str] | None = None) -> list[PiiEntity]:
+        prepared = self._prepare_line(line, global_offset)
+        if prepared is None:
+            return []
+        return self._run_batch([prepared], min_score, enabled_types)
+
+    def _prepare_line(self, line: str, global_offset: int) -> PreparedLine | None:
+        enc = self._tokenizer.encode(line, add_special_tokens=False)
+        input_ids = enc.ids[:_MAX_TOKENS]
+        if not input_ids:
+            return None
+        offsets = [tuple(offset) for offset in enc.offsets[:_MAX_TOKENS]]
+        return line, global_offset, input_ids, offsets
+
+    def _run_batch(
+        self,
+        prepared: list[PreparedLine],
+        min_score: float,
+        enabled_types: set[str] | None,
+    ) -> list[PiiEntity]:
         import numpy as np
 
-        enc = self._tokenizer.encode(line, add_special_tokens=False)
-        input_ids = enc.ids[:512]
-        if not input_ids:
+        if not prepared:
             return []
-        attention_mask = [1] * len(input_ids)
-        offset_mapping = [list(o) for o in enc.offsets[:512]]
+
+        max_length = max(len(item[2]) for item in prepared)
+        pad_id = self._tokenizer.token_to_id("[PAD]") or 0
+        input_ids = np.full((len(prepared), max_length), pad_id, dtype=np.int64)
+        attention_mask = np.zeros((len(prepared), max_length), dtype=np.int64)
+        for index, (_, _, ids, _) in enumerate(prepared):
+            input_ids[index, :len(ids)] = ids
+            attention_mask[index, :len(ids)] = 1
 
         inputs = {
-            "input_ids": np.array([input_ids], dtype=np.int64),
-            "attention_mask": np.array([attention_mask], dtype=np.int64),
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
         }
         input_names = {inp.name for inp in self._session.get_inputs()}
         inputs = {k: v for k, v in inputs.items() if k in input_names}
 
-        logits = self._session.run(None, inputs)[0][0]
+        try:
+            logits_batch = self._session.run(None, inputs)[0]
+        except Exception:
+            if len(prepared) == 1:
+                raise
+            logger.warning("PrivacyFilter batch inference unavailable; falling back to single lines")
+            return [
+                entity
+                for item in prepared
+                for entity in self._run_batch([item], min_score, enabled_types)
+            ]
+
+        entities: list[PiiEntity] = []
+        for index, (line, global_offset, ids, offsets) in enumerate(prepared):
+            entities.extend(self._entities_from_logits(
+                line,
+                global_offset,
+                logits_batch[index][:len(ids)],
+                offsets,
+                min_score,
+                enabled_types,
+            ))
+        return entities
+
+    def _entities_from_logits(
+        self,
+        line: str,
+        global_offset: int,
+        logits,
+        offset_mapping: list[tuple[int, int]],
+        min_score: float,
+        enabled_types: set[str] | None,
+    ) -> list[PiiEntity]:
         label_ids = logits.argmax(axis=-1).tolist()
         probs = _softmax(logits)
         scores = probs[range(len(label_ids)), label_ids].tolist()
