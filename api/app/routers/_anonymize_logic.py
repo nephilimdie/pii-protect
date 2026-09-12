@@ -265,9 +265,16 @@ async def _process_anonymization(
             remove_types=remove_types,
         )
 
+        from app.settings_repository import SettingsRepository
+        ttl_hours = int(await SettingsRepository(db).get(
+            "mapping_ttl_hours", str(settings.mapping_ttl_hours), tenant_id=tenant_id
+        ))
         needs_surrogate = resolved_mode == "surrogate" or bool(surrogate_types)
         if needs_surrogate:
-            surrogate_svc = SurrogateService(db, locale=locale)
+            surrogate_svc = SurrogateService(
+                db, locale=locale, tenant_id=tenant_id,
+                project_id=body.project_id, ttl_hours=ttl_hours
+            )
             replacement_map: dict[str, str] = {}
             for entity in entities_to_protect:
                 if resolved_mode != "surrogate" and entity.pii_type not in surrogate_types:
@@ -305,7 +312,14 @@ async def _process_anonymization(
             repo = MappingRepository(db, _kp)
             # Removed entities have token="" — don't store (irreversible, no deanonymization possible)
             mappings_to_save = [m for m in mappings if m.token]
-            await repo.save_many(mappings_to_save, body.context_id, effective_context, tenant_id)
+            await repo.save_many(
+                mappings_to_save,
+                body.context_id,
+                effective_context,
+                tenant_id,
+                ttl_hours=ttl_hours,
+                project_id=body.project_id,
+            )
 
         ip_anon = getattr(request.app.state, "ip_anonymization_enabled", True)
         audit = AuditService(db, ip_anonymization=ip_anon)

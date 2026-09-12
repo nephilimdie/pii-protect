@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 import hashlib
+from datetime import datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.surrogates import generators
 from app.surrogates.cf_codec import decode_partial
+from app.config import settings
 
 
 def _hash(value: str) -> str:
@@ -19,9 +21,19 @@ def _normalise_name(name: str) -> str:
 
 
 class SurrogateService:
-    def __init__(self, db: AsyncSession, locale: str = "it_IT") -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        locale: str = "it_IT",
+        tenant_id: str | None = None,
+        ttl_hours: int | None = None,
+        project_id: str = "default",
+    ) -> None:
         self._db = db
         self._locale = locale
+        self._tenant_id = tenant_id
+        self._project_id = project_id
+        self._ttl_hours = ttl_hours if ttl_hours is not None else settings.mapping_ttl_hours
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -83,29 +95,38 @@ class SurrogateService:
                 "SELECT fake_first_name, fake_last_name, fake_birth_date, fake_gender,"
                 "       fake_city, fake_belfiore, fake_cf"
                 " FROM surrogate_profiles"
-                " WHERE context_id = :ctx AND real_hash = :rh"
+                " WHERE tenant_id IS NOT DISTINCT FROM :tenant"
+                "   AND project_id = :project AND context_id = :ctx AND real_hash = :rh"
+                "   AND (expires_at IS NULL OR expires_at > :now)"
             ),
-            {"ctx": context_id, "rh": rh},
+            {"tenant": self._tenant_id, "project": self._project_id, "ctx": context_id, "rh": rh, "now": datetime.utcnow()},
         )
         row = result.fetchone()
         if row:
             return dict(row._mapping)
 
         profile = generators.gen_fake_profile(key, context_id, gender_hint, self._locale)
+        expires_at = datetime.utcnow() + timedelta(hours=self._ttl_hours)
+        conflict = (
+            "(project_id, context_id, real_hash) WHERE tenant_id IS NULL"
+            if self._tenant_id is None
+            else "(tenant_id, project_id, context_id, real_hash)"
+        )
         await self._db.execute(
             text(
                 "INSERT INTO surrogate_profiles"
-                " (context_id, real_hash, fake_first_name, fake_last_name,"
-                "  fake_birth_date, fake_gender, fake_city, fake_belfiore, fake_cf)"
-                " VALUES (:ctx, :rh, :first, :last, :birth, :gender, :city, :belfiore, :cf)"
-                " ON CONFLICT (context_id, real_hash) DO NOTHING"
+                " (tenant_id, project_id, context_id, real_hash, fake_first_name, fake_last_name,"
+                "  fake_birth_date, fake_gender, fake_city, fake_belfiore, fake_cf, expires_at)"
+                " VALUES (:tenant, :project, :ctx, :rh, :first, :last, :birth, :gender, :city, :belfiore, :cf, :expires)"
+                f" ON CONFLICT {conflict} DO NOTHING"
             ),
             {
-                "ctx": context_id, "rh": rh,
+                "tenant": self._tenant_id, "project": self._project_id, "ctx": context_id, "rh": rh,
                 "first": profile["fake_first_name"], "last": profile["fake_last_name"],
                 "birth": profile["fake_birth_date"], "gender": profile["fake_gender"],
                 "city": profile["fake_city"], "belfiore": profile["fake_belfiore"],
                 "cf": profile["fake_cf"],
+                "expires": expires_at,
             },
         )
         await self._db.commit()
@@ -117,9 +138,11 @@ class SurrogateService:
         result = await self._db.execute(
             text(
                 "SELECT fake_value FROM surrogate_mappings"
-                " WHERE context_id = :ctx AND pii_type = :t AND real_hash = :rh"
+                " WHERE tenant_id IS NOT DISTINCT FROM :tenant"
+                "   AND project_id = :project AND context_id = :ctx AND pii_type = :t AND real_hash = :rh"
+                "   AND (expires_at IS NULL OR expires_at > :now)"
             ),
-            {"ctx": context_id, "t": pii_type, "rh": real_hash},
+            {"tenant": self._tenant_id, "project": self._project_id, "ctx": context_id, "t": pii_type, "rh": real_hash, "now": datetime.utcnow()},
         )
         row = result.fetchone()
         return row[0] if row else None
@@ -127,13 +150,28 @@ class SurrogateService:
     async def _store(
         self, context_id: str, pii_type: str, real_hash: str, fake_value: str
     ) -> None:
+        conflict = (
+            "(project_id, context_id, pii_type, real_hash) WHERE tenant_id IS NULL"
+            if self._tenant_id is None
+            else "(tenant_id, project_id, context_id, pii_type, real_hash)"
+        )
+        expires_at = datetime.utcnow() + timedelta(hours=self._ttl_hours)
         await self._db.execute(
             text(
-                "INSERT INTO surrogate_mappings (context_id, pii_type, real_hash, fake_value)"
-                " VALUES (:ctx, :t, :rh, :fv)"
-                " ON CONFLICT (context_id, pii_type, real_hash) DO NOTHING"
+                "INSERT INTO surrogate_mappings"
+                " (tenant_id, project_id, context_id, pii_type, real_hash, fake_value, expires_at)"
+                " VALUES (:tenant, :project, :ctx, :t, :rh, :fv, :expires)"
+                f" ON CONFLICT {conflict} DO NOTHING"
             ),
-            {"ctx": context_id, "t": pii_type, "rh": real_hash, "fv": fake_value},
+            {
+                "tenant": self._tenant_id,
+                "project": self._project_id,
+                "ctx": context_id,
+                "t": pii_type,
+                "rh": real_hash,
+                "fv": fake_value,
+                "expires": expires_at,
+            },
         )
         await self._db.commit()
 
@@ -144,8 +182,16 @@ class SurrogateService:
         result = await self._db.execute(
             text(
                 "SELECT pii_type, real_hash, fake_value FROM surrogate_mappings"
-                " WHERE context_id = :ctx ORDER BY length(fake_value) DESC"
+                " WHERE tenant_id IS NOT DISTINCT FROM :tenant"
+                "   AND project_id = :project AND context_id = :ctx"
+                "   AND (expires_at IS NULL OR expires_at > :now)"
+                " ORDER BY length(fake_value) DESC"
             ),
-            {"ctx": context_id},
+            {
+                "tenant": self._tenant_id,
+                "project": self._project_id,
+                "ctx": context_id,
+                "now": datetime.utcnow(),
+            },
         )
         return [dict(r._mapping) for r in result.fetchall()]

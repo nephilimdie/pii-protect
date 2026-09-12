@@ -3,7 +3,7 @@
 [![CI](https://github.com/nephilimdie/pii-protect/actions/workflows/ci.yml/badge.svg)](https://github.com/nephilimdie/pii-protect/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/nephilimdie/pii-protect/branch/master/graph/badge.svg)](https://codecov.io/gh/nephilimdie/pii-protect)
 [![Release](https://img.shields.io/github/v/release/nephilimdie/pii-protect)](https://github.com/nephilimdie/pii-protect/releases)
-[![License](https://img.shields.io/badge/License-Source%20Available-blue.svg)](./LICENSE)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](./LICENSE)
 
 **Privacy sidecar for LLM and RAG applications.** Multilingual, policy-driven, surrogate-ready.
 
@@ -219,7 +219,7 @@ By default the system is **fail-closed**: if detection cannot complete safely, t
 | [vs Microsoft Presidio](doc/comparison-presidio.md) | Honest feature comparison and architecture relationship |
 | [Roadmap](doc/roadmap.md) | Planned features for v0.2, v0.3, v0.4, v0.5 |
 | [Benchmark Results](benchmark/results/italian_legal_v0.2.0.md) | Current reproducible synthetic benchmark output |
-| [Licensing Model](LICENSING.md) | Core license, allowed use, and reserved cloud rights |
+| [Licensing Model](LICENSING.md) | Apache-2.0 core license and Cloud separation |
 | [Plugin Ecosystem](doc/plugin-ecosystem.md) | Plugin strategy and author expectations |
 | [Marketplace Vision](doc/marketplace-vision.md) | Future marketplace principles for plugin distribution |
 | [Security Policy](SECURITY.md) | Vulnerability reporting and security expectations |
@@ -275,5 +275,5 @@ If you expose a public demo of `pii-protect`, warn users not to paste real perso
 
 ## License
 
-Source-available core license — see [LICENSE](./LICENSE). Hosted services, premium modules, and future marketplace operations may be offered under separate terms.  
+Pseudora Core is open source under the Apache-2.0 license. Hosted services, premium modules, and managed Cloud operations are separate products. See [LICENSING.md](./LICENSING.md).
 Copyright © 2026 Stefano Bassetto.

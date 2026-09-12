@@ -24,6 +24,7 @@ router = APIRouter()
 class DeanonymizeRequest(BaseModel):
     text: str
     context_id: str
+    project_id: str = "default"
     context_type: str
     reason: str | None = None
 
@@ -48,7 +49,9 @@ async def deanonymize(
     policy = await PolicyService(db, tenant_id=tenant_id).resolve(body.context_type, None, None)
 
     repo = MappingRepository(db, key_provider)
-    mappings = await repo.find_by_context(body.context_id, body.context_type, tenant_id)
+    mappings = await repo.find_by_context(
+        body.context_id, body.context_type, tenant_id, body.project_id
+    )
 
     restored = PiiDeanonymizer().deanonymize(body.text, mappings)
 

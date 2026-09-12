@@ -1,38 +1,37 @@
 # Licensing Model
 
-`pii-protect` uses a source-available licensing model.
+`pii-protect` is open source software distributed under the Apache License
+2.0. The binding terms are available in [LICENSE](LICENSE).
 
 ## Core product
 
-- The source code in this repository is licensed under the terms in [LICENSE](LICENSE).
-- The intent is to allow broad self-hosted use, including commercial internal use.
-- The main restriction is that third parties may not turn the core product into a competing hosted or managed anonymization service.
+The core repository contains the self-hosted privacy engine, its API, local
+administration UI, database schema, detection layers, policy engine, mapping
+encryption, retention controls, and published extension points.
 
-## What is allowed
+You may use, modify, integrate, and redistribute the core under Apache-2.0,
+including for commercial purposes, subject to that license and the licenses
+of third-party dependencies.
 
-- Self-hosting for your own organization.
-- Using the product inside your own commercial applications and services.
-- Building private or public integrations against published APIs.
-- Building plugins and extensions through published plugin interfaces.
+## Pseudora Cloud
 
-## What is not allowed without a separate agreement
+Pseudora Cloud is a separate product. Cloud operations, hosted infrastructure,
+commercial account management, billing, quotas, managed integrations, and
+Cloud-specific services are maintained outside this repository and may be
+distributed under separate terms.
 
-- Offering `pii-protect` as a standalone SaaS or managed anonymization API for third parties.
-- White-labeling the core product as a competing service.
-- Reselling the core product itself as a standalone commercial product.
+Using the open-source core does not grant access to Pseudora Cloud, its
+managed services, its trademarks, or its commercial infrastructure.
 
-## Future cloud and premium modules
+## Plugins and marketplace
 
-- Hosted cloud services may be offered under separate commercial terms.
-- Future premium modules may be licensed separately from the core repository.
-- Marketplace services, billing features, and cloud operations are not implied by the core license.
+The core plugin interfaces do not impose a license on independent plugins.
+Plugin authors may choose compatible private, open-source, or commercial
+licenses for their own work. A plugin must preserve the applicable notices for
+any core code it copies or redistributes.
 
-## Plugin strategy
+## Trademarks
 
-- Plugin authors may keep their plugins private, open source, or commercial.
-- The core license is not intended to capture ownership of third-party plugins.
-- A future plugin SDK, sample plugins, or plugin templates may be released under separate terms when published.
-
-## Important note
-
-This document explains product intent. The binding terms for the core repository are the terms in [LICENSE](LICENSE).
+Apache-2.0 does not grant rights to use Pseudora trademarks, product names, or
+logos beyond reasonable attribution. Trademark permissions are separate from
+the copyright license.

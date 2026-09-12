@@ -8,6 +8,7 @@ MAX_TEXT_CHARS = 500_000  # ~400 pages; hard limit enforced before ML layers
 class AnonymizeRequest(BaseModel):
     text: str = Field(max_length=MAX_TEXT_CHARS)
     context_id: str
+    project_id: str = "default"
     context_type: str | None = None  # optional when `domain` or inline `policy` is given
     domain: str | None = None        # invoke a domain policy directly (bypasses context_type)
     language: str | None = None

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.audit_service import AuditService
@@ -23,7 +23,7 @@ from app.usage.models import UsageEvent
 router = APIRouter()
 
 _DEFAULTS = {
-    "mapping_ttl_days":        "30",
+    "mapping_ttl_hours":       "1",
     "audit_log_ttl_days":      "365",
     "usage_event_ttl_days":    "395",
     "ip_anonymization_enabled": "true",
@@ -31,7 +31,8 @@ _DEFAULTS = {
 
 
 class RetentionSettings(BaseModel):
-    mapping_ttl_days:         int  = Field(default=30,  ge=1,  le=3650)
+    mapping_ttl_hours:        int | None = Field(default=None, ge=1, le=24 * 3650)
+    mapping_ttl_days:         int = Field(default=1, ge=1, le=3650)
     audit_log_ttl_days:       int  = Field(default=365, ge=1,  le=3650)
     usage_event_ttl_days:     int  = Field(default=395, ge=1,  le=3650)
     ip_anonymization_enabled: bool = Field(default=True)
@@ -65,10 +66,14 @@ class ExportResult(BaseModel):
     exported_at:      str
 
 
-async def _load(repo: SettingsRepository) -> RetentionSettings:
-    all_settings = await repo.all()
+async def _load(repo: SettingsRepository, tenant_id: str | None = None) -> RetentionSettings:
+    all_settings = await repo.all(tenant_id=tenant_id)
+    hours = int(all_settings.get("mapping_ttl_hours", "0"))
+    if hours < 1:
+        hours = int(all_settings.get("mapping_ttl_days", "1")) * 24
     return RetentionSettings(
-        mapping_ttl_days        = int(all_settings.get("mapping_ttl_days",        _DEFAULTS["mapping_ttl_days"])),
+        mapping_ttl_hours       = hours,
+        mapping_ttl_days        = max(1, (hours + 23) // 24),
         audit_log_ttl_days      = int(all_settings.get("audit_log_ttl_days",      _DEFAULTS["audit_log_ttl_days"])),
         usage_event_ttl_days    = int(all_settings.get("usage_event_ttl_days",    _DEFAULTS["usage_event_ttl_days"])),
         ip_anonymization_enabled = all_settings.get("ip_anonymization_enabled",   _DEFAULTS["ip_anonymization_enabled"]) == "true",
@@ -80,7 +85,7 @@ async def get_retention(
     api_key: ApiKey = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _load(SettingsRepository(db))
+    return await _load(SettingsRepository(db), api_key.tenant_id)
 
 
 @router.put("/retention", response_model=RetentionSettings)
@@ -91,18 +96,22 @@ async def update_retention(
     db: AsyncSession = Depends(get_db),
 ):
     repo = SettingsRepository(db)
-    await repo.set("mapping_ttl_days",         str(body.mapping_ttl_days))
-    await repo.set("audit_log_ttl_days",       str(body.audit_log_ttl_days))
-    await repo.set("usage_event_ttl_days",     str(body.usage_event_ttl_days))
-    await repo.set("ip_anonymization_enabled", "true" if body.ip_anonymization_enabled else "false")
+    tenant_id = api_key.tenant_id
+    mapping_hours = body.mapping_ttl_hours or body.mapping_ttl_days * 24
+    await repo.set("mapping_ttl_hours", str(mapping_hours), tenant_id)
+    await repo.set("mapping_ttl_days", str(max(1, (mapping_hours + 23) // 24)), tenant_id)
+    await repo.set("audit_log_ttl_days", str(body.audit_log_ttl_days), tenant_id)
+    await repo.set("usage_event_ttl_days", str(body.usage_event_ttl_days), tenant_id)
+    await repo.set("ip_anonymization_enabled", "true" if body.ip_anonymization_enabled else "false", tenant_id)
     request.app.state.ip_anonymization_enabled = body.ip_anonymization_enabled
+    request.app.state.mapping_ttl_hours = mapping_hours
     await AuditService(db).log(
         api_key_id=api_key.id,
         action="retention_config_updated",
         tenant_id=api_key.tenant_id,
         event_category="admin",
         reason=(
-            f"mapping_ttl={body.mapping_ttl_days}d "
+            f"mapping_ttl={mapping_hours}h "
             f"audit_ttl={body.audit_log_ttl_days}d "
             f"usage_ttl={body.usage_event_ttl_days}d "
             f"ip_anon={body.ip_anonymization_enabled}"
@@ -118,12 +127,14 @@ async def run_cleanup(
     key_provider: KeyProvider = Depends(get_key_provider),
 ):
     repo = SettingsRepository(db)
-    cfg = await _load(repo)
     tenant_id = api_key.tenant_id
+    cfg = await _load(repo, tenant_id=tenant_id)
 
     # Mappings
     mapping_repo = MappingRepository(db, key_provider)
-    mappings_deleted = await mapping_repo.delete_expired(cfg.mapping_ttl_days, tenant_id=tenant_id)
+    mappings_deleted = await mapping_repo.delete_expired(
+        max(1, (cfg.mapping_ttl_hours + 23) // 24), tenant_id=tenant_id
+    )
 
     # Audit logs
     audit_svc = AuditService(db)
@@ -174,6 +185,18 @@ async def erase_by_context(
         m_stmt = m_stmt.where(PiiMapping.tenant_id == tenant_id)
     m_result = await db.execute(m_stmt)
 
+    surrogate_deleted = 0
+    for table in ("surrogate_mappings", "surrogate_profiles"):
+        s_stmt = text(f"DELETE FROM {table} WHERE context_id = :context_id")
+        params = {"context_id": body.context_id}
+        if tenant_id is not None:
+            s_stmt = text(
+                f"DELETE FROM {table} WHERE context_id = :context_id AND tenant_id = :tenant"
+            )
+            params["tenant"] = tenant_id
+        surrogate_result = await db.execute(s_stmt, params)
+        surrogate_deleted += surrogate_result.rowcount or 0
+
     # Delete audit logs for this context, but preserve admin-category records
     # (e.g. prior erasure_executed entries) so the GDPR audit trail survives re-erasure.
     a_stmt = delete(AuditLog).where(
@@ -192,11 +215,14 @@ async def erase_by_context(
         context_id=body.context_id,
         tenant_id=tenant_id,
         event_category="admin",
-        reason=f"mappings={m_result.rowcount} audit_logs={a_result.rowcount}",
+        reason=(
+            f"mappings={m_result.rowcount + surrogate_deleted} "
+            f"audit_logs={a_result.rowcount}"
+        ),
     )
     return ErasureResult(
         context_id=body.context_id,
-        mappings_deleted=m_result.rowcount,
+        mappings_deleted=m_result.rowcount + surrogate_deleted,
         audit_logs_deleted=a_result.rowcount,
     )
 

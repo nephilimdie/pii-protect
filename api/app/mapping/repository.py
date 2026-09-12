@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.mapping.models import PiiMapping
 from app.mapping.encryptor import FieldEncryptor
@@ -51,19 +51,26 @@ class MappingRepository:
         context_id: str,
         context_type: str,
         tenant_id: str | None = None,
+        ttl_hours: int | None = None,
+        project_id: str = "default",
     ) -> None:
         if not mappings:
             return
         enc = await self._encryptor(tenant_id)
+        expires_at = datetime.utcnow() + timedelta(
+            hours=ttl_hours if ttl_hours is not None else settings.mapping_ttl_hours
+        )
         rows = [
             {
                 "id": uuid.uuid4(),
                 "tenant_id": tenant_id,
+                "project_id": project_id,
                 "context_id": context_id,
                 "context_type": context_type,
                 "token": entry.token,
                 "original_encrypted": enc.encrypt(entry.original),
                 "pii_type": entry.pii_type,
+                "expires_at": expires_at,
             }
             for entry in mappings
         ]
@@ -80,11 +87,14 @@ class MappingRepository:
         context_id: str,
         context_type: str,
         tenant_id: str | None = None,
+        project_id: str = "default",
     ) -> list[MappingEntry]:
         stmt = select(PiiMapping).where(
             PiiMapping.tenant_id == tenant_id,
+            PiiMapping.project_id == project_id,
             PiiMapping.context_id == context_id,
             PiiMapping.context_type == context_type,
+            (PiiMapping.expires_at.is_(None) | (PiiMapping.expires_at > datetime.utcnow())),
         )
         result = await self._db.execute(stmt)
         rows = result.scalars().all()
@@ -107,7 +117,10 @@ class MappingRepository:
         per_page: int,
         tenant_id: str | None = None,
     ) -> tuple[list[dict], int]:
-        base_filter = PiiMapping.tenant_id == tenant_id if tenant_id is not None else True
+        active = PiiMapping.expires_at.is_(None) | (PiiMapping.expires_at > datetime.utcnow())
+        base_filter = active
+        if tenant_id is not None:
+            base_filter = base_filter & (PiiMapping.tenant_id == tenant_id)
 
         count_stmt = select(func.count()).select_from(PiiMapping).where(base_filter)
         total = (await self._db.execute(count_stmt)).scalar_one()
@@ -142,15 +155,25 @@ class MappingRepository:
         self,
         context_id: str,
         tenant_id: str | None = None,
+        project_id: str = "default",
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[dict], int]:
         """Return paginated mappings for a context_id across all context_types (Art. 20 export)."""
-        base = select(PiiMapping).where(PiiMapping.context_id == context_id)
+        active = PiiMapping.expires_at.is_(None) | (PiiMapping.expires_at > datetime.utcnow())
+        base = select(PiiMapping).where(
+            PiiMapping.context_id == context_id,
+            PiiMapping.project_id == project_id,
+            active,
+        )
         if tenant_id is not None:
             base = base.where(PiiMapping.tenant_id == tenant_id)
 
-        count_stmt = select(func.count()).select_from(PiiMapping).where(PiiMapping.context_id == context_id)
+        count_stmt = select(func.count()).select_from(PiiMapping).where(
+            PiiMapping.context_id == context_id,
+            PiiMapping.project_id == project_id,
+            active,
+        )
         if tenant_id is not None:
             count_stmt = count_stmt.where(PiiMapping.tenant_id == tenant_id)
         total = (await self._db.execute(count_stmt)).scalar_one()
@@ -190,9 +213,27 @@ class MappingRepository:
 
     async def delete_expired(self, ttl_days: int, tenant_id: str | None = None) -> int:
         cutoff = datetime.utcnow() - timedelta(days=ttl_days)
-        stmt = delete(PiiMapping).where(PiiMapping.created_at < cutoff)
+        stmt = delete(PiiMapping).where(
+            (PiiMapping.expires_at.is_not(None) & (PiiMapping.expires_at < datetime.utcnow()))
+            | (PiiMapping.expires_at.is_(None) & (PiiMapping.created_at < cutoff))
+        )
         if tenant_id is not None:
             stmt = stmt.where(PiiMapping.tenant_id == tenant_id)
         result = await self._db.execute(stmt)
+        surrogate_tables = ("surrogate_mappings", "surrogate_profiles")
+        deleted = result.rowcount or 0
+        for table in surrogate_tables:
+            scope = " AND tenant_id = :tenant" if tenant_id is not None else ""
+            query = text(
+                f"DELETE FROM {table} WHERE ("
+                "(expires_at IS NOT NULL AND expires_at < :now)"
+                " OR (expires_at IS NULL AND created_at < :cutoff)"
+                f"){scope}"
+            )
+            params = {"now": datetime.utcnow(), "cutoff": cutoff}
+            if tenant_id is not None:
+                params["tenant"] = tenant_id
+            surrogate_result = await self._db.execute(query, params)
+            deleted += surrogate_result.rowcount or 0
         await self._db.commit()
-        return result.rowcount
+        return deleted

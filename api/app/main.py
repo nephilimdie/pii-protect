@@ -17,7 +17,7 @@ if _sentry_dsn:
     except ImportError:
         pass
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
@@ -330,6 +330,9 @@ async def lifespan(app: FastAPI):
         from app.settings_repository import SettingsRepository as _SR
         _s = await _SR(db).all()
         app.state.ip_anonymization_enabled = _s.get("ip_anonymization_enabled", "true") == "true"
+        app.state.mapping_ttl_hours = int(
+            _s.get("mapping_ttl_hours", settings.mapping_ttl_hours)
+        )
 
     logger.info("Starting cleanup loop…")
     _cleanup_task = asyncio.create_task(_nightly_cleanup_loop())
@@ -344,6 +347,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="pii-protect", version="1.0.0", lifespan=lifespan)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Keep structured API errors flat while preserving string details."""
+    payload = exc.detail if isinstance(exc.detail, dict) else {"detail": exc.detail}
+    return JSONResponse(payload, status_code=exc.status_code, headers=exc.headers)
 
 # ── Middleware ───────────────────────────────────────────────────────────────
 _allowed_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()] \
@@ -394,7 +404,8 @@ async def tenant_guard_middleware(request: Request, call_next):
 
     if not settings.multitenancy_enabled:
         headers = MutableHeaders(scope=request.scope)
-        headers.pop("x-pii-tenant-id", None)
+        if "x-pii-tenant-id" in headers:
+            del headers["x-pii-tenant-id"]
     else:
         # Internal API key check: must come BEFORE tenant-id handling
         if settings.internal_api_key:

@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     privacy_filter_model: str = "openai/privacy-filter"
     ai4privacy_model: str = "Isotonic/distilbert_finetuned_ai4privacy_v2"
     mapping_ttl_days: int = 30
+    mapping_ttl_hours: int = Field(
+        default=1,
+        ge=1,
+        le=24 * 365,
+        validation_alias=AliasChoices("MAPPING_TTL_HOURS", "PII_MAPPING_TTL_HOURS"),
+    )
     cors_allowed_origins: str = Field(default="", validation_alias=AliasChoices("CORS_ALLOWED_ORIGINS", "PII_CORS_ALLOWED_ORIGINS"))
     internal_api_key: str = Field(default="", validation_alias=AliasChoices("PII_INTERNAL_API_KEY"))
     default_tenant_id: str | None = Field(default=None, validation_alias=AliasChoices("PII_DEFAULT_TENANT_ID"))

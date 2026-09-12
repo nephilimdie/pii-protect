@@ -4,6 +4,8 @@
 
 This roadmap reflects current priorities. Items may shift based on community feedback.
 
+For the detailed plan to evolve the engine into an AI Privacy Gateway, see [AI Privacy Gateway Roadmap](roadmap-ai-privacy-gateway.md).
+
 ---
 
 ## v0.next — gRPC transport (pii-protect ↔ pii-cloud)
