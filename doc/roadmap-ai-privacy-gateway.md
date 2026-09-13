@@ -2,9 +2,10 @@
 
 ## Implementation status (September 2026)
 
-The provider proxy, secrets and prompt-injection checks, OpenAI and Anthropic
-stream buffering, OpenAI Responses support, tenant-scoped controls,
-per-tenant DEKs, erasure and key rotation are implemented in the corresponding
+The provider proxy, explicit provider registry, bounded idempotent retries and
+circuit breakers, secrets and prompt-injection checks, OpenAI and Anthropic
+stream buffering, OpenAI Responses support, tenant-scoped controls, per-tenant
+DEKs, erasure and key rotation are implemented in the corresponding
 repositories. Remaining release gates are provider integration tests, an
 independent penetration test, broader authorized quality datasets and the
 optional document/image plugin.
@@ -188,7 +189,9 @@ Il gateway cloud deve permettere di scegliere il provider senza cambiare il clie
 ### Funzioni
 - Provider registry con endpoint, modello, regione e stato.
 - Segreti provider conservati in secret manager o cifrati, mai nel database in chiaro.
-- Timeout, retry con backoff e circuit breaker.
+- Timeout separati, retry con backoff e circuit breaker per route.
+- I retry dei `POST` richiedono `Idempotency-Key`; senza la richiesta non viene
+  ripetuta per evitare duplicazioni lato provider.
 - Failover solo verso provider autorizzati dalla policy.
 - Limiti di token e caratteri per tenant, utente e team.
 - Budget mensile e alert di consumo.
