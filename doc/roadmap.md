@@ -51,8 +51,8 @@ The hosted cloud service is built as a private module that connects to the same 
 
 ## v0.4 — Integrations
 
-- [ ] **LangChain document transformer** — `PiiProtectTransformer` wraps the anonymize endpoint for direct use in RAG pipelines
-- [ ] **LlamaIndex node parser** — pre-processing step for index ingestion
+- [x] **LangChain document transformer** — `PseudoraLangChainTransformer` is shipped in the Python SDK and protects document text before ingestion
+- [x] **LlamaIndex node parser** — `PseudoraLlamaIndexTransformer` is shipped in the Python SDK and protects node text before indexing
 - [x] **OpenAI-compatible proxy mode** — implemented in the separate `pii-gateway` repository, including Chat Completions and Responses API
 - [ ] **Kafka consumer** — stream-based anonymization for event pipelines
 - [ ] **S3 / GCS trigger** — anonymize on file upload, write output to separate bucket
