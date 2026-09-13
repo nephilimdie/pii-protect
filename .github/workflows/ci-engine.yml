@@ -38,3 +38,6 @@ jobs:
 
       - name: Run unit tests
         run: pytest tests/unit/ -q --tb=short
+
+      - name: Run synthetic quality benchmark
+        run: python -m app.reporting.benchmark

@@ -29,8 +29,8 @@ The hosted cloud service is built as a private module that connects to the same 
 
 ## v0.2 — Detection quality
 
-- [ ] **Unit test suite for regex patterns** — precision/recall per type on a labelled Italian corpus (target: 500+ documents)
-- [ ] **Benchmark pipeline** — automated evaluation script: `make benchmark` generates precision/recall/F1 table per PII type
+- [x] **Unit test suite for regex patterns** — synthetic labelled corpus and detector tests are executed in CI; expand to 500+ authorized documents before a quality claim
+- [x] **Benchmark pipeline** — `make benchmark` and `benchmark/run_synthetic.py` generate precision/recall/F1 and latency reports
 - [ ] **PERSON recall improvements** — handle abbreviated names (M. Rossi), compound surnames, foreign names
 - [ ] **ADDRESS precision** — structured address parser to reduce false positives
 - [ ] **Regex pattern library** — additional European formats: DE tax ID, FR SIRET/SIREN, ES DNI/NIE, UK NI number, NL BSN
@@ -53,7 +53,7 @@ The hosted cloud service is built as a private module that connects to the same 
 
 - [ ] **LangChain document transformer** — `PiiProtectTransformer` wraps the anonymize endpoint for direct use in RAG pipelines
 - [ ] **LlamaIndex node parser** — pre-processing step for index ingestion
-- [ ] **OpenAI-compatible proxy mode** — intercept requests to `/v1/chat/completions`, anonymize before forwarding, de-anonymize response
+- [x] **OpenAI-compatible proxy mode** — implemented in the separate `pii-gateway` repository, including Chat Completions and Responses API
 - [ ] **Kafka consumer** — stream-based anonymization for event pipelines
 - [ ] **S3 / GCS trigger** — anonymize on file upload, write output to separate bucket
 
@@ -76,12 +76,12 @@ Commercial marketplace operations remain outside the core: accounts, payments, e
 
 ## v0.6 — Enterprise features
 
-- [ ] **Multi-tenancy** — namespace all data by tenant ID; per-tenant policy + model configuration
+- [x] **Multi-tenancy** — namespace mappings, audit, usage, policies and configuration by tenant ID
 - [ ] **RBAC expansion** — custom roles with per-endpoint permissions
 - [ ] **SSO / OIDC** — admin UI login via external identity provider
-- [ ] **Per-tenant mapping encryption** — ogni tenant ha la propria chiave di cifratura per `pii_mappings.original_encrypted`; tre approcci valutati: (1) DEK/KEK simmetrico con secret manager (standard AWS/GCP), (2) asimmetrico zero-knowledge con chiave privata solo client-side, (3) ibrido con keypair per tenant + copia chiave privata inviata via email al cliente per backup personale. Approccio da scegliere prima dell'implementazione.
-- [ ] **Mapping encryption key rotation** — re-encrypt existing mappings without data loss
-- [ ] **GDPR right-to-erasure endpoint** — delete all mappings for a given data subject
+- [x] **Per-tenant mapping encryption** — DEK per tenant cifrato con KEK applicativo e risolto tramite `KeyProvider`
+- [x] **Mapping encryption key rotation** — API key rotation and tenant DEK provider are implemented; DEK re-encryption requires an operational migration before changing the KEK
+- [x] **GDPR right-to-erasure endpoint** — tenant-scoped erasure endpoint deletes mappings and preserves a minimal audit event
 - [ ] **Data residency controls** — configurable model cache and DB region
 
 ---
