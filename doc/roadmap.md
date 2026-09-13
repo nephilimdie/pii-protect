@@ -80,7 +80,7 @@ Commercial marketplace operations remain outside the core: accounts, payments, e
 - [ ] **RBAC expansion** — custom roles with per-endpoint permissions
 - [ ] **SSO / OIDC** — admin UI login via external identity provider
 - [x] **Per-tenant mapping encryption** — DEK per tenant cifrato con KEK applicativo e risolto tramite `KeyProvider`
-- [x] **Mapping encryption key rotation** — API key rotation and tenant DEK provider are implemented; DEK re-encryption requires an operational migration before changing the KEK
+- [x] **Mapping encryption key rotation** — tenant-scoped admin endpoint re-encrypts existing mappings before replacing the DEK
 - [x] **GDPR right-to-erasure endpoint** — tenant-scoped erasure endpoint deletes mappings and preserves a minimal audit event
 - [ ] **Data residency controls** — configurable model cache and DB region
 

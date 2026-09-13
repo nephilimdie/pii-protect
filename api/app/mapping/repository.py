@@ -1,12 +1,13 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
+from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.mapping.models import PiiMapping
 from app.mapping.encryptor import FieldEncryptor
-from app.mapping.key_provider import KeyProvider
+from app.mapping.key_provider import EnvKekKeyProvider, KeyProvider
 from app.detection.entities import MappingEntry
 from app.config import settings
 
@@ -237,3 +238,24 @@ class MappingRepository:
             deleted += surrogate_result.rowcount or 0
         await self._db.commit()
         return deleted
+
+    async def rotate_tenant_dek(self, tenant_id: str) -> int:
+        """Re-encrypt every tenant mapping before replacing its DEK."""
+        if not tenant_id or not isinstance(self._key_provider, EnvKekKeyProvider):
+            raise ValueError("tenant_dek_rotation_requires_tenant_key_provider")
+
+        old_dek = await self._key_provider.get_dek(tenant_id)
+        new_dek = Fernet.generate_key().decode()
+        old_encryptor = FieldEncryptor(old_dek)
+        new_encryptor = FieldEncryptor(new_dek)
+        result = await self._db.execute(
+            select(PiiMapping).where(PiiMapping.tenant_id == tenant_id)
+        )
+        rows = result.scalars().all()
+        for row in rows:
+            row.original_encrypted = new_encryptor.encrypt(
+                old_encryptor.decrypt(row.original_encrypted)
+            )
+        await self._db.commit()
+        await self._key_provider.replace_dek(tenant_id, new_dek)
+        return len(rows)

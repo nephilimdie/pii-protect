@@ -17,3 +17,9 @@ backup checksum, restore duration, schema revision, row-count smoke checks and
 the operator in the operations log. Never provide a production environment
 value to the command. The script intentionally requires both an explicit
 `RESTORE_DRILL=1` flag and a non-production environment.
+
+For a tenant key rotation, call the admin endpoint
+`POST /v1/admin/retention/mapping-key/rotate` with the tenant-scoped admin key
+after a successful backup. The response reports how many mappings were
+re-encrypted and the action is retained in the audit log. Schedule this during
+a low-traffic window because existing mappings are rewritten in one transaction.

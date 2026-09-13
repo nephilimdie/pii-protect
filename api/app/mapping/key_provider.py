@@ -87,3 +87,20 @@ class EnvKekKeyProvider(KeyProvider):
             return dek_bytes.decode()
 
         return self._kek_fernet.decrypt(row.dek_encrypted.encode()).decode()
+
+    async def replace_dek(self, tenant_id: str, dek: str) -> None:
+        """Replace a tenant DEK after its mappings have been re-encrypted."""
+        from app.mapping.models import TenantKey
+
+        result = await self._db.execute(
+            select(TenantKey).where(TenantKey.tenant_id == tenant_id)
+        )
+        row = result.scalar_one_or_none()
+        encrypted = self._kek_fernet.encrypt(dek.encode()).decode()
+        if row is None:
+            self._db.add(TenantKey(tenant_id=tenant_id, dek_encrypted=encrypted))
+        else:
+            row.dek_encrypted = encrypted
+        await self._db.commit()
+        async with _CACHE_LOCK:
+            _DEK_CACHE.pop(tenant_id, None)

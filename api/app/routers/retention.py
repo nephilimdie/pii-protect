@@ -4,7 +4,7 @@ import csv
 import io
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, text
@@ -53,6 +53,12 @@ class ErasureResult(BaseModel):
     context_id:       str
     mappings_deleted: int
     audit_logs_deleted: int
+
+
+class KeyRotationResult(BaseModel):
+    tenant_id: str
+    mappings_reencrypted: int
+    rotated_at: datetime
 
 
 class ExportResult(BaseModel):
@@ -224,6 +230,31 @@ async def erase_by_context(
         context_id=body.context_id,
         mappings_deleted=m_result.rowcount + surrogate_deleted,
         audit_logs_deleted=a_result.rowcount,
+    )
+
+
+@router.post("/retention/mapping-key/rotate", response_model=KeyRotationResult)
+async def rotate_mapping_key(
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    key_provider: KeyProvider = Depends(get_key_provider),
+):
+    """Rotate one tenant DEK after re-encrypting all existing mappings."""
+    if api_key.tenant_id is None:
+        raise HTTPException(status_code=400, detail="tenant_required_for_key_rotation")
+
+    count = await MappingRepository(db, key_provider).rotate_tenant_dek(api_key.tenant_id)
+    await AuditService(db).log(
+        api_key_id=api_key.id,
+        action="mapping_key_rotated",
+        tenant_id=api_key.tenant_id,
+        event_category="admin",
+        reason=f"mappings_reencrypted={count}",
+    )
+    return KeyRotationResult(
+        tenant_id=api_key.tenant_id,
+        mappings_reencrypted=count,
+        rotated_at=datetime.utcnow(),
     )
 
 
