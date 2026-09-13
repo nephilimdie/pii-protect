@@ -36,3 +36,10 @@ def test_loader_rejects_invalid_manifest(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="invalid_plugin_name"):
         PluginLoader(tmp_path / "plugins", PluginRegistry()).manifests()
+
+
+def test_repository_template_is_loadable():
+    registry = PluginRegistry()
+    loaded = PluginLoader("plugins", registry).load_all()
+
+    assert loaded == ["example.echo"]

@@ -52,6 +52,9 @@ verifies the archive bytes before extraction.
 
 ## Distribution paths
 
+The repository includes `api/plugins/example.echo` as a minimal compatibility
+template. It is not loaded unless `PLUGIN_AUTOLOAD=true` is explicitly set.
+
 - Private install inside a customer deployment.
 - Direct distribution by the plugin author.
 - Publication through a future `pii-protect` marketplace.

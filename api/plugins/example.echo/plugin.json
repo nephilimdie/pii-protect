@@ -1,0 +1,7 @@
+{
+  "name": "example.echo",
+  "version": "1.0.0",
+  "compatibility": ">=1.0,<2.0",
+  "permissions": ["read_text", "write_entities"],
+  "entrypoint": "plugin:ExampleEchoPlugin"
+}

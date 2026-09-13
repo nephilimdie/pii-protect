@@ -67,7 +67,7 @@ The hosted cloud service is built as a private module that connects to the same 
 - [x] **Plugin lifecycle controls** — inspect and disable loaded plugins from the self-hosted admin API; enable is controlled by explicit autoload configuration
 - [x] **Plugin package installer** — install local packages with required checksum validation and safe extraction
 - [x] **Signed package verification** — optional Ed25519 verification is available before installation
-- [ ] **Plugin SDK and template** — documented extension points, sample plugin, and compatibility tests
+- [x] **Plugin SDK and template** — documented extension points, sample plugin, and compatibility test
 - [ ] **Marketplace client** — browse a remote catalog and download free or entitled plugins into self-hosted deployments
 
 Commercial marketplace operations remain outside the core: accounts, payments, entitlements, publisher console, review workflow, package hosting, and revenue share belong to a separate remote marketplace service.
