@@ -66,7 +66,7 @@ The hosted cloud service is built as a private module that connects to the same 
 - [x] **Filesystem plugin loader** — opt-in discovery and loading from a local `plugins/` directory
 - [x] **Plugin lifecycle controls** — inspect and disable loaded plugins from the self-hosted admin API; enable is controlled by explicit autoload configuration
 - [x] **Plugin package installer** — install local packages with required checksum validation and safe extraction
-- [ ] **Signed package verification** — verify marketplace or private packages before installation
+- [x] **Signed package verification** — optional Ed25519 verification is available before installation
 - [ ] **Plugin SDK and template** — documented extension points, sample plugin, and compatibility tests
 - [ ] **Marketplace client** — browse a remote catalog and download free or entitled plugins into self-hosted deployments
 

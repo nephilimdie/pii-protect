@@ -2,6 +2,8 @@ import hashlib
 import zipfile
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.plugins.installer import PluginPackageInstaller
 
@@ -39,3 +41,39 @@ def test_installer_rejects_zip_slip(tmp_path):
 
     with pytest.raises(ValueError, match="path_escape"):
         PluginPackageInstaller().install(archive, tmp_path / "plugins", checksum)
+
+
+def test_installer_verifies_optional_ed25519_signature(tmp_path):
+    archive = tmp_path / "signed.zip"
+    _archive(archive)
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    signature = private_key.sign(archive.read_bytes())
+    checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+
+    target = PluginPackageInstaller().install(
+        archive, tmp_path / "plugins", checksum,
+        signature=signature, public_key=public_key,
+    )
+
+    assert target.is_dir()
+
+
+def test_installer_rejects_invalid_signature(tmp_path):
+    archive = tmp_path / "signed.zip"
+    _archive(archive)
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match="signature_invalid"):
+        PluginPackageInstaller().install(
+            archive, tmp_path / "plugins", checksum,
+            signature=b"invalid", public_key=public_key,
+        )

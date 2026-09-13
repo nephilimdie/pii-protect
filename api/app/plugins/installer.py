@@ -6,16 +6,26 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from app.plugins.manifest import PluginManifest
 
 
 class PluginPackageInstaller:
     """Install a reviewed plugin archive into a local plugin directory."""
 
-    def install(self, archive: str | Path, destination: str | Path, sha256: str) -> Path:
+    def install(
+        self, archive: str | Path, destination: str | Path, sha256: str,
+        *, signature: bytes | None = None, public_key: bytes | None = None,
+    ) -> Path:
         archive_path = Path(archive).resolve()
         destination_path = Path(destination).resolve()
         self._verify_checksum(archive_path, sha256)
+        if signature is not None or public_key is not None:
+            if signature is None or public_key is None:
+                raise ValueError("plugin_signature_arguments_incomplete")
+            self._verify_signature(archive_path, signature, public_key)
         with tempfile.TemporaryDirectory(prefix="pii-plugin-") as temporary:
             extraction = Path(temporary)
             self._extract_safely(archive_path, extraction)
@@ -30,6 +40,17 @@ class PluginPackageInstaller:
             destination_path.mkdir(parents=True, exist_ok=True)
             shutil.copytree(source, target)
         return target
+
+    def _verify_signature(self, archive: Path, signature: bytes, public_key: bytes) -> None:
+        try:
+            key = serialization.load_pem_public_key(public_key)
+            if not isinstance(key, Ed25519PublicKey):
+                raise ValueError("plugin_public_key_type_invalid")
+            key.verify(signature, archive.read_bytes())
+        except (InvalidSignature, ValueError, TypeError) as exc:
+            if isinstance(exc, ValueError) and str(exc) == "plugin_public_key_type_invalid":
+                raise
+            raise ValueError("plugin_signature_invalid") from exc
 
     def _verify_checksum(self, archive: Path, expected: str) -> None:
         if not archive.is_file() or len(expected) != 64:

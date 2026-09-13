@@ -46,7 +46,9 @@ For local package installation use `PluginPackageInstaller` with a SHA-256
 published out of band. It rejects checksum mismatches, archives with more than
 one manifest, path traversal and overwriting an existing plugin. A checksum is
 integrity protection only; marketplace packages still require detached
-signature verification before they can be treated as trusted.
+signature verification before they can be treated as trusted. The installer
+accepts an Ed25519 signature and PEM public key for that deployment mode and
+verifies the archive bytes before extraction.
 
 ## Distribution paths
 
