@@ -65,7 +65,7 @@ The hosted cloud service is built as a private module that connects to the same 
 - [x] **Plugin manifest** — validated `plugin.json` schema with name, version, compatibility, permissions, and entrypoint
 - [x] **Filesystem plugin loader** — opt-in discovery and loading from a local `plugins/` directory
 - [x] **Plugin lifecycle controls** — inspect and disable loaded plugins from the self-hosted admin API; enable is controlled by explicit autoload configuration
-- [ ] **Plugin package installer** — install local packages with checksum validation and safe extraction
+- [x] **Plugin package installer** — install local packages with required checksum validation and safe extraction
 - [ ] **Signed package verification** — verify marketplace or private packages before installation
 - [ ] **Plugin SDK and template** — documented extension points, sample plugin, and compatibility tests
 - [ ] **Marketplace client** — browse a remote catalog and download free or entitled plugins into self-hosted deployments

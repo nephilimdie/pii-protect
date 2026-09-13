@@ -42,6 +42,12 @@ loader rejects invalid names, missing entrypoints and paths escaping the plugin
 directory. Review and checksum packages before enabling them. The admin API
 lists loaded plugins and can disable one without changing files.
 
+For local package installation use `PluginPackageInstaller` with a SHA-256
+published out of band. It rejects checksum mismatches, archives with more than
+one manifest, path traversal and overwriting an existing plugin. A checksum is
+integrity protection only; marketplace packages still require detached
+signature verification before they can be treated as trusted.
+
 ## Distribution paths
 
 - Private install inside a customer deployment.
