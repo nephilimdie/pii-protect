@@ -30,11 +30,14 @@ _database_stub.get_db = _get_db
 sys.modules["app.database"] = _database_stub
 
 from app.detection.entities import PiiEntity
-from app.routers._anonymize_logic import filter_detected_entities, _apply_replacements
+from app.routers.entity_filter import filter_detected_entities
+from app.routers.replacements import apply_replacements
 
 
-def _entity(pii_type: str, text: str = "x", start: int = 0, end: int = 1) -> PiiEntity:
-    return PiiEntity(start=start, end=end, pii_type=pii_type, text=text, score=0.9)
+def _entity(
+    pii_type: str, text: str = "x", start: int = 0, end: int = 1, score: float = 0.9
+) -> PiiEntity:
+    return PiiEntity(start=start, end=end, pii_type=pii_type, text=text, score=score)
 
 
 class TestFilterDetectedEntities:
@@ -94,6 +97,20 @@ class TestFilterDetectedEntities:
         result = filter_detected_entities(entities, always_include_types={"FISCAL_CODE"})
         assert len(result) == 2
 
+    def test_confidence_threshold_is_applied_per_type(self):
+        entities = [_entity("EMAIL", score=0.7), _entity("PHONE", score=0.95)]
+        result = filter_detected_entities(
+            entities, confidence_thresholds={"EMAIL": 0.8}
+        )
+        assert [entity.pii_type for entity in result] == ["PHONE"]
+
+    def test_allowlist_matches_values_case_insensitively(self):
+        entities = [_entity("ORGANIZATION", "Acme S.p.A.")]
+        result = filter_detected_entities(
+            entities, allowlist={"ORGANIZATION": [" acme s.p.a. "]}
+        )
+        assert result == []
+
 
 class TestApplyReplacements:
     def test_surrogate_types_honoured_in_tag_mode(self):
@@ -106,7 +123,7 @@ class TestApplyReplacements:
         ]
         replacement_map = {"mario rossi": "Bob Smith"}
 
-        result, mappings = _apply_replacements(text, entities, "tag", replacement_map)
+        result, mappings = apply_replacements(text, entities, "tag", replacement_map)
 
         assert "Bob Smith" in result       # PERSON surrogated despite tag mode
         assert "Mario Rossi" not in result
@@ -117,5 +134,5 @@ class TestApplyReplacements:
     def test_tag_mode_without_replacement_map_tags_all(self):
         text = "Mario Rossi"
         entities = [_entity("PERSON", "Mario Rossi", 0, 11)]
-        result, _ = _apply_replacements(text, entities, "tag", None)
+        result, _ = apply_replacements(text, entities, "tag", None)
         assert "[PERSON" in result

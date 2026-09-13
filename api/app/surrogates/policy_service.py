@@ -8,6 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.scoped_config.service import ScopedConfigService
 
 
+def _json_object(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 class PolicyService:
     def __init__(self, db: AsyncSession, tenant_id: str | None = None) -> None:
         self._db = db
@@ -63,6 +75,8 @@ class PolicyService:
         surrogate: set[str] = set()
         remove: set[str] = set()
         block: set[str] = set()
+        confidence_thresholds: dict[str, float] = {}
+        allowlist: dict[str, list[str]] = {}
         domain_version = 1
         policy_default_mode = None
         if ct_domain:
@@ -75,13 +89,15 @@ class PolicyService:
                     row_data.get("surrogate_types", []),
                     row_data.get("remove_types", []),
                     row_data.get("block_types", []),
+                    row_data.get("confidence_thresholds", {}),
+                    row_data.get("allowlist", {}),
                     row_data.get("version", 1),
                     row_data.get("default_mode"),
                 ) if row_data else None
             else:
                 result = await self._db.execute(
                     text(
-                        "SELECT protect_types, keep_types, surrogate_types, remove_types, block_types, version, default_mode"
+                        "SELECT protect_types, keep_types, surrogate_types, remove_types, block_types, confidence_thresholds, allowlist, version, default_mode"
                         " FROM domain_policies WHERE domain = :d AND enabled = true AND tenant_id IS NULL"
                     ),
                     {"d": ct_domain},
@@ -93,8 +109,16 @@ class PolicyService:
                 surrogate_list = row[2] if isinstance(row[2], list) else json.loads(row[2] or "[]")
                 remove_list    = row[3] if isinstance(row[3], list) else json.loads(row[3] or "[]")
                 block_list     = row[4] if isinstance(row[4], list) else json.loads(row[4] or "[]")
-                domain_version = row[5] or 1
-                policy_default_mode = row[6] if len(row) > 6 else None
+                # Keep compatibility with pre-053 test doubles and old
+                # database adapters while reading the extended row shape.
+                if len(row) >= 9:
+                    confidence_thresholds = _json_object(row[5])
+                    allowlist = _json_object(row[6])
+                    domain_version = row[7] or 1
+                    policy_default_mode = row[8]
+                else:
+                    domain_version = row[5] or 1
+                    policy_default_mode = row[6] if len(row) > 6 else None
                 protect   = set(protect_list)
                 keep      = set(keep_list)
                 surrogate = set(surrogate_list)
@@ -113,6 +137,10 @@ class PolicyService:
                 remove    = set(inline_policy.get("remove", []))
             if "block" in inline_policy:
                 block     = set(inline_policy.get("block", []))
+            if "confidence_thresholds" in inline_policy:
+                confidence_thresholds = inline_policy.get("confidence_thresholds") or {}
+            if "allowlist" in inline_policy:
+                allowlist = inline_policy.get("allowlist") or {}
 
         # 4. Mode precedence: inline > context_type default > policy default_mode > "tag"
         #    (ct_mode is None when the caller invoked a domain directly, so the
@@ -131,6 +159,8 @@ class PolicyService:
                 "surrogate": sorted(surrogate),
                 "remove": sorted(remove),
                 "block": sorted(block),
+                "confidence_thresholds": confidence_thresholds,
+                "allowlist": allowlist,
             },
             sort_keys=True,
         )
@@ -142,11 +172,14 @@ class PolicyService:
             "surrogate_types": surrogate,
             "remove_types": remove,
             "block_types": block,
+            "confidence_thresholds": confidence_thresholds,
+            "allowlist": allowlist,
             "mode": mode,
             "policy_id": context_type or (f"domain:{ct_domain}" if ct_domain else None),
             "policy_version": f"context:{ct_version}|domain:{domain_version}",
             "policy_hash": policy_hash,
         }
+
 
     async def get_faker_strategy(self, pii_type: str) -> str | None:
         if self._tenant_id is not None:

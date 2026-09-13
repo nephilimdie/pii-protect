@@ -60,6 +60,7 @@ class PluginPackageInstaller:
             raise ValueError("plugin_archive_checksum_mismatch")
 
     def _extract_safely(self, archive: Path, destination: Path) -> None:
+        destination = destination.resolve()
         with zipfile.ZipFile(archive) as package:
             for member in package.infolist():
                 member_path = (destination / member.filename).resolve()

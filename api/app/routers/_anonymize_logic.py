@@ -33,6 +33,8 @@ from app.routers._anonymize_models import (
     EntityDetail,
     PolicyMetadata,
 )
+from app.routers.entity_filter import filter_detected_entities
+from app.routers.replacements import apply_replacements
 
 
 def get_registry(request: Request) -> DetectorRegistry:
@@ -61,30 +63,6 @@ async def run_detection(
     return result.entities
 
 
-def filter_detected_entities(
-    entities: list,
-    keep_types: set[str] | None = None,
-    protect_types: set[str] | None = None,
-    always_include_types: set[str] | None = None,
-    remove_types: set[str] | None = None,
-) -> list:
-    keep = keep_types or set()
-    # remove entities must pass through the filter so they can be erased
-    include_always = (always_include_types or set()) | (remove_types or set())
-    filtered = []
-    for entity in entities:
-        if entity.pii_type in keep:
-            continue
-        if (
-            protect_types is not None
-            and entity.pii_type not in protect_types
-            and entity.pii_type not in include_always
-        ):
-            continue
-        filtered.append(entity)
-    return filtered
-
-
 async def get_anonymizer(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -106,51 +84,6 @@ async def get_anonymizer(
     )
 
 
-def _apply_replacements(
-    text: str,
-    entities: list,
-    mode: str,
-    replacement_map: dict[str, str] | None,
-    remove_types: set[str] | None = None,
-) -> tuple[str, list[MappingEntry]]:
-    from app.detection.token_generator import TokenGenerator
-    generator = TokenGenerator()
-    _remove = remove_types or set()
-    stable_map: dict[str, str] = {}
-
-    for entity in entities:
-        key = entity.text.lower().strip()
-        if key in stable_map:
-            continue
-        if entity.pii_type in _remove:
-            stable_map[key] = ""
-        elif replacement_map and key in replacement_map:
-            # replacement_map already holds only the entities that must be
-            # surrogated (all protected types in surrogate mode, or just the
-            # per-type surrogate_types in tag mode). Honour it regardless of mode.
-            stable_map[key] = replacement_map[key]
-        else:
-            stable_map[key] = generator.next_token(entity.pii_type)
-
-    mappings: list[MappingEntry] = []
-    result = text
-    for entity in reversed(entities):
-        key = entity.text.lower().strip()
-        token = stable_map[key]
-        result = result[: entity.start] + token + result[entity.end :]
-        mappings.append(
-            MappingEntry(
-                token=token,
-                original=entity.text,
-                pii_type=entity.pii_type,
-                start=entity.start,
-                end=entity.end,
-                score=entity.score,
-            )
-        )
-
-    return result, mappings
-
 
 async def _build_partial_response(
     body: AnonymizeRequest,
@@ -168,7 +101,7 @@ async def _build_partial_response(
             language=lang,
         )
         entities = await plugin_registry.anonymize_hooks(body.text, entities)
-        final_text, mappings = _apply_replacements(body.text, entities, "tag", None)
+        final_text, mappings = apply_replacements(body.text, entities, "tag", None)
         pii_types = list({m.pii_type for m in mappings})
         return AnonymizeResponse(
             anonymized_text=final_text,
@@ -228,6 +161,8 @@ async def _process_anonymization(
         surrogate_types = policy["surrogate_types"]
         remove_types = policy["remove_types"]
         block_types = policy["block_types"]
+        confidence_thresholds = policy["confidence_thresholds"]
+        allowlist = policy["allowlist"]
         resolved_mode = policy["mode"]
 
         if body.include_entity_values and api_key.role != "admin":
@@ -265,6 +200,8 @@ async def _process_anonymization(
             protect_types=protect_types,
             always_include_types=surrogate_types,
             remove_types=remove_types,
+            confidence_thresholds=confidence_thresholds,
+            allowlist=allowlist,
         )
 
         from app.settings_repository import SettingsRepository
@@ -292,7 +229,7 @@ async def _process_anonymization(
         else:
             replacement_map = None
 
-        final_text, mappings = _apply_replacements(
+        final_text, mappings = apply_replacements(
             body.text, entities_to_protect, resolved_mode, replacement_map, remove_types
         )
 

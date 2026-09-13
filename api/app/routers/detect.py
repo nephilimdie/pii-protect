@@ -61,6 +61,8 @@ async def detect(
             entities=entities,
             keep_types=set(body.policy.get("keep") or []),
             protect_types=set(protect) if protect is not None else None,
+            confidence_thresholds=body.policy.get("confidence_thresholds") or {},
+            allowlist=body.policy.get("allowlist") or {},
         )
 
     pii_types = sorted({e.pii_type for e in entities})

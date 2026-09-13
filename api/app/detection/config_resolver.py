@@ -268,7 +268,7 @@ class CloudScopedDetectionConfigResolver:
                 "SELECT collection, item_key, action, data"
                 " FROM scoped_config_overrides"
                 " WHERE scope_type = 'tenant' AND scope_key = :tenant_id"
-                " AND collection IN ('regex-patterns', 'denylist', 'context-words', 'reclassification', 'detection-layers')"
+                " AND collection IN ('regex-patterns', 'denylist', 'context-words', 'reclassification', 'detection-layers', 'domain-policies')"
             ),
             {"tenant_id": self._tenant_id},
         )

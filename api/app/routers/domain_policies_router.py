@@ -3,7 +3,7 @@ import hashlib
 import json
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.audit_service import AuditService
@@ -24,6 +24,8 @@ class PolicyResponse(BaseModel):
     surrogate_types: list[str]
     remove_types: list[str]
     block_types: list[str]
+    confidence_thresholds: dict[str, float]
+    allowlist: dict[str, list[str]]
     visible_to_clients: list[str] | None
     description: str | None
     enabled: bool
@@ -43,11 +45,27 @@ class UpsertPolicyRequest(BaseModel):
     surrogate_types: list[str] = []
     remove_types: list[str] = []
     block_types: list[str] = []
+    confidence_thresholds: dict[str, float] = Field(default_factory=dict)
+    allowlist: dict[str, list[str]] = Field(default_factory=dict)
     description: str | None = None
     display_name: str | None = None
     default_mode: str = "tag"
     visible_to_clients: list[str] = []
     enabled: bool = True
+
+    @field_validator("confidence_thresholds")
+    @classmethod
+    def validate_thresholds(cls, value: dict[str, float]) -> dict[str, float]:
+        if any(score < 0 or score > 1 for score in value.values()):
+            raise ValueError("confidence thresholds must be between 0 and 1")
+        return value
+
+    @field_validator("allowlist")
+    @classmethod
+    def validate_allowlist(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        if any(not isinstance(item, list) for item in value.values()):
+            raise ValueError("allowlist values must be arrays")
+        return value
 
 
 def _row(mapping) -> dict:
@@ -88,7 +106,7 @@ async def list_policies(
 ):
     result = await db.execute(text(
         "SELECT domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types,"
-        " remove_types, block_types, visible_to_clients, description, enabled, updated_at"
+        " remove_types, block_types, confidence_thresholds, allowlist, visible_to_clients, description, enabled, updated_at"
         " FROM domain_policies ORDER BY domain"
     ))
     return [_row(r._mapping) for r in result.fetchall()]
@@ -105,10 +123,10 @@ async def upsert_policy(
     result = await db.execute(
         text(
             "INSERT INTO domain_policies"
-            " (domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types, remove_types, block_types, visible_to_clients, description, enabled, updated_at)"
+            " (domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types, remove_types, block_types, confidence_thresholds, allowlist, visible_to_clients, description, enabled, updated_at)"
             " VALUES (:domain, :display_name, :default_mode, 1,"
             "   CAST(:protect AS jsonb), CAST(:keep AS jsonb), CAST(:surrogate AS jsonb),"
-            "   CAST(:remove AS jsonb), CAST(:block AS jsonb), CAST(:visible AS jsonb),"
+            "   CAST(:remove AS jsonb), CAST(:block AS jsonb), CAST(:thresholds AS jsonb), CAST(:allowlist AS jsonb), CAST(:visible AS jsonb),"
             "   :desc, :enabled, now())"
             " ON CONFLICT (domain) DO UPDATE SET"
             "   display_name       = :display_name,"
@@ -119,12 +137,14 @@ async def upsert_policy(
             "   surrogate_types    = CAST(:surrogate AS jsonb),"
             "   remove_types       = CAST(:remove AS jsonb),"
             "   block_types        = CAST(:block AS jsonb),"
+            "   confidence_thresholds = CAST(:thresholds AS jsonb),"
+            "   allowlist         = CAST(:allowlist AS jsonb),"
             "   visible_to_clients = CAST(:visible AS jsonb),"
             "   description        = :desc,"
             "   enabled            = :enabled,"
             "   updated_at         = now()"
             " RETURNING domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types,"
-            "           remove_types, block_types, visible_to_clients, description, enabled, updated_at"
+            "           remove_types, block_types, confidence_thresholds, allowlist, visible_to_clients, description, enabled, updated_at"
         ),
         {
             "domain":       domain,
@@ -135,6 +155,8 @@ async def upsert_policy(
             "surrogate":    json.dumps(body.surrogate_types),
             "remove":       json.dumps(body.remove_types),
             "block":        json.dumps(body.block_types),
+            "thresholds":   json.dumps(body.confidence_thresholds),
+            "allowlist":    json.dumps(body.allowlist),
             "visible":      json.dumps(body.visible_to_clients) if body.visible_to_clients else None,
             "desc":         body.description,
             "enabled":      body.enabled,

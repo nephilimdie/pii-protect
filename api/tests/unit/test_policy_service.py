@@ -66,6 +66,19 @@ class TestPolicyServiceResolve:
         assert resolved["policy_version"] == "context:2|domain:3"
 
     @pytest.mark.asyncio
+    async def test_policy_includes_thresholds_and_allowlist(self):
+        policy_row = (
+            ["PERSON"], ["DATE"], [], [], [],
+            {"PERSON": 0.8}, {"ORGANIZATION": ["Pseudora"]}, 4, "tag",
+        )
+        db = _make_db(fetchone_return=policy_row)
+
+        resolved = await PolicyService(db).resolve(context_type=None, domain="default")
+
+        assert resolved["confidence_thresholds"] == {"PERSON": 0.8}
+        assert resolved["allowlist"] == {"ORGANIZATION": ["Pseudora"]}
+
+    @pytest.mark.asyncio
     async def test_inline_policy_overrides_domain(self):
         db = _make_db(fetchone_return=None)
         svc = PolicyService(db)
