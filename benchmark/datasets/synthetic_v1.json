@@ -1,0 +1,6 @@
+[
+  {"text":"Mario Rossi scrive a mario@example.com", "expected":["PERSON","EMAIL"]},
+  {"text":"CF RSSMRA80A01H501U e IBAN IT60X0542811101000000123456", "expected":["FISCAL_CODE","IBAN"]},
+  {"text":"Chiama il +39 333 1234567 per il ticket 84921", "expected":["PHONE"]},
+  {"text":"La pratica ordinaria non contiene dati personali", "expected":[]}
+]
