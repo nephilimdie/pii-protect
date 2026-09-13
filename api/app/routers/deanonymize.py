@@ -17,6 +17,7 @@ from app.mapping.dependencies import get_key_provider
 from app.audit.audit_service import AuditService
 from app.surrogates.policy_service import PolicyService
 from app.usage.service import UsageService
+from app.plugins.registry import plugin_registry
 
 router = APIRouter()
 
@@ -54,6 +55,10 @@ async def deanonymize(
     )
 
     restored = PiiDeanonymizer().deanonymize(body.text, mappings)
+    restored = await plugin_registry.deanonymize_hooks(
+        restored,
+        {mapping.token: mapping.original for mapping in mappings},
+    )
 
     audit = AuditService(db)
     await audit.log(

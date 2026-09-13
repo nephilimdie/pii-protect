@@ -21,6 +21,27 @@
 - Plugins should avoid relying on undocumented internal modules.
 - Security-sensitive plugins should document what data they read, write, or transmit.
 
+## Local package contract
+
+Each plugin lives in one directory below `PLUGIN_DIR` and contains a validated
+`plugin.json` plus a Python entrypoint:
+
+```json
+{
+  "name": "acme.ocr",
+  "version": "1.0.0",
+  "compatibility": ">=1.0,<2.0",
+  "permissions": ["read_text", "write_entities"],
+  "entrypoint": "plugin:AcmeOcrPlugin"
+}
+```
+
+The class must extend `BasePlugin`. Loading is disabled by default. An operator
+must set `PLUGIN_AUTOLOAD=true` and `PLUGIN_DIR=/absolute/path/plugins`; the
+loader rejects invalid names, missing entrypoints and paths escaping the plugin
+directory. Review and checksum packages before enabling them. The admin API
+lists loaded plugins and can disable one without changing files.
+
 ## Distribution paths
 
 - Private install inside a customer deployment.

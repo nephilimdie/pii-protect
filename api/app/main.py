@@ -39,6 +39,8 @@ from app.routers import scoped_config as scoped_config_router
 from app.routers import retention as retention_router
 from app.routers import layer_settings as layer_settings_router
 from app.routers import plugins_router
+from app.plugins.loader import PluginLoader
+from app.plugins.registry import plugin_registry
 from app.detection.layers.presidio_layer import PresidioDetector
 from app.settings_repository import SettingsRepository
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
@@ -233,6 +235,10 @@ async def _ensure_admin_key() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if os.getenv("PLUGIN_AUTOLOAD", "false").lower() == "true":
+        plugin_dir = os.getenv("PLUGIN_DIR", "./plugins")
+        loaded = PluginLoader(plugin_dir, plugin_registry).load_all()
+        logger.info("Loaded plugins: %s", loaded)
     # Load Presidio with all installed spaCy models
     from app.routers.languages import KNOWN_LANGUAGES, _is_installed
     lang_models = [

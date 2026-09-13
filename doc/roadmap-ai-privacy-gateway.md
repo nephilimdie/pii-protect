@@ -1,4 +1,13 @@
 # Roadmap: AI Privacy Gateway
+
+## Implementation status (September 2026)
+
+The provider proxy, secrets and prompt-injection checks, OpenAI and Anthropic
+stream buffering, OpenAI Responses support, tenant-scoped controls,
+per-tenant DEKs, erasure and key rotation are implemented in the corresponding
+repositories. Remaining release gates are provider integration tests, an
+independent penetration test, broader authorized quality datasets and the
+optional document/image plugin.
 ← [Roadmap principale](roadmap.md) · [README](../README.md)
 ## Obiettivo
 Trasformare `pii-protect` da motore HTTP per rilevazione e pseudonimizzazione PII in un AI Privacy Gateway utilizzabile senza modificare il codice delle applicazioni che chiamano un provider LLM.

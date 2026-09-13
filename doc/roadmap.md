@@ -62,9 +62,9 @@ The hosted cloud service is built as a private module that connects to the same 
 ## v0.5 — Plugin ecosystem
 
 - [x] **Plugin foundation** — base plugin contract, in-memory registry, and admin listing endpoint
-- [ ] **Plugin manifest** — stable `plugin.json` schema with name, version, compatibility, permissions, and entrypoints
-- [ ] **Filesystem plugin loader** — discover and load plugins from a local `plugins/` directory
-- [ ] **Plugin lifecycle controls** — enable, disable, configure, and inspect plugins from the self-hosted admin UI
+- [x] **Plugin manifest** — validated `plugin.json` schema with name, version, compatibility, permissions, and entrypoint
+- [x] **Filesystem plugin loader** — opt-in discovery and loading from a local `plugins/` directory
+- [x] **Plugin lifecycle controls** — inspect and disable loaded plugins from the self-hosted admin API; enable is controlled by explicit autoload configuration
 - [ ] **Plugin package installer** — install local packages with checksum validation and safe extraction
 - [ ] **Signed package verification** — verify marketplace or private packages before installation
 - [ ] **Plugin SDK and template** — documented extension points, sample plugin, and compatibility tests

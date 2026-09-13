@@ -26,6 +26,7 @@ from app.surrogates.surrogate_service import SurrogateService
 from app.surrogates.generators import language_to_locale
 from app.detection.entities import MappingEntry
 from app.usage.service import UsageService
+from app.plugins.registry import plugin_registry
 from app.routers._anonymize_models import (
     AnonymizeRequest,
     AnonymizeResponse,
@@ -166,6 +167,7 @@ async def _build_partial_response(
             context_type=body.context_type,
             language=lang,
         )
+        entities = await plugin_registry.anonymize_hooks(body.text, entities)
         final_text, mappings = _apply_replacements(body.text, entities, "tag", None)
         pii_types = list({m.pii_type for m in mappings})
         return AnonymizeResponse(
