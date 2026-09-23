@@ -6,9 +6,11 @@ Usage:
     /usr/local/opt/python@3.11/bin/python3.11 -m pytest tests/e2e/test_ui.py -v
 """
 
-import pytest
-import httpx
+import re
 import uuid as uuid_mod
+
+import httpx
+import pytest
 from playwright.sync_api import Page, expect
 
 UI_URL = "http://localhost:15501"
@@ -19,7 +21,7 @@ WRONG_KEY = "wrong-key-xyz"
 def login(page: Page) -> None:
     page.goto(f"{UI_URL}/login")
     page.locator("input[type='password']").fill(ADMIN_KEY)
-    page.get_by_role("button", name="Accedi").click()
+    page.get_by_role("button", name=re.compile(r"^(Accedi|Sign in)$")).click()
     page.wait_for_url(f"{UI_URL}/dashboard", timeout=10000)
 
 
@@ -34,12 +36,12 @@ class TestLoginPage:
     def test_login_form_visible(self, page: Page):
         page.goto(f"{UI_URL}/login")
         expect(page.locator("input[type='password']")).to_be_visible()
-        expect(page.get_by_role("button", name="Accedi")).to_be_visible()
+        expect(page.get_by_role("button", name=re.compile(r"^(Accedi|Sign in)$"))).to_be_visible()
 
     def test_wrong_key_stays_on_login(self, page: Page):
         page.goto(f"{UI_URL}/login")
         page.locator("input[type='password']").fill(WRONG_KEY)
-        page.get_by_role("button", name="Accedi").click()
+        page.get_by_role("button", name=re.compile(r"^(Accedi|Sign in)$")).click()
         page.wait_for_load_state("networkidle")
         # /health has no auth so a wrong key still redirects — login just saves the key
         # Assert only that no crash occurred
@@ -69,6 +71,7 @@ class TestDashboard:
         expect(page).to_have_url(f"{UI_URL}/dashboard")
 
     def test_api_keys_link_navigates(self, page: Page):
+        page.get_by_role("button", name="System").hover()
         page.get_by_role("link", name="API Keys").click()
         expect(page).to_have_url(f"{UI_URL}/api-keys")
 
@@ -77,7 +80,7 @@ class TestDashboard:
         expect(page).to_have_url(f"{UI_URL}/audit-log")
 
     def test_stats_link_navigates(self, page: Page):
-        page.get_by_role("link", name="Statistiche").click()
+        page.get_by_role("link", name=re.compile(r"^(Statistiche|Stats)$")).click()
         expect(page).to_have_url(f"{UI_URL}/stats")
 
 
@@ -99,18 +102,18 @@ class TestApiKeysPage:
     def test_create_new_key_via_modal(self, page: Page):
         key_name = f"ui-test-{uuid_mod.uuid4().hex[:6]}"
 
-        page.get_by_role("button", name="Nuova chiave").click()
+        page.get_by_role("button", name=re.compile(r"^(Nuova chiave|New key)$")).click()
         page.wait_for_selector("input[type='text']")
         page.locator("input[type='text']").fill(key_name)
-        page.get_by_role("button", name="Crea").click()
+        page.get_by_role("button", name=re.compile(r"^(Crea|Create)$")).click()
         page.wait_for_load_state("networkidle")
 
         # Created key dialog shows the raw key
-        expect(page.get_by_text("Chiave creata")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"^(Chiave creata|Key created)$"))).to_be_visible()
 
     def test_revoke_button_visible_for_active_key(self, page: Page):
         # At least one active key (admin) should have a revoke button
-        revoke_buttons = page.locator("button[title='Revoca']").all()
+        revoke_buttons = page.locator("button[title='Revoca'], button[title='Revoke']").all()
         assert len(revoke_buttons) >= 1
 
 
@@ -127,7 +130,7 @@ class TestAuditLogPage:
         expect(page).to_have_url(f"{UI_URL}/audit-log")
 
     def test_table_header_visible(self, page: Page):
-        expect(page.get_by_role("columnheader", name="Azione")).to_be_visible()
+        expect(page.get_by_role("columnheader", name=re.compile(r"^(Azione|Action)$"))).to_be_visible()
 
     def test_audit_log_shows_entries(self, page: Page):
         # Ensure at least one row exists in the table body
