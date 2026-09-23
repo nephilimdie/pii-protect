@@ -296,7 +296,16 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="pii-protect", version="1.0.0", lifespan=lifespan)
+_is_production = os.getenv("APP_ENV", "development").lower() in ("production", "prod")
+
+app = FastAPI(
+    title="pii-protect",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
 
 
 @app.exception_handler(HTTPException)
@@ -309,7 +318,6 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 _allowed_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()] \
     if hasattr(settings, "cors_allowed_origins") and settings.cors_allowed_origins else []
 
-_is_production = os.getenv("APP_ENV", "development").lower() in ("production", "prod")
 if _is_production and not _allowed_origins:
     raise RuntimeError(
         "PII_CORS_ALLOWED_ORIGINS must be set to explicit origins in production. "
