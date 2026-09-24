@@ -225,6 +225,7 @@ By default the system is **fail-closed**: if detection cannot complete safely, t
 | [Security Policy](SECURITY.md) | Vulnerability reporting and security expectations |
 | [Privacy Policy](PRIVACY.md) | Data handling, telemetry, and user privacy posture |
 | [Data Retention](DATA_RETENTION.md) | Retention periods for mappings, audit logs, and usage events |
+| [Data Residency](doc/data-residency.md) | Model-cache placement and enforced residency declaration |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ---

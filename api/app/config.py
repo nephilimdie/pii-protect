@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
 from typing import Any
-from pydantic import BaseModel, Field, AliasChoices
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +29,20 @@ class Settings(BaseSettings):
     privacy_filter_revision: str = "7ffa9a043d54d1be65afb281eddf0ffbe629385b"
     ai4privacy_model: str = "Isotonic/distilbert_finetuned_ai4privacy_v2"
     ai4privacy_revision: str = "11795a7549030bb5a21832b09e712b19d39045a7"
+    model_cache_dir: str = Field(
+        default="/root/.cache/huggingface",
+        min_length=1,
+        validation_alias=AliasChoices("MODEL_CACHE_DIR", "PII_MODEL_CACHE_DIR"),
+    )
+    data_residency_region: str = Field(
+        default="unspecified",
+        pattern=r"^(?:unspecified|[a-z0-9][a-z0-9-]{1,31})$",
+        validation_alias=AliasChoices("DATA_RESIDENCY_REGION", "PII_DATA_RESIDENCY_REGION"),
+    )
+    require_data_residency: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("REQUIRE_DATA_RESIDENCY", "PII_REQUIRE_DATA_RESIDENCY"),
+    )
     mapping_ttl_days: int = 30
     mapping_ttl_hours: int = Field(
         default=1,
@@ -60,7 +75,21 @@ class Settings(BaseSettings):
         "regex":          {"enabled": True},
     }
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_nested_delimiter="__")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+        env_nested_delimiter="__",
+        populate_by_name=True,
+        protected_namespaces=(),
+    )
+
+    @model_validator(mode="after")
+    def validate_residency(self) -> "Settings":
+        if self.require_data_residency and self.data_residency_region == "unspecified":
+            raise ValueError("PII_DATA_RESIDENCY_REGION is required when residency enforcement is enabled")
+        return self
 
 
 settings = Settings()
+os.environ.setdefault("HF_HOME", settings.model_cache_dir)
+os.environ.setdefault("TRANSFORMERS_CACHE", settings.model_cache_dir)

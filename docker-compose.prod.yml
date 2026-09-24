@@ -37,6 +37,9 @@ services:
       PII_GRPC_ENABLED: ${PII_GRPC_ENABLED:-false}
       PII_GRPC_HOST: ${PII_GRPC_HOST:-0.0.0.0}
       PII_GRPC_PORT: ${PII_GRPC_PORT:-50051}
+      PII_MODEL_CACHE_DIR: ${PII_MODEL_CACHE_DIR:-/root/.cache/huggingface}
+      PII_DATA_RESIDENCY_REGION: ${PII_DATA_RESIDENCY_REGION:-unspecified}
+      PII_REQUIRE_DATA_RESIDENCY: ${PII_REQUIRE_DATA_RESIDENCY:-false}
       PII_ACCEPT_TENANT_HEADER: ${PII_ACCEPT_TENANT_HEADER:-false}
       PII_INTERNAL_API_KEY: ${PII_INTERNAL_API_KEY:-}
       PII_CORS_ALLOWED_ORIGINS: ${PII_CORS_ALLOWED_ORIGINS:?Set explicit CORS origins in production}
@@ -52,6 +55,8 @@ services:
       MARKETPLACE_PUBLIC_KEY: ${MARKETPLACE_PUBLIC_KEY:-}
       MARKETPLACE_TIMEOUT_SECONDS: ${MARKETPLACE_TIMEOUT_SECONDS:-10}
       MARKETPLACE_MAX_PACKAGE_BYTES: ${MARKETPLACE_MAX_PACKAGE_BYTES:-50000000}
+    volumes:
+      - pii_hf_cache:${PII_MODEL_CACHE_DIR:-/root/.cache/huggingface}
     depends_on:
       postgres:
         condition: service_healthy
@@ -176,3 +181,4 @@ services:
 volumes:
   pii_postgres_data:
   pii_postgres_backups:
+  pii_hf_cache:

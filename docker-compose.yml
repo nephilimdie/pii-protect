@@ -36,6 +36,9 @@ services:
       PII_GRPC_ENABLED: ${PII_GRPC_ENABLED:-false}
       PII_GRPC_HOST: ${PII_GRPC_HOST:-0.0.0.0}
       PII_GRPC_PORT: ${PII_GRPC_PORT:-50051}
+      PII_MODEL_CACHE_DIR: ${PII_MODEL_CACHE_DIR:-/root/.cache/huggingface}
+      PII_DATA_RESIDENCY_REGION: ${PII_DATA_RESIDENCY_REGION:-unspecified}
+      PII_REQUIRE_DATA_RESIDENCY: ${PII_REQUIRE_DATA_RESIDENCY:-false}
       SPACY_MODEL: it_core_news_lg
       PRIVACY_FILTER_REVISION: ${PII_PRIVACY_FILTER_REVISION:-7ffa9a043d54d1be65afb281eddf0ffbe629385b}
       AI4PRIVACY_REVISION: ${PII_AI4PRIVACY_REVISION:-11795a7549030bb5a21832b09e712b19d39045a7}
@@ -47,7 +50,7 @@ services:
       MARKETPLACE_TIMEOUT_SECONDS: ${MARKETPLACE_TIMEOUT_SECONDS:-10}
       MARKETPLACE_MAX_PACKAGE_BYTES: ${MARKETPLACE_MAX_PACKAGE_BYTES:-50000000}
     volumes:
-      - pii_hf_cache:/root/.cache/huggingface
+      - pii_hf_cache:${PII_MODEL_CACHE_DIR:-/root/.cache/huggingface}
     depends_on:
       postgres:
         condition: service_healthy
