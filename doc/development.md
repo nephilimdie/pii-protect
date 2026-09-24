@@ -140,7 +140,7 @@ docker compose up postgres -d
 # Local API
 cd api
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 python -m spacy download it_core_news_lg
 
 export DATABASE_URL="postgresql+asyncpg://pii_protect:changeme_secret@localhost:15433/pii_protect"
