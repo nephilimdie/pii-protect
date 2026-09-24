@@ -11,6 +11,7 @@ sqlalchemy[asyncio]==2.0.36
 aiosqlite==0.20.0
 alembic==1.13.3
 faker==26.0.0
+numpy>=2.1.0,<3.0.0
 pytest==8.3.3
 pytest-asyncio==0.24.0
 pytest-cov==5.0.0
