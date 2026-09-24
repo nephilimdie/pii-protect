@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -159,6 +160,50 @@ async def list_context_type_versions(
         {"code": code},
     )
     return [_history_row(row._mapping) for row in result.fetchall()]
+
+
+@router.post("/context-types/{code}/versions/{version}/rollback", response_model=ContextTypeResponse)
+async def rollback_context_type(
+    code: str,
+    version: int,
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    history = await db.execute(
+        text("SELECT snapshot FROM context_type_versions WHERE code = :code AND version = :version"),
+        {"code": code, "version": version},
+    )
+    history_row = history.fetchone()
+    if not history_row:
+        raise HTTPException(404, "context_type_version_not_found")
+    snapshot = dict(history_row._mapping["snapshot"])
+    params = {
+        "code": code,
+        "display_name": snapshot.get("display_name") or code,
+        "domain": snapshot.get("domain"),
+        "mode": snapshot.get("default_mode") or "tag",
+        "desc": snapshot.get("description"),
+        "visible": json.dumps(snapshot.get("visible_to_clients")) if snapshot.get("visible_to_clients") else None,
+        "enabled": snapshot.get("enabled", True),
+    }
+    result = await db.execute(text(
+        "UPDATE context_types SET display_name = :display_name, domain = :domain, default_mode = :mode,"
+        " description = :desc, visible_to_clients = CAST(:visible AS jsonb), enabled = :enabled, version = version + 1"
+        " WHERE code = :code RETURNING code, display_name, domain, default_mode, description, visible_to_clients,"
+        " enabled, version, created_at"
+    ), params)
+    row = result.fetchone()
+    if not row:
+        await db.rollback()
+        raise HTTPException(404, "context_type_not_found")
+    payload = dict(row._mapping)
+    await db.execute(text(
+        "INSERT INTO context_type_versions (code, version, snapshot)"
+        " VALUES (:code, :version, CAST(:snapshot AS jsonb))"
+        " ON CONFLICT (code, version) DO NOTHING"
+    ), {"code": code, "version": payload["version"], "snapshot": json.dumps(payload, default=str)})
+    await db.commit()
+    return payload
 
 
 @router.delete("/context-types/{code}", status_code=204)

@@ -30,7 +30,7 @@ The hosted cloud service is built as a private module that connects to the same 
 ## v0.2 — Detection quality
 
 - [x] **Unit test suite for regex patterns** — synthetic labelled corpus and detector tests are executed in CI; expand to 500+ authorized documents before a quality claim
-- [x] **Benchmark pipeline** — `make benchmark` and `benchmark/run_synthetic.py` generate precision/recall/F1 and latency reports
+- [x] **Benchmark pipeline** — `make benchmark` and `benchmark/run_synthetic.py` generate precision/recall/F1, per-type metrics and latency reports with explicit threshold gates
 - [ ] **PERSON recall improvements** — handle abbreviated names (M. Rossi), compound surnames, foreign names
 - [ ] **ADDRESS precision** — structured address parser to reduce false positives
 - [ ] **Regex pattern library** — additional European formats: DE tax ID, FR SIRET/SIREN, ES DNI/NIE, UK NI number, NL BSN
@@ -40,7 +40,7 @@ The hosted cloud service is built as a private module that connects to the same 
 
 ## v0.3 — Policy and workflow
 
-- [ ] **Policy versioning** — track and diff policy changes over time; rollback support
+- [x] **Policy versioning** — track and diff policy changes over time; rollback support via the domain-policy and context-type version endpoints
 - [x] **Per-entity confidence threshold** — configurable minimum score per PII type in domain policies and scoped overrides
 - [x] **Batch endpoint** — `POST /v1/anonymize/batch` for processing multiple documents in one call
 - [ ] **Async job endpoint** — long documents via background task + webhook notification

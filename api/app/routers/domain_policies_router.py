@@ -99,6 +99,13 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def _snapshot_value(snapshot: dict, key: str, default):
+    value = snapshot.get(key, default)
+    if isinstance(value, str) and key.endswith("_types"):
+        return json.loads(value)
+    return default if value is None else value
+
+
 @router.get("/domain-policies", response_model=list[PolicyResponse])
 async def list_policies(
     api_key: ApiKey = Depends(require_admin),
@@ -198,6 +205,70 @@ async def list_policy_versions(
         {"domain": domain},
     )
     return [_history_row(row._mapping) for row in result.fetchall()]
+
+
+@router.post("/domain-policies/{domain}/versions/{version}/rollback", response_model=PolicyResponse)
+async def rollback_policy(
+    domain: str,
+    version: int,
+    request: Request,
+    api_key: ApiKey = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    history = await db.execute(
+        text("SELECT snapshot FROM domain_policy_versions WHERE domain = :domain AND version = :version"),
+        {"domain": domain, "version": version},
+    )
+    history_row = history.fetchone()
+    if not history_row:
+        raise HTTPException(404, "policy_version_not_found")
+    snapshot = dict(history_row._mapping["snapshot"])
+    params = {
+        "domain": domain,
+        "display_name": snapshot.get("display_name") or domain,
+        "default_mode": snapshot.get("default_mode") or "tag",
+        "protect": json.dumps(_snapshot_value(snapshot, "protect_types", [])),
+        "keep": json.dumps(_snapshot_value(snapshot, "keep_types", [])),
+        "surrogate": json.dumps(_snapshot_value(snapshot, "surrogate_types", [])),
+        "remove": json.dumps(_snapshot_value(snapshot, "remove_types", [])),
+        "block": json.dumps(_snapshot_value(snapshot, "block_types", [])),
+        "thresholds": json.dumps(snapshot.get("confidence_thresholds") or {}),
+        "allowlist": json.dumps(snapshot.get("allowlist") or {}),
+        "visible": json.dumps(snapshot.get("visible_to_clients")) if snapshot.get("visible_to_clients") else None,
+        "desc": snapshot.get("description"),
+        "enabled": snapshot.get("enabled", True),
+    }
+    result = await db.execute(text(
+        "UPDATE domain_policies SET display_name = :display_name, default_mode = :default_mode,"
+        " version = version + 1, protect_types = CAST(:protect AS jsonb), keep_types = CAST(:keep AS jsonb),"
+        " surrogate_types = CAST(:surrogate AS jsonb), remove_types = CAST(:remove AS jsonb),"
+        " block_types = CAST(:block AS jsonb), confidence_thresholds = CAST(:thresholds AS jsonb),"
+        " allowlist = CAST(:allowlist AS jsonb), visible_to_clients = CAST(:visible AS jsonb),"
+        " description = :desc, enabled = :enabled, updated_at = now() WHERE domain = :domain"
+        " RETURNING domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types,"
+        " remove_types, block_types, confidence_thresholds, allowlist, visible_to_clients, description, enabled, updated_at"
+    ), params)
+    row = result.fetchone()
+    if not row:
+        await db.rollback()
+        raise HTTPException(404, "policy_not_found")
+    payload = _row(row._mapping)
+    await db.execute(text(
+        "INSERT INTO domain_policy_versions (domain, version, snapshot)"
+        " VALUES (:domain, :version, CAST(:snapshot AS jsonb))"
+        " ON CONFLICT (domain, version) DO NOTHING"
+    ), {"domain": domain, "version": payload["version"], "snapshot": json.dumps(payload, default=str)})
+    await db.commit()
+    await AuditService(db).log(
+        api_key_id=api_key.id,
+        action="policy_rollback",
+        context_id=f"{domain}:v{version}",
+        tenant_id=api_key.tenant_id,
+        event_category="policy",
+        document_hash=_hash_payload(payload),
+        ip=_client_ip(request),
+    )
+    return payload
 
 
 @router.delete("/domain-policies/{domain}", status_code=204)

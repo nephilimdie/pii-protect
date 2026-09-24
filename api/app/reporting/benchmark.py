@@ -56,6 +56,7 @@ def score(dataset: list[BenchmarkSample]) -> dict:
     total_predicted = 0
     total_correct = 0
     latencies_ms: list[float] = []
+    by_type: dict[str, dict[str, int]] = {}
 
     for sample in dataset:
         started = perf_counter()
@@ -64,6 +65,13 @@ def score(dataset: list[BenchmarkSample]) -> dict:
         total_expected += len(sample.expected)
         total_predicted += len(predicted)
         total_correct += sum(1 for item in predicted if item in sample.expected)
+        for pii_type, _ in sample.expected:
+            by_type.setdefault(pii_type, {"expected": 0, "predicted": 0, "correct": 0})["expected"] += 1
+        for item in predicted:
+            pii_type = item[0]
+            by_type.setdefault(pii_type, {"expected": 0, "predicted": 0, "correct": 0})["predicted"] += 1
+            if item in sample.expected:
+                by_type[pii_type]["correct"] += 1
 
     precision = total_correct / total_predicted if total_predicted else 1.0
     recall = total_correct / total_expected if total_expected else 1.0
@@ -76,6 +84,19 @@ def score(dataset: list[BenchmarkSample]) -> dict:
     else:
         latency_average = 0.0
         latency_p95 = 0.0
+
+    per_type = {}
+    for pii_type, counts in sorted(by_type.items()):
+        type_precision = counts["correct"] / counts["predicted"] if counts["predicted"] else 1.0
+        type_recall = counts["correct"] / counts["expected"] if counts["expected"] else 1.0
+        type_f1 = (2 * type_precision * type_recall / (type_precision + type_recall)) if type_precision + type_recall else 0.0
+        per_type[pii_type] = {
+            **counts,
+            "precision": round(type_precision, 4),
+            "recall": round(type_recall, 4),
+            "f1": round(type_f1, 4),
+        }
+    macro_f1 = sum(item["f1"] for item in per_type.values()) / len(per_type) if per_type else 0.0
 
     return {
         "dataset": "italian_legal_v0.2.0",
@@ -92,6 +113,8 @@ def score(dataset: list[BenchmarkSample]) -> dict:
         "precision": round(precision, 4),
         "recall": round(recall, 4),
         "f1": round(f1, 4),
+        "macro_f1": round(macro_f1, 4),
+        "per_type": per_type,
         "false_positives": total_predicted - total_correct,
         "false_negatives": total_expected - total_correct,
         "latency_average_ms": latency_average,
@@ -119,6 +142,7 @@ def main() -> None:
         f"- Precision: {result['precision']}\n"
         f"- Recall: {result['recall']}\n"
         f"- F1: {result['f1']}\n"
+        f"- Macro F1: {result['macro_f1']}\n"
         f"- False positives: {result['false_positives']}\n"
         f"- False negatives: {result['false_negatives']}\n"
         f"- Latency average ms: {result['latency_average_ms']}\n"
