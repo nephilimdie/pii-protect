@@ -223,6 +223,23 @@ Domain policy responses also include a `version` field that increments on every 
 | `PUT` | `/v1/admin/presidio-context/{id}` | Update |
 | `DELETE` | `/v1/admin/presidio-context/{id}` | Delete |
 
+### Effective runtime preview
+
+`GET /v1/admin/effective-config` resolves the policy and detector settings that
+will be used for a request. Pass `context_type` or `domain` exactly as the
+client will send it. The response contains policy metadata, enabled layer
+names, layer thresholds and configuration counts; raw regex values, denylist
+values and mapping contents are intentionally excluded.
+
+```bash
+curl 'http://localhost:15500/v1/admin/effective-config?context_type=fine_appeal' \
+  -H "X-Api-Key: $PII_API_KEY"
+```
+
+The endpoint is tenant-scoped when the key resolves to a tenant. It is useful
+for an admin UI's effective preview and for diagnosing differences between
+platform defaults and tenant overrides without exposing protected values.
+
 ---
 
 ## Admin — System

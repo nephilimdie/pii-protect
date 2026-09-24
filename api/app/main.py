@@ -34,6 +34,7 @@ from app.routers import context_types_router
 from app.routers import scoped_config as scoped_config_router
 from app.routers import retention as retention_router
 from app.routers import layer_settings as layer_settings_router
+from app.routers import effective_config as effective_config_router
 from app.routers import plugins_router
 from app.plugins.loader import PluginLoader
 from app.plugins.registry import plugin_registry
@@ -399,3 +400,4 @@ app.include_router(scoped_config_router.router, prefix="/v1/admin")
 app.include_router(plugins_router.router, prefix="/v1/admin")
 app.include_router(retention_router.router, prefix="/v1/admin")
 app.include_router(layer_settings_router.router, prefix="/v1/admin")
+app.include_router(effective_config_router.router, prefix="/v1/admin")
