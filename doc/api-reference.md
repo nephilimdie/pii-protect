@@ -105,6 +105,29 @@ curl -X POST http://localhost:15500/v1/anonymize/batch \
 }
 ```
 
+### `POST /v1/anonymize/image`
+
+Redacts PII in a PNG or JPEG through an explicitly installed image plugin.
+The base engine is fail-closed and returns `503 image_plugin_not_installed`
+when no approved plugin is loaded. This endpoint does not create reversible
+mapping entries; it returns a base64 image and non-sensitive bounding boxes.
+
+```bash
+curl -X POST http://localhost:15500/v1/anonymize/image \
+  -H "X-Api-Key: $PII_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"image_base64":"<base64 PNG>","content_type":"image/png"}'
+```
+
+`context_id`, `context_type`, `language`, and `mode` are optional query
+parameters. The JSON/base64 contract keeps the core free of multipart parser
+dependencies; callers must enforce their own base64 input size before sending.
+
+The optional `pseudora.image_ocr` plugin requires Tesseract and its Italian and
+English language packs. Size and pixel limits are controlled by
+`PII_IMAGE_MAX_BYTES` and `PII_IMAGE_MAX_PIXELS`. Remote URLs, PDFs, faces and
+signatures are not accepted by this contract.
+
 ### `POST /v1/anonymize/jobs`
 
 Queues a durable anonymization job and returns immediately with `202 Accepted`.

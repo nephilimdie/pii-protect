@@ -6,9 +6,10 @@ The provider proxy, explicit provider registry, bounded idempotent retries and
 circuit breakers, secrets and prompt-injection checks, OpenAI and Anthropic
 stream buffering, OpenAI Responses support, tenant-scoped controls, per-tenant
 DEKs, erasure and key rotation are implemented in the corresponding
-repositories. Remaining release gates are provider integration tests, an
-independent penetration test, broader authorized quality datasets and the
-optional document/image plugin.
+repositories. A fail-closed image endpoint and an optional OCR reference plugin
+are now available; real provider integration tests, an independent penetration
+test, broader authorized quality datasets and OCR/document validation remain
+release gates.
 ← [Roadmap principale](roadmap.md) · [README](../README.md)
 ## Obiettivo
 Trasformare `pii-protect` da motore HTTP per rilevazione e pseudonimizzazione PII in un AI Privacy Gateway utilizzabile senza modificare il codice delle applicazioni che chiamano un provider LLM.
@@ -241,21 +242,25 @@ Una release non deve essere pubblicata se:
 - p95 supera la soglia dichiarata senza aggiornare la documentazione;
 - un tenant puo' leggere mapping, policy o audit di un altro tenant.
 ## Fase P1/P2: immagini, OCR e documenti
-Implementare come plugin opzionale per non appesantire il core:
-1. OCR di PNG, JPEG e pagine PDF.
+Il contratto e il riferimento OCR sono implementati come plugin opzionale per
+non appesantire il core:
+1. OCR di PNG e JPEG nel riferimento plugin; PDF resta da implementare.
 2. Coordinate dei token OCR.
 3. Riutilizzo della pipeline testuale esistente.
 4. Redazione delle aree corrispondenti.
-5. Detection di volti, firme e altri dati biometrici con modulo separato.
+5. Detection di volti, firme e altri dati biometrici con modulo separato ancora da implementare.
 6. Output immagine e sidecar JSON con tipo, coordinate e confidence.
 7. Limiti di dimensione, DPI, pagine e tempo CPU.
 8. Rimozione dei file temporanei dopo l'elaborazione.
-Endpoint candidato:
+Endpoint disponibile / candidato:
 ```text
 POST /v1/anonymize/image
 POST /v1/anonymize/document
 ```
-Non dichiarare supporto immagini prima di avere testato screenshot, scansioni con bassa qualita', testo ruotato, piu' lingue e falsi positivi.
+`POST /v1/anonymize/image` fallisce chiuso quando il plugin non e' installato.
+Non dichiarare supporto immagini in produzione prima di avere testato
+screenshot, scansioni con bassa qualita', testo ruotato, piu' lingue e falsi
+positivi con un corpus autorizzato.
 ## Multi-tenancy e autorizzazione gateway
 Il gateway deve risolvere il contesto in questo ordine:
 1. credenziale autenticata;

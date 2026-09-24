@@ -1,0 +1,7 @@
+{
+  "name": "pseudora.image_ocr",
+  "version": "0.1.0",
+  "compatibility": ">=1.0,<2.0",
+  "permissions": ["read_image", "write_image_regions"],
+  "entrypoint": "plugin:ImageOcrPlugin"
+}

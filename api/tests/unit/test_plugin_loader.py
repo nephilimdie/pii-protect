@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -43,3 +44,19 @@ def test_repository_template_is_loadable():
     loaded = PluginLoader("plugins", registry).load_all()
 
     assert loaded == ["example.echo"]
+
+
+def test_optional_image_plugin_manifest_is_loadable_without_ocr_dependencies():
+    registry = PluginRegistry()
+    optional_dir = Path(__file__).parents[2] / "optional-plugins"
+    previous = registry.all()
+    registry.clear()
+
+    try:
+        loaded = PluginLoader(optional_dir, registry).load_all()
+    finally:
+        registry.clear()
+        for plugin in previous:
+            registry.register(plugin)
+
+    assert loaded == ["pseudora.image_ocr"]

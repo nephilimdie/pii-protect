@@ -194,7 +194,8 @@ Evaluated on 120 synthetic Italian documents (legal, medical, HR) with manually 
 - **Context-dependent entities** (e.g. amounts that are salaries vs. generic money) may be misclassified without surrounding context
 - **Non-Italian documents** degrade accuracy significantly — only the IT spaCy model is fully tuned
 - **Regex patterns** cover documented Italian formats; regional or institutional variants may be missed
-- **No OCR** — input must be clean text; scanned PDFs need pre-processing
+- **Image OCR is optional** — the base image remains text-first; scanned PDFs and
+  unreviewed image workflows require the separately documented OCR plugin
 
 ### Failure strategy
 

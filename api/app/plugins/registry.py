@@ -39,5 +39,13 @@ class PluginRegistry:
             text = await plugin.on_deanonymize(text, mapping)
         return text
 
+    @classmethod
+    async def anonymize_image(cls, **kwargs):
+        for plugin in cls._plugins:
+            result = await plugin.anonymize_image(**kwargs)
+            if result is not None:
+                return result
+        return None
+
 
 plugin_registry = PluginRegistry()

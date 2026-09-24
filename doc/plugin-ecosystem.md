@@ -55,6 +55,14 @@ verifies the archive bytes before extraction.
 The repository includes `api/plugins/example.echo` as a minimal compatibility
 template. It is not loaded unless `PLUGIN_AUTOLOAD=true` is explicitly set.
 
+An OCR image reference plugin is available under
+`api/optional-plugins/pseudora.image_ocr`. It is deliberately outside the
+default plugin directory and is not part of the base image. After installing
+its Python and system dependencies, point `PLUGIN_DIR` at that directory and
+enable autoload explicitly. The plugin supports PNG/JPEG redaction only;
+document/PDF ingestion, face detection, reversible image mappings and OCR
+quality certification remain separate deployment and validation concerns.
+
 - Private install inside a customer deployment.
 - Direct distribution by the plugin author.
 - Publication through a marketplace compatible with the optional core client.

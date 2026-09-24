@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
 
 from app.routers import anonymize, deanonymize, detect as detect_router, health
+from app.routers import image as image_router
 from app.routers import mask as mask_router
 from app.routers import identity as identity_router
 from app.routers import reporting as reporting_router
@@ -408,6 +409,7 @@ app.include_router(domain_policies_router.router, prefix="/v1/admin")
 app.include_router(context_types_router.router, prefix="/v1/admin")
 app.include_router(scoped_config_router.router, prefix="/v1/admin")
 app.include_router(plugins_router.router, prefix="/v1/admin")
+app.include_router(image_router.router, prefix="/v1")
 app.include_router(retention_router.router, prefix="/v1/admin")
 app.include_router(layer_settings_router.router, prefix="/v1/admin")
 app.include_router(effective_config_router.router, prefix="/v1/admin")

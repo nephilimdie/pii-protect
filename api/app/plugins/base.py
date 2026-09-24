@@ -17,5 +17,9 @@ class BasePlugin(ABC):
         """Called after token replacement. Can post-process output."""
         ...
 
+    async def anonymize_image(self, **_kwargs: Any) -> Any:
+        """Optionally redact an image; image support stays outside the core."""
+        return None
+
     def metadata(self) -> dict[str, str]:
         return {"name": self.name, "version": self.version}
