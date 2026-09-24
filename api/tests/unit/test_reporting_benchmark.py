@@ -10,3 +10,4 @@ def test_synthetic_benchmark_reports_quality_metrics() -> None:
     assert 0 <= result["recall"] <= 1
     assert 0 <= result["f1"] <= 1
     assert result["latency_p95_ms"] >= 0
+    assert result["quality_gate"]["passed"] is True
