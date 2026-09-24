@@ -714,6 +714,78 @@ components:
           type: integer
           example: 1250000
 
+    EffectivePolicyPreview:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        version:
+          type: string
+          nullable: true
+        hash:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          enum: [tag, surrogate]
+        protect_types:
+          type: array
+          nullable: true
+          items: {type: string}
+        keep_types:
+          type: array
+          items: {type: string}
+        surrogate_types:
+          type: array
+          items: {type: string}
+        remove_types:
+          type: array
+          items: {type: string}
+        block_types:
+          type: array
+          items: {type: string}
+        confidence_thresholds:
+          type: object
+          additionalProperties: {type: number}
+        allowlist_type_count:
+          type: integer
+
+    EffectiveDetectionPreview:
+      type: object
+      properties:
+        active_layers:
+          type: array
+          items: {type: string}
+        layer_settings:
+          type: object
+          additionalProperties: {type: object}
+        regex_pattern_count:
+          type: integer
+        denylist_type_count:
+          type: integer
+        context_entity_type_count:
+          type: integer
+        reclassification_rule_count:
+          type: integer
+
+    EffectiveConfigResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          nullable: true
+        context_type:
+          type: string
+          nullable: true
+        domain:
+          type: string
+          nullable: true
+        policy:
+          $ref: "#/components/schemas/EffectivePolicyPreview"
+        detection:
+          $ref: "#/components/schemas/EffectiveDetectionPreview"
+
     AuditLogEntry:
       type: object
       properties:
@@ -1210,6 +1282,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatsResponse"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+
+  /v1/admin/effective-config:
+    get:
+      summary: Preview effective runtime configuration
+      description: |
+        Resolves the policy and detector settings for a context type or domain.
+        The response is tenant-scoped when the API key belongs to a tenant.
+        Sensitive values such as regex expressions, denylist values and mapping
+        contents are never returned; only policy metadata, settings and counts
+        are included.
+      operationId: getEffectiveConfig
+      tags: [Admin]
+      parameters:
+        - name: context_type
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+          description: Context type sent by the client.
+        - name: domain
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+          description: Direct domain policy sent by the client.
+      responses:
+        "200":
+          description: Effective policy and detection preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectiveConfigResponse"
         "401":
           description: Missing or invalid API key
         "403":
