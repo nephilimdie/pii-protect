@@ -5,8 +5,6 @@ import base64
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-
 from app.anonymization.anonymizer import PiiAnonymizer
 from app.config import settings
 from app.detection.entities import PiiEntity
@@ -15,23 +13,12 @@ from app.identity.models import ApiKey
 from app.plugins.registry import plugin_registry
 from app.routers._anonymize_logic import get_anonymizer
 from app.identity.tenant import get_tenant_id
+from app.routers.image_request import ImageAnonymizeRequest
+from app.routers.image_response import ImageAnonymizeResponse
 
 router = APIRouter()
 _CONTENT_TYPES = {"image/jpeg", "image/png"}
 logger = logging.getLogger(__name__)
-
-
-class ImageAnonymizeResponse(BaseModel):
-    content_type: str
-    image_base64: str
-    regions: list[dict[str, object]]
-    safe: bool
-    plugin: str
-
-
-class ImageAnonymizeRequest(BaseModel):
-    image_base64: str
-    content_type: str
 
 
 @router.post("/anonymize/image", response_model=ImageAnonymizeResponse)
