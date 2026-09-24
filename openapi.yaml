@@ -43,6 +43,26 @@ components:
       name: X-Api-Key
       description: API key passed in the X-Api-Key header. Configure as PII_PROTECT_API_KEY in the caller's environment.
 
+  parameters:
+    ContextId:
+      name: context_id
+      in: query
+      required: false
+      schema: {type: string, default: image-session}
+      description: Opaque mapping context identifier.
+    ContextType:
+      name: context_type
+      in: query
+      required: false
+      schema: {type: string, default: generic}
+      description: Policy context type used by the detector.
+    Language:
+      name: language
+      in: query
+      required: false
+      schema: {type: string, default: it}
+      description: Language hint for OCR text detection.
+
   schemas:
     AnonymizeRequest:
       type: object
@@ -1094,6 +1114,103 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: Validation error
+
+  /v1/anonymize/image:
+    post:
+      summary: Anonymize an image with an optional OCR plugin
+      description: |
+        Accepts a base64-encoded PNG or JPEG. The endpoint fails closed with
+        `image_plugin_not_installed` unless an approved image OCR plugin is
+        explicitly installed and autoloaded. Region metadata never contains
+        the recognized raw value.
+      operationId: anonymizeImage
+      tags: [Pseudonymization]
+      parameters:
+        - $ref: '#/components/parameters/ContextId'
+        - $ref: '#/components/parameters/ContextType'
+        - $ref: '#/components/parameters/Language'
+        - name: mode
+          in: query
+          schema: {type: string, enum: [mask, tag, surrogate]}
+          description: Replacement mode selected by the plugin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image_base64, content_type]
+              properties:
+                image_base64: {type: string, format: byte}
+                content_type: {type: string, enum: [image/png, image/jpeg]}
+      responses:
+        "200":
+          description: Redacted image and non-sensitive regions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [content_type, image_base64, regions, safe, plugin]
+                properties:
+                  content_type: {type: string}
+                  image_base64: {type: string, format: byte}
+                  regions:
+                    type: array
+                    items: {type: object}
+                  safe: {type: boolean, example: true}
+                  plugin: {type: string}
+        "400": {description: Invalid base64 payload}
+        "413": {description: Image exceeds the configured byte limit}
+        "415": {description: Unsupported image type}
+        "503": {description: OCR plugin is unavailable; request failed closed}
+
+  /v1/anonymize/document:
+    post:
+      summary: Anonymize a PDF with an optional OCR plugin
+      description: |
+        Accepts a base64-encoded PDF. The reference plugin returns an
+        image-only PDF so that detected values do not remain in a searchable
+        text layer. The endpoint fails closed when the PDF plugin is absent.
+      operationId: anonymizeDocument
+      tags: [Pseudonymization]
+      parameters:
+        - $ref: '#/components/parameters/ContextId'
+        - $ref: '#/components/parameters/ContextType'
+        - $ref: '#/components/parameters/Language'
+        - name: mode
+          in: query
+          schema: {type: string, enum: [mask, tag, surrogate]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document_base64, content_type]
+              properties:
+                document_base64: {type: string, format: byte}
+                content_type: {type: string, enum: [application/pdf]}
+      responses:
+        "200":
+          description: Redacted PDF and non-sensitive page regions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [content_type, document_base64, pages, regions, safe, plugin]
+                properties:
+                  content_type: {type: string}
+                  document_base64: {type: string, format: byte}
+                  pages: {type: integer, minimum: 1}
+                  regions:
+                    type: array
+                    items: {type: object}
+                  safe: {type: boolean, example: true}
+                  plugin: {type: string}
+        "400": {description: Invalid base64 payload}
+        "413": {description: PDF exceeds the configured byte limit}
+        "415": {description: Unsupported document type}
+        "503": {description: PDF plugin is unavailable; request failed closed}
 
   /v1/anonymize/batch:
     post:
