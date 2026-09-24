@@ -437,6 +437,13 @@ components:
           enum: [tag, surrogate]
           description: Anonymization mode applied unless overridden in the request.
           example: "tag"
+        detection_layers:
+          type: array
+          nullable: true
+          items:
+            type: string
+            enum: [regex, presidio, privacy_filter, ai4privacy]
+          description: Optional layer subset for this context; omitted means the effective tenant cascade.
         description:
           type: string
           nullable: true
@@ -729,6 +736,10 @@ components:
         mode:
           type: string
           enum: [tag, surrogate]
+        detection_layers:
+          type: array
+          nullable: true
+          items: {type: string}
         protect_types:
           type: array
           nullable: true

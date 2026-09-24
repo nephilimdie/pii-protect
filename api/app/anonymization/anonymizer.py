@@ -149,6 +149,13 @@ class PiiAnonymizer:
         self._regex_patterns = regex_patterns
         self._presidio_context = presidio_context
 
+    def restrict_layers(self, layers: list[str] | None) -> None:
+        """Restrict this request to context-selected layers without re-enabling disabled ones."""
+        if layers is None:
+            return
+        selected = set(layers)
+        self._enabled_layers = selected if self._enabled_layers is None else self._enabled_layers & selected
+
     def _run_detectors(self, text: str, language: str) -> list[PiiEntity]:
         """Run all detectors, applying per-tenant regex patterns, presidio context, and layer configs."""
         from app.detection.layers.regex_layer import ItalianRegexDetector
@@ -172,7 +179,9 @@ class PiiAnonymizer:
                 else:
                     futures[pool.submit(d.detect, text, language, cfg)] = d
 
-            if self._regex_patterns is not None:
+            if self._regex_patterns is not None and (
+                self._enabled_layers is None or "regex" in self._enabled_layers
+            ):
                 patterns = [SimpleNamespace(**p) for p in self._regex_patterns]
                 tenant_regex = ItalianRegexDetector(patterns)
                 futures[pool.submit(tenant_regex.detect, text, language)] = tenant_regex

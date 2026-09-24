@@ -53,21 +53,30 @@ class PolicyService:
         ct_domain = None
         ct_mode = None
         ct_version = 1
+        detection_layers: list[str] | None = None
         if domain:
             ct_domain = domain
         elif context_type:
             if self._tenant_id is not None:
                 context_rows = await self._scoped_config.effective_items("context-types", "tenant", self._tenant_id)
                 row_data = next((row for row in context_rows if row.get("code") == context_type and row.get("enabled", True)), None)
-                row = (row_data.get("domain"), row_data.get("default_mode"), row_data.get("version", 1)) if row_data else None
+                row = (
+                    row_data.get("domain"), row_data.get("default_mode"),
+                    row_data.get("version", 1), row_data.get("detection_layers"),
+                ) if row_data else None
             else:
                 result = await self._db.execute(
-                    text("SELECT domain, default_mode, version FROM context_types WHERE code = :c AND enabled = true AND tenant_id IS NULL"),
+                    text("SELECT domain, default_mode, version, detection_layers FROM context_types WHERE code = :c AND enabled = true AND tenant_id IS NULL"),
                     {"c": context_type},
                 )
                 row = result.fetchone()
             if row:
                 ct_domain, ct_mode, ct_version = row[0], row[1], row[2]
+                detection_layers = row[3] if len(row) > 3 else None
+            else:
+                detection_layers = None
+        else:
+            detection_layers = None
 
         # 2. Load domain policy
         protect: set[str] | None = None
@@ -161,6 +170,7 @@ class PolicyService:
                 "block": sorted(block),
                 "confidence_thresholds": confidence_thresholds,
                 "allowlist": allowlist,
+                "detection_layers": detection_layers,
             },
             sort_keys=True,
         )
@@ -174,6 +184,7 @@ class PolicyService:
             "block_types": block,
             "confidence_thresholds": confidence_thresholds,
             "allowlist": allowlist,
+            "detection_layers": detection_layers,
             "mode": mode,
             "policy_id": context_type or (f"domain:{ct_domain}" if ct_domain else None),
             "policy_version": f"context:{ct_version}|domain:{domain_version}",

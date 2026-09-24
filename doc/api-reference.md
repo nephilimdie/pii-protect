@@ -159,6 +159,10 @@ Deletes expired mappings (older than `PII_MAPPING_TTL_DAYS` days).
 | `DELETE` | `/v1/admin/context-types/{code}` | Delete |
 
 Context type responses include a monotonically increasing `version` field that changes on every update.
+The optional `detection_layers` array selects the layers for that context (for
+example `['regex', 'presidio']`). When omitted, the effective platform/tenant
+layer set is used. A context selection is intersected with tenant layer
+overrides, so it cannot re-enable a layer disabled for the tenant.
 
 | `GET` | `/v1/admin/context-types/{code}/versions` | Inspect historical versions for one context type |
 | `POST` | `/v1/admin/context-types/{code}/versions/{version}/rollback` | Restore a historical snapshot as a new version |

@@ -34,7 +34,7 @@ The hosted cloud service is built as a private module that connects to the same 
 - [ ] **PERSON recall improvements** — handle abbreviated names (M. Rossi), compound surnames, foreign names
 - [ ] **ADDRESS precision** — structured address parser to reduce false positives
 - [x] **Regex pattern library** — label-scoped DE tax ID, FR SIRET/SIREN, ES DNI/NIE, UK NI number and NL BSN patterns; expand with authorized corpus before quality claims
-- [ ] **NER model selection** — configurable per context type (Presidio-only / ML-only / full cascade)
+- [x] **NER model selection** — context types accept an optional `detection_layers` list; runtime intersects it with platform/tenant layer overrides
 
 ---
 

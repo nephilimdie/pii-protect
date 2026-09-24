@@ -30,6 +30,7 @@ def _policy_preview(policy: dict) -> dict:
         "version": policy.get("policy_version"),
         "hash": policy.get("policy_hash"),
         "mode": policy.get("mode"),
+        "detection_layers": policy.get("detection_layers"),
         "protect_types": sorted(policy["protect_types"]) if policy.get("protect_types") is not None else None,
         "keep_types": sorted(policy.get("keep_types", [])),
         "surrogate_types": sorted(policy.get("surrogate_types", [])),

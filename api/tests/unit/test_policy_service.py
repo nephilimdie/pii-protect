@@ -66,6 +66,19 @@ class TestPolicyServiceResolve:
         assert resolved["policy_version"] == "context:2|domain:3"
 
     @pytest.mark.asyncio
+    async def test_context_type_can_select_detection_layers(self):
+        ct_row = ("fine_appeal", "tag", 2, ["regex", "presidio"])
+        policy_row = ([], [], [], [], [], 3, "tag")
+        results = [MagicMock(fetchone=MagicMock(return_value=ct_row)),
+                   MagicMock(fetchone=MagicMock(return_value=policy_row))]
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=results)
+
+        resolved = await PolicyService(db).resolve(context_type="fine_appeal")
+
+        assert resolved["detection_layers"] == ["regex", "presidio"]
+
+    @pytest.mark.asyncio
     async def test_policy_includes_thresholds_and_allowlist(self):
         policy_row = (
             ["PERSON"], ["DATE"], [], [], [],

@@ -10,6 +10,7 @@ from app.identity.dependencies import require_admin
 from app.identity.models import ApiKey
 
 router = APIRouter()
+KNOWN_DETECTION_LAYERS = {"regex", "presidio", "privacy_filter", "ai4privacy"}
 
 
 class ContextTypeResponse(BaseModel):
@@ -17,6 +18,7 @@ class ContextTypeResponse(BaseModel):
     display_name: str
     domain: str | None
     default_mode: str
+    detection_layers: list[str] | None
     description: str | None
     visible_to_clients: list[str] | None
     enabled: bool
@@ -45,6 +47,7 @@ class CreateContextTypeRequest(BaseModel):
     display_name: str
     domain: str | None = None
     default_mode: str = "tag"
+    detection_layers: list[str] | None = None
     description: str | None = None
     visible_to_clients: list[str] | None = None
 
@@ -53,9 +56,22 @@ class UpdateContextTypeRequest(BaseModel):
     display_name: str | None = None
     domain: str | None = None
     default_mode: str | None = None
+    detection_layers: list[str] | None = None
     description: str | None = None
     visible_to_clients: list[str] | None = None
     enabled: bool | None = None
+
+
+def _validate_layers(layers: list[str] | None) -> list[str] | None:
+    if layers is None:
+        return None
+    normalized = list(dict.fromkeys(layers))
+    unknown = sorted(set(normalized) - KNOWN_DETECTION_LAYERS)
+    if unknown:
+        raise HTTPException(422, {"error": "unknown_detection_layer", "layers": unknown})
+    if not normalized:
+        raise HTTPException(422, "detection_layers_must_not_be_empty")
+    return normalized
 
 
 @router.get("/context-types", response_model=list[ContextTypeResponse])
@@ -64,7 +80,7 @@ async def list_context_types(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(text(
-        "SELECT code, display_name, domain, default_mode, description, visible_to_clients, enabled, version, created_at"
+        "SELECT code, display_name, domain, default_mode, detection_layers, description, visible_to_clients, enabled, version, created_at"
         " FROM context_types ORDER BY code"
     ))
     return [dict(r._mapping) for r in result.fetchall()]
@@ -78,14 +94,15 @@ async def create_context_type(
 ):
     result = await db.execute(
         text(
-            "INSERT INTO context_types (code, display_name, domain, default_mode, description, visible_to_clients, version)"
-            " VALUES (:code, :display_name, :domain, :mode, :desc, CAST(:visible AS jsonb), 1)"
+            "INSERT INTO context_types (code, display_name, domain, default_mode, detection_layers, description, visible_to_clients, version)"
+            " VALUES (:code, :display_name, :domain, :mode, CAST(:layers AS jsonb), :desc, CAST(:visible AS jsonb), 1)"
             " ON CONFLICT (code) DO NOTHING"
-            " RETURNING code, display_name, domain, default_mode, description, visible_to_clients, enabled, version, created_at"
+            " RETURNING code, display_name, domain, default_mode, detection_layers, description, visible_to_clients, enabled, version, created_at"
         ),
         {"code": body.code, "display_name": body.display_name,
          "domain": body.domain, "mode": body.default_mode, "desc": body.description,
-         "visible": json.dumps(body.visible_to_clients) if body.visible_to_clients else None},
+         "visible": json.dumps(body.visible_to_clients) if body.visible_to_clients else None,
+         "layers": json.dumps(_validate_layers(body.detection_layers)) if body.detection_layers is not None else None},
     )
     row = result.fetchone()
     if not row:
@@ -121,13 +138,16 @@ async def update_context_type(
         if k == "visible_to_clients":
             set_clauses.append("visible_to_clients = CAST(:visible_to_clients AS jsonb)")
             params["visible_to_clients"] = json.dumps(v)
+        elif k == "detection_layers":
+            set_clauses.append("detection_layers = CAST(:detection_layers AS jsonb)")
+            params["detection_layers"] = json.dumps(_validate_layers(v))
         else:
             set_clauses.append(f"{k} = :{k}")
             params[k] = v
     sets = ", ".join(set_clauses)
     result = await db.execute(
            text(f"UPDATE context_types SET {sets}, version = version + 1 WHERE code = :code"
-               " RETURNING code, display_name, domain, default_mode, description, visible_to_clients, enabled, version, created_at"),
+               " RETURNING code, display_name, domain, default_mode, detection_layers, description, visible_to_clients, enabled, version, created_at"),
         params,
     )
     row = result.fetchone()
@@ -182,15 +202,16 @@ async def rollback_context_type(
         "display_name": snapshot.get("display_name") or code,
         "domain": snapshot.get("domain"),
         "mode": snapshot.get("default_mode") or "tag",
+        "layers": json.dumps(_validate_layers(snapshot.get("detection_layers"))) if snapshot.get("detection_layers") is not None else None,
         "desc": snapshot.get("description"),
         "visible": json.dumps(snapshot.get("visible_to_clients")) if snapshot.get("visible_to_clients") else None,
         "enabled": snapshot.get("enabled", True),
     }
     result = await db.execute(text(
         "UPDATE context_types SET display_name = :display_name, domain = :domain, default_mode = :mode,"
-        " description = :desc, visible_to_clients = CAST(:visible AS jsonb), enabled = :enabled, version = version + 1"
+        " detection_layers = CAST(:layers AS jsonb), description = :desc, visible_to_clients = CAST(:visible AS jsonb), enabled = :enabled, version = version + 1"
         " WHERE code = :code RETURNING code, display_name, domain, default_mode, description, visible_to_clients,"
-        " enabled, version, created_at"
+        " detection_layers, enabled, version, created_at"
     ), params)
     row = result.fetchone()
     if not row:

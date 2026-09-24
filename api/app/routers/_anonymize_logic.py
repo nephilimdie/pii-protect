@@ -156,6 +156,7 @@ async def _process_anonymization(
             inline_mode=body.mode,
             domain=body.domain,
         )
+        anonymizer.restrict_layers(policy.get("detection_layers"))
         protect_types = policy["protect_types"]
         keep_types = policy["keep_types"]
         surrogate_types = policy["surrogate_types"]
