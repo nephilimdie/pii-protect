@@ -82,12 +82,15 @@ def score(dataset: list[BenchmarkSample]) -> dict:
     f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
     latencies_sorted = sorted(latencies_ms)
     if latencies_sorted:
-        p95_index = max(0, min(len(latencies_sorted) - 1, int(round(0.95 * (len(latencies_sorted) - 1)))))
-        latency_p95 = round(latencies_sorted[p95_index], 3)
+        latency_p50 = _percentile(latencies_sorted, 0.50)
+        latency_p95 = _percentile(latencies_sorted, 0.95)
+        latency_p99 = _percentile(latencies_sorted, 0.99)
         latency_average = round(sum(latencies_sorted) / len(latencies_sorted), 3)
     else:
         latency_average = 0.0
+        latency_p50 = 0.0
         latency_p95 = 0.0
+        latency_p99 = 0.0
 
     per_type = {}
     for pii_type, counts in sorted(by_type.items()):
@@ -122,7 +125,9 @@ def score(dataset: list[BenchmarkSample]) -> dict:
         "false_positives": total_predicted - total_correct,
         "false_negatives": total_expected - total_correct,
         "latency_average_ms": latency_average,
+        "latency_p50_ms": latency_p50,
         "latency_p95_ms": latency_p95,
+        "latency_p99_ms": latency_p99,
         "quality_gate": {
             "min_f1": MIN_F1,
             "min_macro_f1": MIN_MACRO_F1,
@@ -141,6 +146,13 @@ def enforce_quality_gate(result: dict) -> None:
         f"f1={result['f1']} (min {gate['min_f1']}), "
         f"macro_f1={result['macro_f1']} (min {gate['min_macro_f1']})"
     )
+
+
+def _percentile(values: list[float], quantile: float) -> float:
+    if not values:
+        return 0.0
+    index = max(0, min(len(values) - 1, int(round(quantile * (len(values) - 1)))))
+    return round(values[index], 3)
 
 
 def main() -> None:
@@ -167,7 +179,9 @@ def main() -> None:
         f"- False positives: {result['false_positives']}\n"
         f"- False negatives: {result['false_negatives']}\n"
         f"- Latency average ms: {result['latency_average_ms']}\n"
+        f"- Latency p50 ms: {result['latency_p50_ms']}\n"
         f"- Latency p95 ms: {result['latency_p95_ms']}\n"
+        f"- Latency p99 ms: {result['latency_p99_ms']}\n"
         f"- Quality gate: {result['quality_gate']}\n",
         encoding="utf-8",
     )
