@@ -218,7 +218,7 @@ By default the system is **fail-closed**: if detection cannot complete safely, t
 | [Real-World Examples](doc/examples.md) | End-to-end curl examples: fine appeal, medical, contracts, LLM embedding |
 | [vs Microsoft Presidio](doc/comparison-presidio.md) | Honest feature comparison and architecture relationship |
 | [Roadmap](doc/roadmap.md) | Planned features for v0.2, v0.3, v0.4, v0.5 |
-| [Benchmark Results](benchmark/results/italian_legal_v0.2.0.md) | Current reproducible synthetic benchmark output |
+| [Benchmark Results](benchmark/results/italian_legal_v0.2.1.md) | Current reproducible synthetic benchmark output |
 | [Licensing Model](LICENSING.md) | Apache-2.0 core license and Cloud separation |
 | [Plugin Ecosystem](doc/plugin-ecosystem.md) | Plugin strategy and author expectations |
 | [Marketplace Vision](doc/marketplace-vision.md) | Future marketplace principles for plugin distribution |

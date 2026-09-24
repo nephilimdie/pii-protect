@@ -1,0 +1,102 @@
+{
+  "dataset": "italian_legal_v0.2.1",
+  "dataset_size": 7,
+  "domain": "legal",
+  "engine_versions": {
+    "anonymizer": "token-generator-v1",
+    "detector": "builtin-regex-v1",
+    "python": "3.11.16"
+  },
+  "f1": 1.0,
+  "false_negatives": 0,
+  "false_positives": 0,
+  "language": "it",
+  "latency_average_ms": 0.015,
+  "latency_p50_ms": 0.009,
+  "latency_p95_ms": 0.052,
+  "latency_p99_ms": 0.052,
+  "macro_f1": 1.0,
+  "per_type": {
+    "ADDRESS": {
+      "correct": 1,
+      "expected": 1,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 1,
+      "recall": 1.0
+    },
+    "DATE": {
+      "correct": 1,
+      "expected": 1,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 1,
+      "recall": 1.0
+    },
+    "DATE_BORN": {
+      "correct": 1,
+      "expected": 1,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 1,
+      "recall": 1.0
+    },
+    "EMAIL": {
+      "correct": 2,
+      "expected": 2,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 2,
+      "recall": 1.0
+    },
+    "FISCAL_CODE": {
+      "correct": 1,
+      "expected": 1,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 1,
+      "recall": 1.0
+    },
+    "IBAN": {
+      "correct": 1,
+      "expected": 1,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 1,
+      "recall": 1.0
+    },
+    "PERSON": {
+      "correct": 4,
+      "expected": 4,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 4,
+      "recall": 1.0
+    },
+    "PHONE": {
+      "correct": 1,
+      "expected": 1,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 1,
+      "recall": 1.0
+    },
+    "TARGA": {
+      "correct": 1,
+      "expected": 1,
+      "f1": 1.0,
+      "precision": 1.0,
+      "predicted": 1,
+      "recall": 1.0
+    }
+  },
+  "policy_used": "fine_appeal",
+  "precision": 1.0,
+  "quality_gate": {
+    "min_f1": 0.9,
+    "min_macro_f1": 0.9,
+    "passed": true
+  },
+  "recall": 1.0,
+  "synthetic_dataset": true
+}

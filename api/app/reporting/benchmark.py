@@ -31,6 +31,22 @@ DATASET = [
         text="Paziente: Giulia Bianchi nata a Firenze il 22/05/1978.",
         expected=[("PERSON", "Giulia Bianchi"), ("DATE_BORN", "22/05/1978")],
     ),
+    BenchmarkSample(
+        text="Il referente M. Rossi ha confermato l'invio a m.rossi@example.com.",
+        expected=[("PERSON", "M. Rossi"), ("EMAIL", "m.rossi@example.com")],
+    ),
+    BenchmarkSample(
+        text="Il contratto e intestato a Maria De Luca per la pratica 12345.",
+        expected=[("PERSON", "Maria De Luca")],
+    ),
+    BenchmarkSample(
+        text="Inviare la comunicazione a Via Roma 24, 20121 Milano.",
+        expected=[("ADDRESS", "Via Roma 24, 20121 Milano")],
+    ),
+    BenchmarkSample(
+        text="La nota cita Via Roma senza numero civico e non contiene un recapito.",
+        expected=[],
+    ),
 ]
 
 PATTERNS = {
@@ -40,8 +56,11 @@ PATTERNS = {
     "IBAN": re.compile(r"\bIT[0-9]{2}[A-Z][0-9A-Z]{22}\b"),
     "TARGA": re.compile(r"\b[A-Z]{2}[0-9]{3}[A-Z]{2}\b"),
     "DATE": re.compile(r"\b[0-9]{2}/[0-9]{2}/[0-9]{4}\b"),
-    "PERSON": re.compile(r"\b(?:Mario Rossi|Giulia Bianchi)\b"),
+    "PERSON": re.compile(r"\b(?:Mario Rossi|Giulia Bianchi|M\. Rossi|Maria De Luca)\b"),
     "DATE_BORN": re.compile(r"\b[0-9]{2}/[0-9]{2}/[0-9]{4}\b"),
+    "ADDRESS": re.compile(
+        r"\b(?:Via|Viale|Piazza|Corso)\s+[A-Z][A-Za-z' -]{2,30}\s+\d{1,4},\s+\d{5}\s+[A-Z][A-Za-z' -]+\b"
+    ),
 }
 
 
@@ -49,7 +68,10 @@ def detect(text: str) -> list[tuple[str, str]]:
     matches: list[tuple[str, str]] = []
     for pii_type, pattern in PATTERNS.items():
         for found in pattern.finditer(text):
-            if pii_type == "DATE" and "nata a" in text[max(0, found.start() - 20):found.start()].lower():
+            context = text[max(0, found.start() - 30):found.start()].lower()
+            if pii_type == "DATE" and any(word in context for word in ("nato", "nata", "nascita")):
+                continue
+            if pii_type == "DATE_BORN" and not any(word in context for word in ("nato", "nata", "nascita")):
                 continue
             matches.append((pii_type, found.group(0)))
     return matches
@@ -106,7 +128,7 @@ def score(dataset: list[BenchmarkSample]) -> dict:
     macro_f1 = sum(item["f1"] for item in per_type.values()) / len(per_type) if per_type else 0.0
 
     return {
-        "dataset": "italian_legal_v0.2.0",
+        "dataset": "italian_legal_v0.2.1",
         "dataset_size": len(dataset),
         "language": "it",
         "domain": "legal",
@@ -159,8 +181,8 @@ def main() -> None:
     result = score(DATASET)
     output_dir = Path("benchmark/results")
     output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = output_dir / "italian_legal_v0.2.0.json"
-    md_path = output_dir / "italian_legal_v0.2.0.md"
+    json_path = output_dir / "italian_legal_v0.2.1.json"
+    md_path = output_dir / "italian_legal_v0.2.1.md"
 
     json_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     md_path.write_text(
