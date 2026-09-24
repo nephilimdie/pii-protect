@@ -19,7 +19,10 @@ def _with_internal(headers: dict[str, str]) -> dict[str, str]:
 
 @pytest.fixture(scope="session")
 def client() -> httpx.Client:
-    with httpx.Client(base_url=BASE_URL, timeout=15) as c:
+    # Cloud deployments require the internal gateway credential before the
+    # public API key dependency runs. Keep it optional so the same suite also
+    # covers standalone self-hosted engine deployments.
+    with httpx.Client(base_url=BASE_URL, timeout=15, headers=_with_internal({})) as c:
         yield c
 
 
