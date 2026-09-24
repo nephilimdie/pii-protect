@@ -5,8 +5,6 @@ import base64
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-
 from app.anonymization.anonymizer import PiiAnonymizer
 from app.config import settings
 from app.detection.entities import PiiEntity
@@ -15,24 +13,12 @@ from app.identity.models import ApiKey
 from app.identity.tenant import get_tenant_id
 from app.plugins.registry import plugin_registry
 from app.routers._anonymize_logic import get_anonymizer
+from app.routers.document_request import DocumentAnonymizeRequest
+from app.routers.document_response import DocumentAnonymizeResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 _CONTENT_TYPES = {"application/pdf"}
-
-
-class DocumentAnonymizeRequest(BaseModel):
-    document_base64: str
-    content_type: str
-
-
-class DocumentAnonymizeResponse(BaseModel):
-    content_type: str
-    document_base64: str
-    pages: int
-    regions: list[dict[str, object]]
-    safe: bool
-    plugin: str
 
 
 @router.post("/anonymize/document", response_model=DocumentAnonymizeResponse)
