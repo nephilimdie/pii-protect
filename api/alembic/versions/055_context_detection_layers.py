@@ -2,6 +2,7 @@
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "055"
 down_revision = "054"
@@ -12,7 +13,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "context_types",
-        sa.Column("detection_layers", sa.JSON(), nullable=True),
+        sa.Column("detection_layers", postgresql.JSONB(), nullable=True),
     )
 
 
