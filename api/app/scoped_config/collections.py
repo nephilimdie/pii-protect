@@ -59,7 +59,7 @@ def item_key(collection: str, row: dict[str, Any]) -> str:
     if collection == "context-types":
         return str(row.get("code"))
 
-    return hashlib.sha1(json.dumps(row, sort_keys=True, default=str).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(row, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def normalize(row: dict[str, Any]) -> dict[str, Any]:
@@ -90,4 +90,4 @@ def parse_list(value: Any) -> list[Any]:
 
 def stable_hash(row: dict[str, Any], keys: tuple[str, ...]) -> str:
     raw = "|".join(str(row.get(key) or "") for key in keys)
-    return hashlib.sha1(raw.encode()).hexdigest()
+    return hashlib.sha256(raw.encode()).hexdigest()

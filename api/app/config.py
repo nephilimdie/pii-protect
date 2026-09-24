@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     accept_tenant_header: bool = Field(default=False, validation_alias=AliasChoices("PII_ACCEPT_TENANT_HEADER"))
     spacy_model: str = "it_core_news_lg"
     privacy_filter_model: str = "openai/privacy-filter"
+    privacy_filter_revision: str = "7ffa9a043d54d1be65afb281eddf0ffbe629385b"
     ai4privacy_model: str = "Isotonic/distilbert_finetuned_ai4privacy_v2"
+    ai4privacy_revision: str = "11795a7549030bb5a21832b09e712b19d39045a7"
     mapping_ttl_days: int = 30
     mapping_ttl_hours: int = Field(
         default=1,

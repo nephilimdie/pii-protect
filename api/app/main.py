@@ -203,13 +203,13 @@ async def lifespan(app: FastAPI):
 
     if _layer_enabled("privacy_filter"):
         logger.info("Preloading PrivacyFilter detector")
-        PrivacyFilterDetector.preload(settings.privacy_filter_model)
+        PrivacyFilterDetector.preload(settings.privacy_filter_model, settings.privacy_filter_revision)
     else:
         logger.info("Skipping PrivacyFilter detector preload because layer is disabled")
 
     if _layer_enabled("ai4privacy"):
         logger.info("Preloading Ai4Privacy detector")
-        Ai4PrivacyDetector.preload(settings.ai4privacy_model)
+        Ai4PrivacyDetector.preload(settings.ai4privacy_model, settings.ai4privacy_revision)
     else:
         logger.info("Skipping Ai4Privacy detector preload because layer is disabled")
 

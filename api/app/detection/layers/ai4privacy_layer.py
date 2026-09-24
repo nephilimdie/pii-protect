@@ -89,12 +89,13 @@ class Ai4PrivacyDetector(DetectorContract):
         return self._pipeline is not None
 
     @classmethod
-    def preload(cls, model: str = _DEFAULT_MODEL) -> None:
+    def preload(cls, model: str = _DEFAULT_MODEL, revision: str | None = None) -> None:
         try:
             from transformers import pipeline as hf_pipeline
             cls._pipeline = hf_pipeline(
                 "token-classification",
                 model=model,
+                revision=revision,
                 aggregation_strategy="simple",
             )
             logger.info("Ai4Privacy model loaded: %s", model)

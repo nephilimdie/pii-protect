@@ -117,7 +117,7 @@ class PrivacyFilterDetector(DetectorContract):
         return self._session is not None and self._tokenizer is not None
 
     @classmethod
-    def preload(cls, model: str = _DEFAULT_MODEL) -> None:
+    def preload(cls, model: str = _DEFAULT_MODEL, revision: str | None = None) -> None:
         try:
             import os
             import onnxruntime as ort
@@ -126,6 +126,7 @@ class PrivacyFilterDetector(DetectorContract):
 
             model_dir = snapshot_download(
                 repo_id=model,
+                revision=revision,
                 allow_patterns=["onnx/model_quantized.onnx*", "tokenizer.json"],
             )
             onnx_path = os.path.join(model_dir, _ONNX_FILE)
