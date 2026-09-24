@@ -54,6 +54,13 @@ on) by design; a bare numeric value is not classified as one of these types.
 
 Patterns are stored in the DB (`regex_patterns`) and hot-reloaded on every change. No restart required.
 
+The regex layer also contains conservative built-in structured recognizers for
+common names and addresses. Abbreviated or compound names are accepted only
+near an explicit person context (`referente`, `paziente`, `intestato a`, and
+similar markers). Street addresses require a supported street label and a
+house number; postcode and city are included when present. This avoids treating
+arbitrary capitalized words or a street name without a number as PII.
+
 Each pattern has:
 - **PII type** — entity type
 - **Pattern** — Python regex

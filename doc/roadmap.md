@@ -31,8 +31,8 @@ The hosted cloud service is built as a private module that connects to the same 
 
 - [x] **Unit test suite for regex patterns** — synthetic labelled corpus and detector tests are executed in CI; expand to 500+ authorized documents before a quality claim
 - [x] **Benchmark pipeline** — `make benchmark` and `benchmark/run_synthetic.py` generate precision/recall/F1, per-type metrics and latency reports with explicit threshold gates
-- [ ] **PERSON recall improvements** — handle abbreviated names (M. Rossi), compound surnames, foreign names
-- [ ] **ADDRESS precision** — structured address parser to reduce false positives
+- [x] **PERSON recall improvements** — contextual deterministic matching handles abbreviated names (M. Rossi) and compound/foreign-style names without broad capitalized-word matching
+- [x] **ADDRESS precision** — structured street patterns require a house number and support optional postcode/city, reducing street-name false positives
 - [x] **Regex pattern library** — label-scoped DE tax ID, FR SIRET/SIREN, ES DNI/NIE, UK NI number and NL BSN patterns; expand with authorized corpus before quality claims
 - [x] **NER model selection** — context types accept an optional `detection_layers` list; runtime intersects it with platform/tenant layer overrides
 
