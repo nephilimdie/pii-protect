@@ -33,7 +33,7 @@ The hosted cloud service is built as a private module that connects to the same 
 - [x] **Benchmark pipeline** — `make benchmark` and `benchmark/run_synthetic.py` generate precision/recall/F1, per-type metrics and latency reports with explicit threshold gates
 - [ ] **PERSON recall improvements** — handle abbreviated names (M. Rossi), compound surnames, foreign names
 - [ ] **ADDRESS precision** — structured address parser to reduce false positives
-- [ ] **Regex pattern library** — additional European formats: DE tax ID, FR SIRET/SIREN, ES DNI/NIE, UK NI number, NL BSN
+- [x] **Regex pattern library** — label-scoped DE tax ID, FR SIRET/SIREN, ES DNI/NIE, UK NI number and NL BSN patterns; expand with authorized corpus before quality claims
 - [ ] **NER model selection** — configurable per context type (Presidio-only / ML-only / full cascade)
 
 ---

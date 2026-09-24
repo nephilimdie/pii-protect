@@ -47,6 +47,8 @@ First public release.
 
 **Multi-language surrogates**
 - `language` field in the request selects Faker locale (IT, EN, DE, FR, ES, PT, NL, PL, …)
+- Added label-scoped European identifier patterns for German, French, Spanish,
+  UK and Dutch documents.
 - Locale-aware names, phone numbers, addresses, company suffixes
 - Passport country code derived from locale
 

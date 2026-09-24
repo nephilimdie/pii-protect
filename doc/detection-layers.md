@@ -47,6 +47,11 @@ Fine-tuned model specifically for PII. Covers technical types that traditional N
 
 Detected types: `FISCAL_CODE`, `IBAN`, `EMAIL`, `PHONE`, `TARGA`, `PIVA`, `CREDIT_CARD`, `MAC_ADDRESS`, `IP_ADDRESS`, `GPS_COORDINATE`, `HEALTH_CARD`, `PRACTICE_ID`, `TICKET_ID`, `POLICY_NUMBER`, `IMEI`, `PNR`, `ACCOUNT`, `API_KEY`, `BIC`, `CITY_BORN`, `COMPANY`, `SALARY`, `DATE`, `DATE_BORN`
 
+The registry also includes label-scoped European identifiers: `DE_TAX_ID`,
+`FR_SIRET`, `FR_SIREN`, `ES_DNI_NIE`, `UK_NI_NUMBER` and `NL_BSN`. These
+patterns require the corresponding identifier label (`SIRET:`, `BSN:`, and so
+on) by design; a bare numeric value is not classified as one of these types.
+
 Patterns are stored in the DB (`regex_patterns`) and hot-reloaded on every change. No restart required.
 
 Each pattern has:
