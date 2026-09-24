@@ -181,6 +181,7 @@ async def _ensure_admin_key() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    grpc_server = None
     if os.getenv("PLUGIN_AUTOLOAD", "false").lower() == "true":
         plugin_dir = settings.plugin_dir
         loaded = PluginLoader(plugin_dir, plugin_registry).load_all()
@@ -289,8 +290,16 @@ async def lifespan(app: FastAPI):
     logger.info("Starting cleanup loop…")
     _cleanup_task = asyncio.create_task(_nightly_cleanup_loop())
 
+    if settings.grpc_enabled:
+        from app.grpc_server import start_grpc_server
+
+        grpc_server = await start_grpc_server(app, settings.grpc_host, settings.grpc_port)
+        logger.info("gRPC server listening on %s:%d", settings.grpc_host, settings.grpc_port)
+
     yield
 
+    if grpc_server is not None:
+        await grpc_server.stop(grace=5)
     _cleanup_task.cancel()
     try:
         await _cleanup_task

@@ -10,12 +10,12 @@ For the detailed plan to evolve the engine into an AI Privacy Gateway, see [AI P
 
 ## v0.next — gRPC transport (pii-protect ↔ pii-cloud)
 
-- [ ] **gRPC server** — expose a gRPC endpoint alongside the existing HTTP API on a separate port (default `50051`); proto definition in `proto/pii_protect.proto`
-- [ ] **AnonymizationService** — `Anonymize`, `AnonymizeBatch`, `Detect`, `Ping` RPCs mirroring the existing REST endpoints
-- [ ] **AdminConfigService** — `ListConfig`, `GetConfig`, `SetConfig`, `DeleteConfig` RPCs for scoped config CRUD
-- [ ] **StatsService** — `GetStats` RPC
-- [ ] **gRPC metadata auth** — read `x-api-key`, `x-pii-tenant-id`, `x-router-auth` from gRPC request metadata (mirrors HTTP headers)
-- [ ] **pii-cloud GrpcTransport** — pii-cloud already has `GrpcTransport` + generated stub placeholder; activate once the engine exposes the gRPC port
+- [x] **gRPC server** — optional endpoint alongside the existing HTTP API on separate port `50051`; contract in `proto/pii_protect.proto`
+- [x] **AnonymizationService** — `Anonymize`, `AnonymizeBatch`, `Detect`, `Ping` bridge to the existing REST endpoints
+- [x] **AdminConfigService** — `ListConfig`, `GetConfig`, `SetConfig`, `DeleteConfig` bridge to scoped config CRUD
+- [x] **StatsService** — `GetStats` bridge to the existing stats endpoint
+- [x] **gRPC metadata auth** — `x-api-key`, `x-pii-tenant-id`, `x-router-auth` are translated to the existing HTTP security boundary
+- [x] **pii-cloud GrpcTransport** — Composer runtime and generated PHP stubs are versioned; transport remains opt-in via `PII_PROTECT_TRANSPORT=grpc`
 
 ---
 

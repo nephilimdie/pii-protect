@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package pii_protect.v1;
+
+// This contract is shared with pii-protect-cloud. Keep fields additive so
+// older clients can continue using the initial text/entities response.
+
+service Anonymization {
+  rpc Anonymize(AnonymizeRequest) returns (AnonymizeResponse);
+  rpc AnonymizeBatch(AnonymizeBatchRequest) returns (AnonymizeBatchResponse);
+  rpc Detect(DetectRequest) returns (DetectResponse);
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message AnonymizeRequest {
+  string text = 1;
+  string domain = 2;
+  string api_key = 3;
+  string tenant_id = 4;
+  bool return_text = 5;
+  string context_id = 6;
+  string context_type = 7;
+  string language = 8;
+  string mode = 9;
+  bool dry_run = 10;
+  string project_id = 11;
+  string policy_json = 12;
+}
+
+message AnonymizeResponse {
+  string text = 1;
+  repeated PiiEntity entities = 2;
+  string anonymized_text = 3;
+  int32 entity_count = 4;
+  repeated string pii_types_found = 5;
+  string mode = 6;
+  bool safe = 7;
+  bool dry_run = 8;
+  repeated string warnings = 9;
+  string policy_json = 10;
+}
+
+message AnonymizeBatchRequest {
+  repeated BatchItem items = 1;
+  string context_type = 2;
+  string language = 3;
+  string mode = 4;
+  string policy_json = 5;
+  bool dry_run = 6;
+}
+
+message BatchItem {
+  string id = 1;
+  string text = 2;
+  string context_type = 3;
+  string language = 4;
+  string mode = 5;
+  string policy_json = 6;
+  bool dry_run = 7;
+}
+
+message AnonymizeBatchResponse {
+  repeated BatchResult items = 1;
+}
+
+message BatchResult {
+  string id = 1;
+  string status = 2;
+  string output = 3;
+  string error_code = 4;
+  repeated string warnings = 5;
+}
+
+message DetectRequest {
+  string text = 1;
+  string domain = 2;
+  string tenant_id = 3;
+  string context_type = 4;
+  string language = 5;
+  string policy_json = 6;
+}
+
+message DetectResponse {
+  repeated PiiEntity entities = 1;
+  int32 entity_count = 2;
+  repeated string pii_types_found = 3;
+}
+
+message PiiEntity {
+  string entity_type = 1;
+  int32 start = 2;
+  int32 end = 3;
+  float score = 4;
+  string original = 5;
+  string replacement = 6;
+}
+
+message PingRequest {}
+message PingResponse {
+  bool ok = 1;
+  string version = 2;
+}
+
+service AdminConfig {
+  rpc ListConfig(ListConfigRequest) returns (ListConfigResponse);
+  rpc GetConfig(GetConfigRequest) returns (ConfigItem);
+  rpc SetConfig(SetConfigRequest) returns (ConfigItem);
+  rpc DeleteConfig(DeleteConfigRequest) returns (DeleteConfigResponse);
+}
+
+message ListConfigRequest {
+  string collection = 1;
+  string scope_type = 2;
+  string scope_key = 3;
+  string q = 4;
+}
+
+message ListConfigResponse { repeated ConfigItem items = 1; }
+
+message GetConfigRequest {
+  string collection = 1;
+  string key = 2;
+  string scope_type = 3;
+  string scope_key = 4;
+}
+
+message SetConfigRequest {
+  string collection = 1;
+  string key = 2;
+  string scope_type = 3;
+  string scope_key = 4;
+  string action = 5;
+  bytes data_json = 6;
+}
+
+message DeleteConfigRequest {
+  string collection = 1;
+  string key = 2;
+  string scope_type = 3;
+  string scope_key = 4;
+}
+
+message ConfigItem {
+  string key = 1;
+  bytes data_json = 2;
+}
+
+message DeleteConfigResponse { bool success = 1; }
+
+service Stats { rpc GetStats(StatsRequest) returns (StatsResponse); }
+
+message StatsRequest { string tenant_id = 1; }
+
+message StatsResponse {
+  int64 requests_last_24h = 1;
+  int64 requests_last_7d = 2;
+  int64 requests_last_30d = 3;
+  int64 total_anonymizations = 4;
+  double avg_response_time_ms = 5;
+  int64 usage_chars_this_month = 6;
+  int64 usage_chars_in_total = 7;
+  map<string, int64> pii_types_breakdown = 8;
+  int64 total_tokens_created = 9;
+  int64 usage_events_total = 10;
+}

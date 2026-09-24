@@ -25,6 +25,7 @@ services:
       dockerfile: Dockerfile
     expose:
       - "8000"
+      - "50051"
     environment:
       APP_ENV: production
       DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
@@ -33,6 +34,9 @@ services:
       FAILURE_MODE: ${PII_FAILURE_MODE:-closed}
       BATCH_MAX_ITEMS: ${PII_BATCH_MAX_ITEMS:-50}
       MULTITENANCY_ENABLED: ${PII_MULTITENANCY_ENABLED:-false}
+      PII_GRPC_ENABLED: ${PII_GRPC_ENABLED:-false}
+      PII_GRPC_HOST: ${PII_GRPC_HOST:-0.0.0.0}
+      PII_GRPC_PORT: ${PII_GRPC_PORT:-50051}
       PII_ACCEPT_TENANT_HEADER: ${PII_ACCEPT_TENANT_HEADER:-false}
       PII_INTERNAL_API_KEY: ${PII_INTERNAL_API_KEY:-}
       PII_CORS_ALLOWED_ORIGINS: ${PII_CORS_ALLOWED_ORIGINS:?Set explicit CORS origins in production}

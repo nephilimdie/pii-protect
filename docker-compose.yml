@@ -24,6 +24,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${PII_API_PORT:-15500}:8000"
+    expose:
+      - "50051"
     environment:
       DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
       ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-CHANGE_ME_generate_with_python_-c_from_cryptography.fernet_import_Fernet_print_Fernet.generate_key().decode()}
@@ -31,6 +33,9 @@ services:
       FAILURE_MODE: ${PII_FAILURE_MODE:-closed}
       BATCH_MAX_ITEMS: ${PII_BATCH_MAX_ITEMS:-50}
       MULTITENANCY_ENABLED: ${PII_MULTITENANCY_ENABLED:-false}
+      PII_GRPC_ENABLED: ${PII_GRPC_ENABLED:-false}
+      PII_GRPC_HOST: ${PII_GRPC_HOST:-0.0.0.0}
+      PII_GRPC_PORT: ${PII_GRPC_PORT:-50051}
       SPACY_MODEL: it_core_news_lg
       PRIVACY_FILTER_REVISION: ${PII_PRIVACY_FILTER_REVISION:-7ffa9a043d54d1be65afb281eddf0ffbe629385b}
       AI4PRIVACY_REVISION: ${PII_AI4PRIVACY_REVISION:-11795a7549030bb5a21832b09e712b19d39045a7}
