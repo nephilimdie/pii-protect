@@ -1,9 +1,22 @@
 """Run a small, deterministic detector quality benchmark against /v1/detect."""
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
+
+
+def percentile(values: list[float], quantile: float) -> float:
+    """Return the nearest-rank percentile for a non-empty latency sample."""
+    if not values:
+        raise ValueError("at least one value is required")
+    if not 0 < quantile <= 1:
+        raise ValueError("quantile must be between 0 and 1")
+    ordered = sorted(values)
+    index = max(0, math.ceil(len(ordered) * quantile) - 1)
+    return ordered[index]
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -15,6 +28,7 @@ def main() -> None:
     parser.add_argument("--min-recall", type=float)
     parser.add_argument("--min-f1", type=float)
     parser.add_argument("--max-p95-ms", type=float)
+    parser.add_argument("--max-p99-ms", type=float)
     args = parser.parse_args()
     for name in ("min_precision", "min_recall", "min_f1"):
         value = getattr(args, name)
@@ -22,6 +36,8 @@ def main() -> None:
             parser.error(f"--{name.replace('_', '-')} must be between 0 and 1")
     if args.max_p95_ms is not None and args.max_p95_ms < 0:
         parser.error("--max-p95-ms must be non-negative")
+    if args.max_p99_ms is not None and args.max_p99_ms < 0:
+        parser.error("--max-p99-ms must be non-negative")
     import httpx
 
     rows = json.loads(Path(args.dataset).read_text())
@@ -39,12 +55,23 @@ def main() -> None:
             fp += len(found - expected)
             fn += len(expected - found)
             latencies.append((time.perf_counter() - started) * 1000)
+    if not latencies:
+        parser.error("the dataset must contain at least one sample")
     precision = tp / (tp + fp) if tp + fp else 1.0
     recall = tp / (tp + fn) if tp + fn else 1.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    latencies.sort()
-    p95 = latencies[max(0, int(len(latencies) * 0.95) - 1)]
-    result = {"samples": len(rows), "precision": precision, "recall": recall, "f1": f1, "p95_ms": p95}
+    p50 = percentile(latencies, 0.50)
+    p95 = percentile(latencies, 0.95)
+    p99 = percentile(latencies, 0.99)
+    result = {
+        "samples": len(rows),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "p50_ms": p50,
+        "p95_ms": p95,
+        "p99_ms": p99,
+    }
     failures = []
     for name in ("precision", "recall", "f1"):
         threshold = getattr(args, f"min_{name}")
@@ -52,6 +79,8 @@ def main() -> None:
             failures.append(f"{name}={result[name]:.4f} < {threshold:.4f}")
     if args.max_p95_ms is not None and p95 > args.max_p95_ms:
         failures.append(f"p95_ms={p95:.2f} > {args.max_p95_ms:.2f}")
+    if args.max_p99_ms is not None and p99 > args.max_p99_ms:
+        failures.append(f"p99_ms={p99:.2f} > {args.max_p99_ms:.2f}")
     result["quality_gate"] = "failed" if failures else "passed"
     print(json.dumps(result, indent=2))
     if failures:
