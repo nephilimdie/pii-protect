@@ -1,6 +1,7 @@
 """Add label-scoped European tax and national identifier patterns."""
 
 import sqlalchemy as sa
+import uuid
 from alembic import op
 
 revision = "054"
@@ -43,11 +44,21 @@ def upgrade() -> None:
     for pii_type, pattern, description in PATTERNS:
         conn.execute(
             sa.text(
-                "INSERT INTO regex_patterns (pii_type, pattern, flags, capture_group, description, enabled) "
-                "SELECT :pii_type, :pattern, '', 1, :description, true "
-                "WHERE NOT EXISTS (SELECT 1 FROM regex_patterns WHERE pii_type = :pii_type AND pattern = :pattern)"
+                "INSERT INTO regex_patterns (id, pii_type, pattern, flags, capture_group, description, enabled) "
+                "SELECT :id, :pii_type, :pattern, '', 1, :description, true "
+                "WHERE NOT EXISTS ("
+                "SELECT 1 FROM regex_patterns "
+                "WHERE pii_type = :existing_pii_type AND pattern = :existing_pattern"
+                ")"
             ),
-            {"pii_type": pii_type, "pattern": pattern, "description": description},
+            {
+                "id": uuid.uuid4(),
+                "pii_type": pii_type,
+                "pattern": pattern,
+                "description": description,
+                "existing_pii_type": pii_type,
+                "existing_pattern": pattern,
+            },
         )
 
 

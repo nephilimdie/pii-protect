@@ -19,7 +19,7 @@ jobs:
         working-directory: api
 
     env:
-      DATABASE_URL: sqlite+aiosqlite:///:memory:
+      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
       ENCRYPTION_KEY: test-encryption-key-32chars-long!!
       ADMIN_INITIAL_KEY: test-admin-key
 
@@ -41,3 +41,72 @@ jobs:
 
       - name: Run synthetic quality benchmark
         run: python -m app.reporting.benchmark
+
+  postgres-migrations:
+    name: PostgreSQL migration smoke test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: pii_protect_ci
+          POSTGRES_USER: pii_protect
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pii_protect -d pii_protect_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    defaults:
+      run:
+        working-directory: api
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://pii_protect:ci_password@127.0.0.1:5432/pii_protect_ci
+      ADMIN_INITIAL_KEY: ci-test-admin-key
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install migration dependencies
+        run: |
+          pip install -r requirements-test.txt
+          pip install asyncpg==0.30.0
+
+      - name: Generate test encryption key
+        run: |
+          python -c "from cryptography.fernet import Fernet; print('ENCRYPTION_KEY=' + Fernet.generate_key().decode())" >> "$GITHUB_ENV"
+
+      - name: Upgrade PostgreSQL schema
+        run: alembic upgrade head
+
+      - name: Verify tenant-scoped schema
+        run: |
+          python - <<'PY'
+          import asyncio
+          from sqlalchemy import text
+          from sqlalchemy.ext.asyncio import create_async_engine
+
+          async def main():
+              engine = create_async_engine("postgresql+asyncpg://pii_protect:ci_password@127.0.0.1:5432/pii_protect_ci")
+              async with engine.connect() as conn:
+                  tables = {
+                      row[0]
+                      for row in (await conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))).all()
+                  }
+                  required = {"pii_mappings", "usage_events", "audit_logs", "scoped_config_overrides", "anonymization_jobs"}
+                  missing = required - tables
+                  if missing:
+                      raise SystemExit(f"missing tables: {sorted(missing)}")
+              await engine.dispose()
+
+          asyncio.run(main())
+          PY
