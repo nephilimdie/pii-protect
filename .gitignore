@@ -66,4 +66,5 @@ doc/remaining-gaps.md
 .gitleaks.toml
 benchmark/results/italian_legal_v0.2.0.json
 benchmark/results/italian_legal_v0.2.0.md
+api/benchmark/results/
 ROADMAP.md
