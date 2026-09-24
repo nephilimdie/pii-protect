@@ -357,7 +357,7 @@ app.add_middleware(MaxBodySizeMiddleware)
 
 @app.middleware("http")
 async def tenant_guard_middleware(request: Request, call_next):
-    if request.url.path in ("/health", "/docs", "/openapi.json"):
+    if request.url.path in ("/health", "/readiness", "/docs", "/openapi.json"):
         return await call_next(request)
 
     if not settings.multitenancy_enabled:
@@ -375,9 +375,7 @@ async def tenant_guard_middleware(request: Request, call_next):
             if incoming_key != settings.internal_api_key:
                 return JSONResponse({"detail": "internal_key_required"}, status_code=403)
 
-        if settings.accept_tenant_header:
-            pass
-        else:
+        if not settings.accept_tenant_header:
             if request.headers.get("x-pii-tenant-id"):
                 return JSONResponse({"detail": "tenant_header_not_accepted"}, status_code=403)
     return await call_next(request)
