@@ -10,6 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  open-core-hygiene:
+    name: Open-core packaging hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject hosted deployment artifacts
+        run: |
+          if git ls-files | grep -E '(^|/)\.DS_Store$'; then
+            echo 'Tracked .DS_Store file found' >&2
+            exit 1
+          fi
+          if rg -n 'pseudora\.cloud' docker README.md .env.example 2>/dev/null; then
+            echo 'Hosted SaaS domain found in self-hosted packaging' >&2
+            exit 1
+          fi
+
   test:
     name: Unit tests
     runs-on: ubuntu-latest
