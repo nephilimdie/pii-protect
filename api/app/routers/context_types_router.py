@@ -57,6 +57,7 @@ class UpdateContextTypeRequest(BaseModel):
     domain: str | None = None
     default_mode: str | None = None
     detection_layers: list[str] | None = None
+    clear_detection_layers: bool = False
     description: str | None = None
     visible_to_clients: list[str] | None = None
     enabled: bool | None = None
@@ -128,6 +129,9 @@ async def update_context_type(
     db: AsyncSession = Depends(get_db),
 ):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if body.clear_detection_layers:
+        updates["detection_layers"] = None
+    updates.pop("clear_detection_layers", None)
     if not updates:
         raise HTTPException(400, "no_fields")
 
