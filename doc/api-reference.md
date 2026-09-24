@@ -161,6 +161,7 @@ Deletes expired mappings (older than `PII_MAPPING_TTL_DAYS` days).
 Context type responses include a monotonically increasing `version` field that changes on every update.
 
 | `GET` | `/v1/admin/context-types/{code}/versions` | Inspect historical versions for one context type |
+| `POST` | `/v1/admin/context-types/{code}/versions/{version}/rollback` | Restore a historical snapshot as a new version |
 
 ### Domain Policies
 
@@ -173,6 +174,7 @@ Context type responses include a monotonically increasing `version` field that c
 Domain policy responses also include a `version` field that increments on every upsert.
 
 | `GET` | `/v1/admin/domain-policies/{domain}/versions` | Inspect historical versions for one domain policy |
+| `POST` | `/v1/admin/domain-policies/{domain}/versions/{version}/rollback` | Restore a historical snapshot as a new version |
 
 ### PII Type Registry
 
