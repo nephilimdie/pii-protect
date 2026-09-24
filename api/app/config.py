@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = Field(default="", validation_alias=AliasChoices("CORS_ALLOWED_ORIGINS", "PII_CORS_ALLOWED_ORIGINS"))
     internal_api_key: str = Field(default="", validation_alias=AliasChoices("PII_INTERNAL_API_KEY"))
     default_tenant_id: str | None = Field(default=None, validation_alias=AliasChoices("PII_DEFAULT_TENANT_ID"))
+    async_job_worker_api_url: str = Field(default="http://127.0.0.1:8000", validation_alias=AliasChoices("ASYNC_JOB_WORKER_API_URL"))
+    async_job_poll_seconds: float = Field(default=1.0, ge=0.1, le=60, validation_alias=AliasChoices("ASYNC_JOB_POLL_SECONDS"))
+    async_job_max_attempts: int = Field(default=3, ge=1, le=10, validation_alias=AliasChoices("ASYNC_JOB_MAX_ATTEMPTS"))
+    async_job_webhook_hosts: str = Field(default="", validation_alias=AliasChoices("ASYNC_JOB_WEBHOOK_HOSTS"))
 
     # Each key matches a layer_name. To disable a layer: set enabled=false in env.
     detection_layers: dict[str, dict[str, Any]] = {

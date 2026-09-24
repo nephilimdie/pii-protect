@@ -57,6 +57,32 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  worker:
+    profiles: ["async-jobs"]
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.jobs.worker"]
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
+      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY}
+      ASYNC_JOB_WORKER_API_URL: ${ASYNC_JOB_WORKER_API_URL:-http://api:8000}
+      ASYNC_JOB_POLL_SECONDS: ${ASYNC_JOB_POLL_SECONDS:-1}
+      ASYNC_JOB_MAX_ATTEMPTS: ${ASYNC_JOB_MAX_ATTEMPTS:-3}
+      ASYNC_JOB_WEBHOOK_HOSTS: ${ASYNC_JOB_WEBHOOK_HOSTS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   ui:
     build:
       context: ./ui

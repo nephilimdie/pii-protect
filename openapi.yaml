@@ -127,6 +127,56 @@ components:
           nullable: true
           example: "8aaf0a4b5f..."
 
+    AsyncAnonymizeRequest:
+      allOf:
+        - $ref: "#/components/schemas/AnonymizeRequest"
+        - type: object
+          properties:
+            webhook_url:
+              type: string
+              format: uri
+              description: Optional HTTPS callback. The hostname must be listed in ASYNC_JOB_WEBHOOK_HOSTS.
+              example: "https://hooks.example.com/pseudora"
+
+    AsyncJobAccepted:
+      type: object
+      required: [job_id, status, status_url]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued]
+        status_url:
+          type: string
+          example: "/v1/anonymize/jobs/550e8400-e29b-41d4-a716-446655440000"
+
+    AsyncJobStatus:
+      type: object
+      required: [job_id, status, attempts, created_at, completed_at]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        result:
+          $ref: "#/components/schemas/AnonymizeResponse"
+        error_code:
+          type: string
+          nullable: true
+
     EntityDetail:
       type: object
       properties:
@@ -1072,6 +1122,62 @@ paths:
           description: Missing or invalid API key
         "403":
           description: Insufficient role
+
+  /v1/anonymize/jobs:
+    post:
+      summary: Queue an asynchronous anonymization job
+      description: |
+        Persists an encrypted request and returns `202 Accepted`. A separately
+        supervised worker processes the job through the same anonymization
+        pipeline used by `/v1/anonymize`. Jobs are scoped to the API key and
+        tenant that created them.
+      operationId: createAnonymizationJob
+      tags: [Pseudonymization]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AsyncAnonymizeRequest"
+      responses:
+        "202":
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobAccepted"
+        "400":
+          description: Webhook hostname is not allowed
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+
+  /v1/anonymize/jobs/{job_id}:
+    get:
+      summary: Get asynchronous anonymization job status
+      operationId: getAnonymizationJob
+      tags: [Pseudonymization]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Current job status, with result when completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobStatus"
+        "401":
+          description: Missing or invalid API key
+        "403":
+          description: Insufficient role
+        "404":
+          description: Job not found in the current API-key and tenant scope
 
   /v1/detect:
     post:

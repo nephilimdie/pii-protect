@@ -15,6 +15,7 @@ help:
 	@echo "  make logs      tail API logs"
 	@echo "  make test      run pytest inside the API container"
 	@echo "  make benchmark run the benchmark command"
+	@echo "  make async-worker start the optional asynchronous job worker"
 	@echo "  make clean     stop + remove volumes (destructive)"
 	@echo ""
 
@@ -75,6 +76,10 @@ test:
 .PHONY: benchmark
 benchmark:
 	docker compose exec api python -m app.reporting.benchmark
+
+.PHONY: async-worker
+async-worker:
+	docker compose --profile async-jobs up --build -d worker
 
 .PHONY: test-e2e
 test-e2e:

@@ -105,6 +105,34 @@ curl -X POST http://localhost:15500/v1/anonymize/batch \
 }
 ```
 
+### `POST /v1/anonymize/jobs`
+
+Queues a durable anonymization job and returns immediately with `202 Accepted`.
+The request and result are encrypted at rest. Jobs can only be read using the
+same service key and tenant scope that created them.
+
+```bash
+curl -X POST http://localhost:15500/v1/anonymize/jobs \
+  -H "X-Api-Key: $PII_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Mario Rossi, mario@example.com",
+    "context_id": "job-001",
+    "context_type": "generic",
+    "mode": "tag"
+  }'
+```
+
+The optional `webhook_url` must be HTTPS and its exact hostname must be listed
+in `ASYNC_JOB_WEBHOOK_HOSTS`. The callback is best effort; poll the status URL
+when delivery must be confirmed.
+
+### `GET /v1/anonymize/jobs/{job_id}`
+
+Polls a job owned by the current API key and tenant. A completed job includes
+the normal anonymization response; queued and processing jobs include status
+and attempt count, while failed jobs include an error code.
+
 ---
 
 ### `POST /v1/deanonymize`

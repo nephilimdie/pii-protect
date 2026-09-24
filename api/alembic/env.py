@@ -19,6 +19,7 @@ from app.database import Base
 from app.identity.models import ApiKey
 from app.mapping.models import PiiMapping
 from app.audit.models import AuditLog
+from app.jobs.models import AnonymizationJob
 
 target_metadata = Base.metadata
 

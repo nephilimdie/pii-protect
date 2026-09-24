@@ -44,6 +44,26 @@ services:
       retries: 5
       start_period: 60s
 
+  worker:
+    profiles: ["async-jobs"]
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.jobs.worker"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
+      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-CHANGE_ME_generate_with_python_-c_from_cryptography.fernet_import_Fernet_print_Fernet.generate_key().decode()}
+      ASYNC_JOB_WORKER_API_URL: ${ASYNC_JOB_WORKER_API_URL:-http://api:8000}
+      ASYNC_JOB_POLL_SECONDS: ${ASYNC_JOB_POLL_SECONDS:-1}
+      ASYNC_JOB_MAX_ATTEMPTS: ${ASYNC_JOB_MAX_ATTEMPTS:-3}
+      ASYNC_JOB_WEBHOOK_HOSTS: ${ASYNC_JOB_WEBHOOK_HOSTS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
   ui:
     build:
       context: ./ui
