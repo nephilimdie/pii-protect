@@ -110,3 +110,51 @@ jobs:
 
           asyncio.run(main())
           PY
+
+  postgres-restore-drill:
+    name: PostgreSQL restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: pii_protect_ci
+          POSTGRES_USER: pii_protect
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pii_protect -d pii_protect_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create disposable backup and restore target
+        run: |
+          docker run --rm --network host -v "$GITHUB_WORKSPACE:/workspace" postgres:17 \
+            bash -euc '
+              export PGPASSWORD=ci_password
+              psql -h 127.0.0.1 -U pii_protect -d pii_protect_ci \
+                -c "CREATE TABLE restore_fixture (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO restore_fixture VALUES (1, '''ok''');"
+              pg_dump -h 127.0.0.1 -U pii_protect -Fc pii_protect_ci | gzip > /workspace/ci-restore.dump.gz
+              createdb -h 127.0.0.1 -U pii_protect pii_protect_restore
+            '
+
+      - name: Run guarded restore drill
+        run: |
+          docker run --rm --network host \
+            -e RESTORE_DRILL=1 \
+            -e PII_ENVIRONMENT=ci \
+            -e BACKUP_FILE=/workspace/ci-restore.dump.gz \
+            -e PII_DB_NAME=pii_protect_restore \
+            -e PII_DB_USER=pii_protect \
+            -e PII_DB_PASSWORD=ci_password \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            postgres:17 bash -euc '
+              /workspace/scripts/restore-drill.sh
+              test "$(psql -h 127.0.0.1 -U pii_protect -d pii_protect_restore -Atc "SELECT value FROM restore_fixture WHERE id = 1")" = ok
+            '
