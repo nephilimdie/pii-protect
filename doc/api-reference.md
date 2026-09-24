@@ -334,3 +334,10 @@ curl http://localhost:15500/readiness
 `/readiness` returns HTTP 503 until the database, Alembic revision and at least
 one enabled detector are available. Use it for container orchestration; use
 `/health` only for liveness.
+### `POST /v1/anonymize/document`
+
+Accepts a JSON body with `document_base64` and `content_type` (`application/pdf`).
+The endpoint is fail-closed when the optional PDF OCR plugin is not installed.
+It returns a redacted image-only PDF, page count and non-sensitive redaction
+regions. Limits are controlled by `PII_DOCUMENT_MAX_BYTES` and
+`PII_DOCUMENT_MAX_PAGES`.

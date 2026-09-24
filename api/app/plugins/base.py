@@ -21,5 +21,9 @@ class BasePlugin(ABC):
         """Optionally redact an image; image support stays outside the core."""
         return None
 
+    async def anonymize_document(self, **_kwargs: Any) -> Any:
+        """Optionally redact a document; document support stays outside the core."""
+        return None
+
     def metadata(self) -> dict[str, str]:
         return {"name": self.name, "version": self.version}

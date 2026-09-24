@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     marketplace_max_package_bytes: int = Field(default=50_000_000, ge=1_000_000, le=500_000_000, validation_alias=AliasChoices("MARKETPLACE_MAX_PACKAGE_BYTES"))
     image_max_bytes: int = Field(default=4_000_000, ge=1_024, le=100_000_000, validation_alias=AliasChoices("IMAGE_MAX_BYTES", "PII_IMAGE_MAX_BYTES"))
     image_max_pixels: int = Field(default=25_000_000, ge=1_000_000, le=200_000_000, validation_alias=AliasChoices("IMAGE_MAX_PIXELS", "PII_IMAGE_MAX_PIXELS"))
+    document_max_bytes: int = Field(default=4_000_000, ge=1_024, le=100_000_000, validation_alias=AliasChoices("DOCUMENT_MAX_BYTES", "PII_DOCUMENT_MAX_BYTES"))
+    document_max_pages: int = Field(default=10, ge=1, le=100, validation_alias=AliasChoices("DOCUMENT_MAX_PAGES", "PII_DOCUMENT_MAX_PAGES"))
     grpc_enabled: bool = Field(default=False, validation_alias=AliasChoices("GRPC_ENABLED", "PII_GRPC_ENABLED"))
     grpc_host: str = Field(default="127.0.0.1", validation_alias=AliasChoices("GRPC_HOST", "PII_GRPC_HOST"))
     grpc_port: int = Field(default=50051, ge=1, le=65535, validation_alias=AliasChoices("GRPC_PORT", "PII_GRPC_PORT"))

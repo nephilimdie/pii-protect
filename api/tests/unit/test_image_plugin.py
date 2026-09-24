@@ -82,3 +82,32 @@ async def test_image_endpoint_fails_closed_without_plugin():
 
     assert error.value.status_code == 503
     assert error.value.detail == "image_plugin_not_installed"
+
+
+@pytest.mark.asyncio
+async def test_document_endpoint_fails_closed_without_plugin():
+    from app.plugins.registry import PluginRegistry
+    from app.routers.document import anonymize_document
+
+    registry = PluginRegistry()
+    previous = registry.all()
+    registry.clear()
+    try:
+        with pytest.raises(HTTPException) as error:
+            await anonymize_document(
+                body=SimpleNamespace(document_base64="eA==", content_type="application/pdf"),
+                context_id="test",
+                context_type="generic",
+                language="it",
+                mode="mask",
+                _api_key=SimpleNamespace(),
+                tenant_id=None,
+                anonymizer=SimpleNamespace(),
+            )
+    finally:
+        registry.clear()
+        for plugin in previous:
+            registry.register(plugin)
+
+    assert error.value.status_code == 503
+    assert error.value.detail == "document_plugin_not_installed"

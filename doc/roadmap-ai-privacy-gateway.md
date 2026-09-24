@@ -244,7 +244,8 @@ Una release non deve essere pubblicata se:
 ## Fase P1/P2: immagini, OCR e documenti
 Il contratto e il riferimento OCR sono implementati come plugin opzionale per
 non appesantire il core:
-1. OCR di PNG e JPEG nel riferimento plugin; PDF resta da implementare.
+1. OCR di PNG e JPEG nel riferimento plugin; il plugin PDF OCR opzionale
+   produce un PDF image-only redatto.
 2. Coordinate dei token OCR.
 3. Riutilizzo della pipeline testuale esistente.
 4. Redazione delle aree corrispondenti.
@@ -252,12 +253,14 @@ non appesantire il core:
 6. Output immagine e sidecar JSON con tipo, coordinate e confidence.
 7. Limiti di dimensione, DPI, pagine e tempo CPU.
 8. Rimozione dei file temporanei dopo l'elaborazione.
-Endpoint disponibile / candidato:
+Endpoint disponibile:
 ```text
 POST /v1/anonymize/image
 POST /v1/anonymize/document
 ```
-`POST /v1/anonymize/image` fallisce chiuso quando il plugin non e' installato.
+Entrambi gli endpoint falliscono chiusi quando il plugin corrispondente non e'
+installato. Il plugin PDF non conserva il text layer ricercabile: questa e' una
+scelta deliberata per evitare che una PII rimanga nel contenuto PDF originale.
 Non dichiarare supporto immagini in produzione prima di avere testato
 screenshot, scansioni con bassa qualita', testo ruotato, piu' lingue e falsi
 positivi con un corpus autorizzato.

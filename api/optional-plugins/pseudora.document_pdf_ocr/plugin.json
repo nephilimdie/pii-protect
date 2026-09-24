@@ -1,0 +1,7 @@
+{
+  "name": "pseudora.document_pdf_ocr",
+  "version": "0.1.0",
+  "compatibility": ">=1.0,<2.0",
+  "permissions": ["read_document", "write_document_regions"],
+  "entrypoint": "plugin:PdfOcrPlugin"
+}

@@ -47,5 +47,13 @@ class PluginRegistry:
                 return result
         return None
 
+    @classmethod
+    async def anonymize_document(cls, **kwargs):
+        for plugin in cls._plugins:
+            result = await plugin.anonymize_document(**kwargs)
+            if result is not None:
+                return result
+        return None
+
 
 plugin_registry = PluginRegistry()
