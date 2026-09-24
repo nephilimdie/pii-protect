@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import numpy as np
 
-from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
+from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector, _materialize_onnx_files
 
 
 def fake_tokenizer():
@@ -70,3 +71,25 @@ def test_batch_failure_falls_back_to_single_line_inference():
 
     assert session.batch_sizes == [2, 1, 1]
     assert [entity.text for entity in entities] == ["Mario", "Anna"]
+
+
+def test_materialize_onnx_external_data_uses_real_files(tmp_path):
+    source_dir = tmp_path / "onnx"
+    source_dir.mkdir()
+    model_source = tmp_path / "model.onnx"
+    data_source = tmp_path / "model.onnx_data"
+    model_source.write_bytes(b"model")
+    data_source.write_bytes(b"external-data")
+    (source_dir / "model_quantized.onnx").symlink_to(model_source)
+    (source_dir / "model_quantized.onnx_data").symlink_to(data_source)
+
+    model_path = _materialize_onnx_files(str(tmp_path))
+
+    assert model_path.endswith(".materialized-onnx/model_quantized.onnx")
+    assert os.path.isfile(model_path)
+    assert not os.path.islink(model_path)
+    with open(model_path, "rb") as model_file:
+        assert model_file.read() == b"model"
+    data_path = os.path.join(os.path.dirname(model_path), "model_quantized.onnx_data")
+    with open(data_path, "rb") as data_file:
+        assert data_file.read() == b"external-data"

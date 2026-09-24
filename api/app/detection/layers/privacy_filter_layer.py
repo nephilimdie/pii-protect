@@ -1,12 +1,14 @@
 from __future__ import annotations
+import glob
 import logging
+import os
+import shutil
 from app.detection.contracts.detector_contract import DetectorContract
 from app.detection.entities import PiiEntity
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "openai/privacy-filter"
-_ONNX_FILE = "onnx/model_quantized.onnx"
 
 # id → entity_group (from config.json id2label, BIOES prefix stripped)
 _ID2LABEL: dict[int, str] = {
@@ -49,6 +51,36 @@ _MAX_TOKENS = 512
 _LINE_BATCH_SIZE = 16
 
 PreparedLine = tuple[str, int, list[int], list[tuple[int, int]]]
+
+
+def _materialize_onnx_files(model_dir: str) -> str:
+    """Copy the ONNX model and external data out of HF's blob symlinks.
+
+    ONNX Runtime resolves external-data paths relative to the model file and
+    rejects Hugging Face's content-addressed blob layout. Keeping a stable
+    local copy makes clean-cache startup deterministic without mutating the
+    Hugging Face snapshot.
+    """
+    source_dir = os.path.join(model_dir, "onnx")
+    materialized_dir = os.path.join(model_dir, ".materialized-onnx")
+    os.makedirs(materialized_dir, exist_ok=True)
+
+    source_files = glob.glob(os.path.join(source_dir, "model_quantized.onnx*"))
+    if not source_files:
+        raise FileNotFoundError("PrivacyFilter ONNX files are missing")
+
+    for source_path in source_files:
+        destination_path = os.path.join(materialized_dir, os.path.basename(source_path))
+        if (
+            os.path.isfile(destination_path)
+            and os.path.getsize(destination_path) == os.path.getsize(source_path)
+        ):
+            continue
+        temporary_path = f"{destination_path}.tmp"
+        shutil.copyfile(source_path, temporary_path)
+        os.replace(temporary_path, destination_path)
+
+    return os.path.join(materialized_dir, "model_quantized.onnx")
 
 
 def _bioes_to_spans(label_ids: list[int], scores: list[float], offsets: list[tuple[int, int]]) -> list[dict]:
@@ -129,7 +161,7 @@ class PrivacyFilterDetector(DetectorContract):
                 revision=revision,
                 allow_patterns=["onnx/model_quantized.onnx*", "tokenizer.json"],
             )
-            onnx_path = os.path.join(model_dir, _ONNX_FILE)
+            onnx_path = _materialize_onnx_files(model_dir)
             cls._session = ort.InferenceSession(
                 onnx_path,
                 providers=["CPUExecutionProvider"],
