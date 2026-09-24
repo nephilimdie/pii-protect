@@ -43,7 +43,7 @@ The hosted cloud service is built as a private module that connects to the same 
 - [x] **Policy versioning** — track and diff policy changes over time; rollback support via the domain-policy and context-type version endpoints
 - [x] **Per-entity confidence threshold** — configurable minimum score per PII type in domain policies and scoped overrides
 - [x] **Batch endpoint** — `POST /v1/anonymize/batch` for processing multiple documents in one call
-- [ ] **Async job endpoint** — long documents via background task + webhook notification
+- [x] **Async job endpoint** — durable encrypted jobs with tenant/API-key scope, supervised worker, retry policy and optional HTTPS webhook notification; opt-in Compose profile `async-jobs`
 - [x] **Policy dry-run** — `POST /v1/anonymize?dry_run=true` returns detected entities without saving mappings
 - [x] **Entity allow-list** — whitelist specific values per PII type in domain policies and scoped overrides
 
