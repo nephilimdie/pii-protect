@@ -37,7 +37,7 @@ start:
 	@echo "→ Building and starting services..."
 	docker compose up --build -d
 	@echo "→ Waiting for API to be healthy..."
-	@until curl -sf http://localhost:$$(grep PII_API_PORT .env 2>/dev/null | cut -d= -f2 || echo 15500)/health > /dev/null 2>&1; do \
+	@until curl -sf http://localhost:$$(grep PII_API_PORT .env 2>/dev/null | cut -d= -f2 || echo 15500)/readiness > /dev/null 2>&1; do \
 		sleep 2; \
 	done
 	@echo ""

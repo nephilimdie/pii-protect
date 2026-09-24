@@ -38,6 +38,9 @@ Mount TLS certificates under `docker/nginx/certs/`:
 ## Safe defaults
 
 - Keep `PII_FAILURE_MODE=closed`
+- Use `GET /readiness` for orchestration readiness checks. It verifies database
+  connectivity, a populated Alembic revision and at least one loaded detector;
+  `GET /health` is only a liveness check.
 - Do not enable raw entity values for non-admin keys
 - Use short-lived, limited API keys for demos and pilots
 - Keep `.env` out of the repository
