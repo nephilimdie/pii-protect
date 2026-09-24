@@ -255,7 +255,6 @@ Domain policy responses also include a `version` field that increments on every 
 curl http://localhost:15500/health
 # → {"status": "ok"}
 
-```bash
 curl http://localhost:15500/readiness
 # → {"status": "ready", "checks": {"database": true, "migrations": true, "detector": true}}
 ```
@@ -263,4 +262,3 @@ curl http://localhost:15500/readiness
 `/readiness` returns HTTP 503 until the database, Alembic revision and at least
 one enabled detector are available. Use it for container orchestration; use
 `/health` only for liveness.
-```
