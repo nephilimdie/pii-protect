@@ -57,7 +57,30 @@ template. It is not loaded unless `PLUGIN_AUTOLOAD=true` is explicitly set.
 
 - Private install inside a customer deployment.
 - Direct distribution by the plugin author.
-- Publication through a future `pii-protect` marketplace.
+- Publication through a marketplace compatible with the optional core client.
+
+## Optional marketplace client
+
+Self-hosted administrators can browse and install packages from a configured
+marketplace without adding a cloud dependency to the engine:
+
+```text
+MARKETPLACE_URL=https://marketplace.example
+MARKETPLACE_TOKEN=optional-entitlement-token
+MARKETPLACE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----..."
+MARKETPLACE_MAX_PACKAGE_BYTES=50000000
+PLUGIN_DIR=/absolute/path/plugins
+PLUGIN_AUTOLOAD=false
+```
+
+The admin API exposes `GET /v1/admin/marketplace/plugins` and
+`POST /v1/admin/marketplace/plugins/install` with `{ "name": "plugin.name" }`.
+The client only downloads packages from the configured HTTPS origin, verifies
+the catalog checksum and, when a public key is configured, verifies the
+detached Ed25519 signature before extraction. Installation never autoloads a
+plugin: restart with `PLUGIN_AUTOLOAD=true` only after reviewing its manifest,
+permissions and source. The marketplace service remains responsible for
+accounts, payment, entitlement and package hosting.
 
 ## Marketplace note
 

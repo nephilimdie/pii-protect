@@ -182,7 +182,7 @@ async def _ensure_admin_key() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if os.getenv("PLUGIN_AUTOLOAD", "false").lower() == "true":
-        plugin_dir = os.getenv("PLUGIN_DIR", "./plugins")
+        plugin_dir = settings.plugin_dir
         loaded = PluginLoader(plugin_dir, plugin_registry).load_all()
         logger.info("Loaded plugins: %s", loaded)
     # Load Presidio with all installed spaCy models

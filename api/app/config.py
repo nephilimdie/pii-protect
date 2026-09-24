@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     async_job_poll_seconds: float = Field(default=1.0, ge=0.1, le=60, validation_alias=AliasChoices("ASYNC_JOB_POLL_SECONDS"))
     async_job_max_attempts: int = Field(default=3, ge=1, le=10, validation_alias=AliasChoices("ASYNC_JOB_MAX_ATTEMPTS"))
     async_job_webhook_hosts: str = Field(default="", validation_alias=AliasChoices("ASYNC_JOB_WEBHOOK_HOSTS"))
+    plugin_dir: str = Field(default="./plugins", validation_alias=AliasChoices("PLUGIN_DIR"))
+    marketplace_url: str = Field(default="", validation_alias=AliasChoices("MARKETPLACE_URL"))
+    marketplace_token: str = Field(default="", validation_alias=AliasChoices("MARKETPLACE_TOKEN"))
+    marketplace_public_key: str = Field(default="", validation_alias=AliasChoices("MARKETPLACE_PUBLIC_KEY"))
+    marketplace_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0, validation_alias=AliasChoices("MARKETPLACE_TIMEOUT_SECONDS"))
+    marketplace_max_package_bytes: int = Field(default=50_000_000, ge=1_000_000, le=500_000_000, validation_alias=AliasChoices("MARKETPLACE_MAX_PACKAGE_BYTES"))
 
     # Each key matches a layer_name. To disable a layer: set enabled=false in env.
     detection_layers: dict[str, dict[str, Any]] = {
