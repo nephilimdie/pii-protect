@@ -36,7 +36,6 @@ jobs:
 
     env:
       DATABASE_URL: "sqlite+aiosqlite:///:memory:"
-      ENCRYPTION_KEY: test-encryption-key-32chars-long!!
       ADMIN_INITIAL_KEY: test-admin-key
 
     steps:
@@ -51,6 +50,10 @@ jobs:
 
       - name: Install test dependencies
         run: pip install -r requirements-test.txt
+
+      - name: Generate test encryption key
+        run: |
+          python -c "from cryptography.fernet import Fernet; print('ENCRYPTION_KEY=' + Fernet.generate_key().decode())" >> "$GITHUB_ENV"
 
       - name: Run unit tests
         run: pytest tests/unit/ -q --tb=short
@@ -155,7 +158,7 @@ jobs:
             bash -euc '
               export PGPASSWORD=ci_password
               psql -h 127.0.0.1 -U pii_protect -d pii_protect_ci \
-                -c "CREATE TABLE restore_fixture (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO restore_fixture VALUES (1, '''ok''');"
+                -c "CREATE TABLE restore_fixture (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO restore_fixture VALUES (1, chr(111)||chr(107));"
               pg_dump -h 127.0.0.1 -U pii_protect -Fc pii_protect_ci | gzip > /workspace/ci-restore.dump.gz
               createdb -h 127.0.0.1 -U pii_protect pii_protect_restore
             '
