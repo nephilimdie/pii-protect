@@ -25,12 +25,12 @@ DEFAULTS: dict[str, dict] = {
     },
     "privacy_filter": {
         "min_score":     0.70,
-        "min_chars":     200,
+        "min_chars":     0,
         "enabled_types": PRIVACY_FILTER_TYPES,
     },
     "ai4privacy": {
         "min_score":     0.70,
-        "min_chars":     200,
+        "min_chars":     0,
         "enabled_types": AI4PRIVACY_TYPES,
     },
 }

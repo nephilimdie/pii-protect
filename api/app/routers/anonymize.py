@@ -75,6 +75,9 @@ async def anonymize_batch(
                 "dry_run": body.dry_run if item.dry_run is None else item.dry_run,
             })
             response = await _process_anonymization(item_body, request, api_key, db, anonymizer, tenant_id, key_provider)
+            if not response.safe:
+                results.append(BatchItemResult(id=item.id, status="failed", error_code="PII_PROCESSING_FAILED"))
+                continue
             results.append(
                 BatchItemResult(
                     id=item.id,

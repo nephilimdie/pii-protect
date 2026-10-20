@@ -14,7 +14,8 @@ help:
 	@echo "  make migrate   run Alembic migrations"
 	@echo "  make logs      tail API logs"
 	@echo "  make test      run pytest inside the API container"
-	@echo "  make benchmark run the benchmark command"
+	@echo "  make benchmark run demo regex checks (not engine accuracy)"
+	@echo "  make benchmark-engine ENGINE_IMAGE=... MODEL_CACHE_VOLUME=... run isolated real-engine checks"
 	@echo "  make async-worker start the optional asynchronous job worker"
 	@echo "  make clean     stop + remove volumes (destructive)"
 	@echo ""
@@ -76,6 +77,12 @@ test:
 .PHONY: benchmark
 benchmark:
 	docker compose exec api python -m app.reporting.benchmark
+
+.PHONY: benchmark-engine
+benchmark-engine:
+	@test -n "$(ENGINE_IMAGE)" || (echo "Set ENGINE_IMAGE to an existing local image"; exit 1)
+	@test -n "$(MODEL_CACHE_VOLUME)" || (echo "Set MODEL_CACHE_VOLUME to a populated model cache"; exit 1)
+	python3 scripts/check-engine-local.py --image "$(ENGINE_IMAGE)" --cache-volume "$(MODEL_CACHE_VOLUME)" --benchmark-output benchmark/results/engine-local.json
 
 .PHONY: async-worker
 async-worker:

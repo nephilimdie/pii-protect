@@ -97,11 +97,7 @@ class PresidioDetector(DetectorContract):
         )
 
         lang = language if language in self._supported_languages else self._supported_languages[0]
-        try:
-            results = self._analyzer.analyze(text=text, language=lang)
-        except Exception as exc:
-            logger.warning("Presidio analyze error: %s", exc)
-            return []
+        results = self._analyzer.analyze(text=text, language=lang)
 
         entities = []
         for r in results:

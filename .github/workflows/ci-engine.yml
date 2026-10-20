@@ -58,7 +58,7 @@ jobs:
       - name: Run unit tests
         run: pytest tests/unit/ -q --tb=short
 
-      - name: Run synthetic quality benchmark
+      - name: Check demo regex fixture (not engine accuracy)
         run: python -m app.reporting.benchmark
 
   postgres-migrations:

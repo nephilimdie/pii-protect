@@ -20,3 +20,17 @@ def test_context_layer_selection_is_applied_when_global_layers_are_unrestricted(
     anonymizer.restrict_layers(["regex", "privacy_filter"])
 
     assert anonymizer._enabled_layers == {"regex", "privacy_filter"}
+
+
+def test_each_batch_item_selects_layers_from_tenant_baseline():
+    anonymizer = PiiAnonymizer(MagicMock(), enabled_layers={"regex", "presidio"})
+    anonymizer.restrict_layers(["regex"])
+    anonymizer.restrict_layers(["presidio", "ai4privacy"])
+    assert anonymizer._enabled_layers == {"presidio"}
+
+
+def test_unrestricted_context_restores_tenant_baseline():
+    anonymizer = PiiAnonymizer(MagicMock(), enabled_layers={"regex", "presidio"})
+    anonymizer.restrict_layers([])
+    anonymizer.restrict_layers(None)
+    assert anonymizer._enabled_layers == {"regex", "presidio"}

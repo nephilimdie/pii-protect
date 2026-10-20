@@ -48,6 +48,7 @@ _LABEL_MAP: dict[str, str | None] = {
 
 _MIN_SCORE = 0.70
 _MAX_TOKENS = 512
+_WINDOW_OVERLAP = 64
 _LINE_BATCH_SIZE = 16
 
 PreparedLine = tuple[str, int, list[int], list[tuple[int, int]]]
@@ -183,11 +184,7 @@ class PrivacyFilterDetector(DetectorContract):
             return []
         if min_chars is not None and len(text) < min_chars:
             return []
-        try:
-            return self._run(text, min_score=min_score, enabled_types=enabled_types)
-        except Exception as exc:
-            logger.warning("PrivacyFilter inference error: %s", exc)
-            return []
+        return self._run(text, min_score=min_score, enabled_types=enabled_types)
 
     def _run(self, text: str, min_score: float = _MIN_SCORE, enabled_types: set[str] | None = None) -> list[PiiEntity]:
         prepared: list[PreparedLine] = []
@@ -195,11 +192,12 @@ class PrivacyFilterDetector(DetectorContract):
         for line in text.splitlines(keepends=True):
             line_stripped = line.rstrip("\n\r")
             if line_stripped.strip():
-                item = self._prepare_line(line_stripped, cursor)
-                if item is not None:
-                    prepared.append(item)
+                prepared.extend(self._prepare_line(line_stripped, cursor))
             cursor += len(line)
 
+        return self._run_prepared(prepared, min_score, enabled_types)
+
+    def _run_prepared(self, prepared, min_score, enabled_types) -> list[PiiEntity]:
         entities: list[PiiEntity] = []
         for start in range(0, len(prepared), _LINE_BATCH_SIZE):
             entities.extend(self._run_batch(
@@ -207,21 +205,28 @@ class PrivacyFilterDetector(DetectorContract):
                 min_score,
                 enabled_types,
             ))
-        return entities
+        # Overlapping windows can report the same span more than once.
+        unique = {}
+        for entity in entities:
+            key = (entity.start, entity.end, entity.pii_type)
+            if key not in unique or unique[key].score < entity.score:
+                unique[key] = entity
+        return sorted(unique.values(), key=lambda entity: (entity.start, entity.end))
 
     def _run_line(self, line: str, global_offset: int, min_score: float = _MIN_SCORE, enabled_types: set[str] | None = None) -> list[PiiEntity]:
         prepared = self._prepare_line(line, global_offset)
-        if prepared is None:
-            return []
-        return self._run_batch([prepared], min_score, enabled_types)
+        return self._run_prepared(prepared, min_score, enabled_types)
 
-    def _prepare_line(self, line: str, global_offset: int) -> PreparedLine | None:
+    def _prepare_line(self, line: str, global_offset: int) -> list[PreparedLine]:
         enc = self._tokenizer.encode(line, add_special_tokens=False)
-        input_ids = enc.ids[:_MAX_TOKENS]
-        if not input_ids:
-            return None
-        offsets = [tuple(offset) for offset in enc.offsets[:_MAX_TOKENS]]
-        return line, global_offset, input_ids, offsets
+        windows = []
+        for start in range(0, len(enc.ids), _MAX_TOKENS - _WINDOW_OVERLAP):
+            end = start + _MAX_TOKENS
+            windows.append((line, global_offset, enc.ids[start:end],
+                            [tuple(offset) for offset in enc.offsets[start:end]]))
+            if end >= len(enc.ids):
+                break
+        return windows
 
     def _run_batch(
         self,

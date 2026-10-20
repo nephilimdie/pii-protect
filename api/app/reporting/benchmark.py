@@ -128,15 +128,16 @@ def score(dataset: list[BenchmarkSample]) -> dict:
     macro_f1 = sum(item["f1"] for item in per_type.values()) / len(per_type) if per_type else 0.0
 
     return {
+        "measurement_scope": "demo_regex_only_not_engine_accuracy",
         "dataset": "italian_legal_v0.2.1",
         "dataset_size": len(dataset),
         "language": "it",
         "domain": "legal",
-        "policy_used": "fine_appeal",
+        "policy_used": None,
         "synthetic_dataset": True,
         "engine_versions": {
             "detector": "builtin-regex-v1",
-            "anonymizer": "token-generator-v1",
+            "anonymizer": "not_exercised",
             "python": sys.version.split()[0],
         },
         "precision": round(precision, 4),
@@ -186,7 +187,7 @@ def main() -> None:
 
     json_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     md_path.write_text(
-        "# Benchmark Results\n\n"
+        "# Demo Regex Results (not engine accuracy)\n\n"
         f"- Dataset: {result['dataset']}\n"
         f"- Dataset size: {result['dataset_size']}\n"
         f"- Language: {result['language']}\n"

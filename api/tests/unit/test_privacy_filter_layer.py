@@ -4,6 +4,7 @@ import os
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector, _materialize_onnx_files
 
@@ -71,6 +72,34 @@ def test_batch_failure_falls_back_to_single_line_inference():
 
     assert session.batch_sizes == [2, 1, 1]
     assert [entity.text for entity in entities] == ["Mario", "Anna"]
+
+
+def test_long_line_covers_all_tokens_without_duplicate_spans():
+    subject = detector(fake_session())
+    text = " ".join(f"word{index}" for index in range(1100))
+    entities = subject._run(text)
+    assert len(entities) == 1100
+    assert entities[-1].text == "word1099"
+    assert entities[-1].end == len(text)
+    assert all(text[item.start:item.end] == item.text for item in entities)
+
+
+def test_single_line_entrypoint_preserves_global_offsets_across_windows():
+    subject = detector(fake_session())
+    text = " ".join(["Mario"] * 600)
+    entities = subject._run_line(text, 20)
+    assert len(entities) == 600
+    assert entities[0].start == 20
+    assert entities[-1].end == 20 + len(text)
+
+
+def test_privacy_filter_inference_failure_is_not_reported_as_no_pii():
+    subject = detector(fake_session())
+    def fail(*args):
+        raise RuntimeError("inference unavailable")
+    subject._session.run = fail
+    with pytest.raises(RuntimeError, match="inference unavailable"):
+        subject.detect("Mario Rossi")
 
 
 def test_materialize_onnx_external_data_uses_real_files(tmp_path):

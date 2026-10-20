@@ -68,7 +68,7 @@ _LABEL_MAP: dict[str, str | None] = {
 }
 
 _MIN_SCORE = 0.70
-_MIN_CHARS = 200  # skip transformer inference for short texts — regex+spaCy sufficient
+_MIN_CHARS = 0  # Short texts can contain PII too; skipping is an explicit policy choice.
 
 
 class Ai4PrivacyDetector(DetectorContract):
@@ -111,11 +111,7 @@ class Ai4PrivacyDetector(DetectorContract):
         )
         if self._pipeline is None or len(text) < min_chars:
             return []
-        try:
-            results = self._pipeline(text)
-        except Exception as exc:
-            logger.warning("Ai4Privacy inference error: %s", exc)
-            return []
+        results = self._pipeline(text, stride=64)
 
         entities = []
         for item in results:

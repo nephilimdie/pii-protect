@@ -1,5 +1,6 @@
 from __future__ import annotations
 import re
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from types import SimpleNamespace
 
@@ -9,7 +10,9 @@ from app.detection.entity_merger import EntityMerger
 from app.detection.token_generator import TokenGenerator
 from app.anonymization.anonymization_result import AnonymizationResult
 
-_WORD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+def _is_word_char(char: str) -> bool:
+    return char.isalnum() or char == "_" or unicodedata.category(char).startswith("M")
+
 _PASSWORD_EXTRA = frozenset("!@#$%^&*()+=[]{}|;:<>?/\\~`")
 _PASSWORD_TYPES = frozenset({"SECRET", "PASSWORD"})
 
@@ -72,12 +75,12 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
 
     # Expand right if entity ends mid-word
     extra = _PASSWORD_EXTRA if entity.pii_type in _PASSWORD_TYPES else frozenset()
-    while end < len(text) and (text[end] in _WORD_CHARS or text[end] in extra):
+    while end < len(text) and (_is_word_char(text[end]) or text[end] in extra):
         end += 1
 
     # Expand left only if entity starts mid-word (first char is a word char)
-    if start < len(text) and text[start] in _WORD_CHARS:
-        while start > 0 and text[start - 1] in _WORD_CHARS:
+    if start < len(text) and _is_word_char(text[start]):
+        while start > 0 and _is_word_char(text[start - 1]):
             start -= 1
 
     if entity.pii_type == "PERSON":
@@ -139,7 +142,8 @@ class PiiAnonymizer:
         self._registry = registry
         self._merger = EntityMerger()
         self._denylist = denylist or {}
-        self._enabled_layers = enabled_layers
+        self._tenant_enabled_layers = None if enabled_layers is None else frozenset(enabled_layers)
+        self._enabled_layers = self._tenant_enabled_layers
         self._layer_configs = layer_configs or {}
         if reclassification_rules is not None:
             self._reclassify_rules = _compile_rules(reclassification_rules)
@@ -150,11 +154,12 @@ class PiiAnonymizer:
         self._presidio_context = presidio_context
 
     def restrict_layers(self, layers: list[str] | None) -> None:
-        """Restrict this request to context-selected layers without re-enabling disabled ones."""
+        """Select each item's layers from the tenant baseline, not the previous item."""
         if layers is None:
+            self._enabled_layers = self._tenant_enabled_layers
             return
         selected = set(layers)
-        self._enabled_layers = selected if self._enabled_layers is None else self._enabled_layers & selected
+        self._enabled_layers = selected if self._tenant_enabled_layers is None else self._tenant_enabled_layers & selected
 
     def _run_detectors(self, text: str, language: str) -> list[PiiEntity]:
         """Run all detectors, applying per-tenant regex patterns, presidio context, and layer configs."""

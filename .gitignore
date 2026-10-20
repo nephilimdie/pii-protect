@@ -67,4 +67,5 @@ doc/remaining-gaps.md
 benchmark/results/italian_legal_v0.2.0.json
 benchmark/results/italian_legal_v0.2.0.md
 api/benchmark/results/
+benchmark/results/engine-local.json
 ROADMAP.md

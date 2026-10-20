@@ -1,0 +1,168 @@
+[
+  {
+    "id": "it-email",
+    "language": "it",
+    "text": "Scrivi a contatto@example.org.",
+    "entities": [
+      {
+        "type": "EMAIL",
+        "start": 9,
+        "end": 29
+      }
+    ]
+  },
+  {
+    "id": "it-repeated",
+    "language": "it",
+    "text": "Email: anna@example.org; email: luca@example.net.",
+    "entities": [
+      {
+        "type": "EMAIL",
+        "start": 7,
+        "end": 23
+      },
+      {
+        "type": "EMAIL",
+        "start": 32,
+        "end": 48
+      }
+    ]
+  },
+  {
+    "id": "it-person",
+    "language": "it",
+    "text": "La referente si chiama Chiara Moretti.",
+    "entities": [
+      {
+        "type": "PERSON",
+        "start": 23,
+        "end": 37
+      }
+    ]
+  },
+  {
+    "id": "it-fiscal",
+    "language": "it",
+    "text": "Codice fiscale: RSSMRA80A01H501U.",
+    "entities": [
+      {
+        "type": "FISCAL_CODE",
+        "start": 16,
+        "end": 32
+      }
+    ]
+  },
+  {
+    "id": "it-iban",
+    "language": "it",
+    "text": "IBAN: IT60X0542811101000001234567.",
+    "entities": [
+      {
+        "type": "IBAN",
+        "start": 6,
+        "end": 33
+      }
+    ]
+  },
+  {
+    "id": "it-negative",
+    "language": "it",
+    "text": "Il servizio funziona correttamente. Nessun dato personale.",
+    "entities": []
+  },
+  {
+    "id": "en-email",
+    "language": "en",
+    "text": "Contact support at alex@example.net.",
+    "entities": [
+      {
+        "type": "EMAIL",
+        "start": 19,
+        "end": 35
+      }
+    ]
+  },
+  {
+    "id": "en-person",
+    "language": "en",
+    "text": "The customer is Alice Johnson.",
+    "entities": [
+      {
+        "type": "PERSON",
+        "start": 16,
+        "end": 29
+      }
+    ]
+  },
+  {
+    "id": "en-negative",
+    "language": "en",
+    "text": "The application completed successfully without errors.",
+    "entities": []
+  },
+  {
+    "id": "json",
+    "language": "it",
+    "text": "{\"email\":\"buyer@example.org\",\"status\":\"pending\"}",
+    "entities": [
+      {
+        "type": "EMAIL",
+        "start": 10,
+        "end": 27
+      }
+    ]
+  },
+  {
+    "id": "unicode",
+    "language": "it",
+    "text": "Città: perché contattare élise@example.org?",
+    "entities": [
+      {
+        "type": "EMAIL",
+        "start": 25,
+        "end": 42
+      }
+    ]
+  },
+  {
+    "id": "multiline",
+    "language": "it",
+    "text": "Contatti:\r\nanna@example.org\r\nluca@example.net",
+    "entities": [
+      {
+        "type": "EMAIL",
+        "start": 11,
+        "end": 27
+      },
+      {
+        "type": "EMAIL",
+        "start": 29,
+        "end": 45
+      }
+    ]
+  },
+  {
+    "id": "long-tail",
+    "language": "it",
+    "text": "Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Stato del servizio regolare. Contatto: faraway@example.net",
+    "entities": [
+      {
+        "type": "EMAIL",
+        "start": 17410,
+        "end": 17429
+      }
+    ]
+  },
+  {
+    "id": "long-person",
+    "language": "it",
+    "text": "This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. This is a routine operational status update. The customer is Alice Johnson.",
+    "entities": [
+      {
+        "type": "PERSON",
+        "start": 7216,
+        "end": 7229
+      }
+    ]
+  }
+]

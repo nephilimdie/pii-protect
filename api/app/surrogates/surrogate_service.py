@@ -110,7 +110,7 @@ class SurrogateService:
         conflict = (
             "(project_id, context_id, real_hash) WHERE tenant_id IS NULL"
             if self._tenant_id is None
-            else "(tenant_id, project_id, context_id, real_hash)"
+            else "(tenant_id, project_id, context_id, real_hash) WHERE tenant_id IS NOT NULL"
         )
         await self._db.execute(
             text(
@@ -153,7 +153,7 @@ class SurrogateService:
         conflict = (
             "(project_id, context_id, pii_type, real_hash) WHERE tenant_id IS NULL"
             if self._tenant_id is None
-            else "(tenant_id, project_id, context_id, pii_type, real_hash)"
+            else "(tenant_id, project_id, context_id, pii_type, real_hash) WHERE tenant_id IS NOT NULL"
         )
         expires_at = datetime.utcnow() + timedelta(hours=self._ttl_hours)
         await self._db.execute(
