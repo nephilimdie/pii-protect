@@ -4,13 +4,16 @@
 
 ## Required environment
 
-Set these variables before starting production:
+Set these variables before starting production. `docker-compose.prod.yml` has
+no fallback for the secrets below: `docker compose config`/`up` aborts with
+`required variable ... is missing a value` if any is unset or empty.
 
+- `PII_DB_PASSWORD` (required, no default)
+- `PII_ENCRYPTION_KEY` (required, no default; Fernet key)
+- `PII_ADMIN_INITIAL_KEY` (required, no default)
+- `PII_CORS_ALLOWED_ORIGINS` (required, no default; explicit origins)
 - `PII_DB_NAME`
 - `PII_DB_USER`
-- `PII_DB_PASSWORD`
-- `PII_ENCRYPTION_KEY`
-- `PII_ADMIN_INITIAL_KEY`
 - `PII_FAILURE_MODE=closed`
 - `PII_BATCH_MAX_ITEMS=50`
 

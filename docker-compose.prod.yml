@@ -28,9 +28,9 @@ services:
       - "50051"
     environment:
       APP_ENV: production
-      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
-      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY}
-      ADMIN_INITIAL_KEY: ${PII_ADMIN_INITIAL_KEY}
+      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:?PII_DB_PASSWORD must be set}@postgres:5432/${PII_DB_NAME:-pii_protect}
+      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:?PII_ENCRYPTION_KEY must be set}
+      ADMIN_INITIAL_KEY: ${PII_ADMIN_INITIAL_KEY:?PII_ADMIN_INITIAL_KEY must be set}
       FAILURE_MODE: ${PII_FAILURE_MODE:-closed}
       BATCH_MAX_ITEMS: ${PII_BATCH_MAX_ITEMS:-50}
       MULTITENANCY_ENABLED: ${PII_MULTITENANCY_ENABLED:-false}
@@ -87,8 +87,8 @@ services:
     command: ["python", "-m", "app.jobs.worker"]
     environment:
       APP_ENV: production
-      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:-changeme_secret}@postgres:5432/${PII_DB_NAME:-pii_protect}
-      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY}
+      DATABASE_URL: postgresql+asyncpg://${PII_DB_USER:-pii_protect}:${PII_DB_PASSWORD:?PII_DB_PASSWORD must be set}@postgres:5432/${PII_DB_NAME:-pii_protect}
+      ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:?PII_ENCRYPTION_KEY must be set}
       ASYNC_JOB_WORKER_API_URL: ${ASYNC_JOB_WORKER_API_URL:-http://api:8000}
       ASYNC_JOB_POLL_SECONDS: ${ASYNC_JOB_POLL_SECONDS:-1}
       ASYNC_JOB_MAX_ATTEMPTS: ${ASYNC_JOB_MAX_ATTEMPTS:-3}
@@ -131,7 +131,7 @@ services:
   backup:
     image: postgres:17-alpine
     environment:
-      PGPASSWORD: ${PII_DB_PASSWORD:-changeme_secret}
+      PGPASSWORD: ${PII_DB_PASSWORD:?PII_DB_PASSWORD must be set}
       PII_DB_NAME: ${PII_DB_NAME:-pii_protect}
       PII_DB_USER: ${PII_DB_USER:-pii_protect}
     command: ["/bin/sh", "/scripts/backup.sh"]
@@ -166,7 +166,7 @@ services:
     environment:
       POSTGRES_DB: ${PII_DB_NAME:-pii_protect}
       POSTGRES_USER: ${PII_DB_USER:-pii_protect}
-      POSTGRES_PASSWORD: ${PII_DB_PASSWORD:-changeme_secret}
+      POSTGRES_PASSWORD: ${PII_DB_PASSWORD:?PII_DB_PASSWORD must be set}
     volumes:
       - pii_postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
