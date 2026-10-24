@@ -94,6 +94,13 @@ PATTERNS = [
      r"(?i:\bavviso\s+di\s+(?:accertamento|liquidazione|irregolarit[àa])|\batto\s+di\s+(?:accertamento|contestazione))"
      + _NUM + r"((?=[A-Z0-9/\-]*\d{4})[A-Z0-9][A-Z0-9/\-]{5,24})\b",
      "", 1, "Numero avviso/atto di accertamento o liquidazione"),
+    # Free-form protocol: >= 4 digits, uppercase/digit tokens joined by / - . ; never a bare year,
+    # a grouped/decimal amount, or a label-less number. Lowercase words ("art.", "del") never match.
+    ("TAX_DOCUMENT_ID",
+     r"(?i:\b(?:n\.\s*|numero\s+(?:di\s+)?)?prot(?:ocollo|\.))" + _NUM
+     + r"(?!(?:19|20)\d{2}(?![A-Z0-9]|[./\-][A-Z0-9])|\d{1,3}(?:\.\d{3})+(?![A-Z0-9/\-])|\d+(?:\.\d{3})*,\d)"
+     r"((?=(?:[A-Z./\-]*\d){4})[A-Z0-9]+(?:[./\-][A-Z0-9]+)*)\b",
+     "", 1, "Numero di protocollo dopo etichetta (protocollo / prot. / n. protocollo)"),
     ("POLICY_NUMBER", r"(?i:\bsinistro|\bpolizza)" + _NUM + r"(\d{2,4}/\d{4,12}|\d{6,15})\b", "", 1,
      "Numero sinistro/polizza numerico (anche anno/progressivo)"),
 ]

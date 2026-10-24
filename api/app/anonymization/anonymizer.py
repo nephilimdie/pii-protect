@@ -17,8 +17,12 @@ _PASSWORD_EXTRA = frozenset("!@#$%^&*()+=[]{}|;:<>?/\\~`")
 _PASSWORD_TYPES = frozenset({"SECRET", "PASSWORD"})
 
 
-_HONORIFIC_RE = re.compile(
-    r"(?:Dr\.?|Dott\.?(?:ssa)?|Avv\.?|Ing\.?|Prof\.?|Sig\.?(?:ra)?|Arch\.?|Rag\.?|Geom\.?)\s+$",
+# Leading courtesy/professional titles (optionally after an article). Abbreviations need their dot
+# so names like "Arch" or "Ing" stay intact; titles are context, not identity, and stay in clear.
+_HONORIFIC_PREFIX_RE = re.compile(
+    r"^(?:(?:il|la|lo|gli|le|i)\s+)?(?:(?:(?:sig|dott|dr|prof)\.(?:ssa|r[aei]|na)\.?|avv\.ta\.?"
+    r"|(?:sigg?|dott|dr|avv|ing|geom|rag|prof|arch)\.|notaio|signor[ae]?|dottor(?:essa)?|avvocato"
+    r"|ingegnere|professor(?:e|essa)|architetto|geometra|ragioniere)\s+)+",
     re.IGNORECASE,
 )
 
@@ -84,16 +88,10 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
             start -= 1
 
     if entity.pii_type == "PERSON":
-        # Absorb a preceding honorific (Dr., Avv., etc.)
-        if start > 0:
-            prefix = text[max(0, start - 15):start]
-            m = _HONORIFIC_RE.search(prefix)
-            if m:
-                start = start - (len(prefix) - m.start())
-        # Strip leading kinship/relational term included by ML models
-        m = _KINSHIP_PREFIX_RE.match(text[start:end])
-        if m:
-            start = start + m.end()
+        # Strip leading titles ("sig.ra", "avv.") and kinship terms ML models include in the span
+        for prefix_re in (_KINSHIP_PREFIX_RE, _HONORIFIC_PREFIX_RE):
+            if m := prefix_re.match(text[start:end]):
+                start += m.end()
 
     if start >= end:
         return entity
@@ -111,7 +109,7 @@ def _is_valid_entity(entity: PiiEntity, denylist: dict[str, dict]) -> bool:
     # exact_word: strip honorifics, check single word
     exact = bucket.get("exact", set())
     if exact:
-        clean = _HONORIFIC_RE.sub("", entity.text.strip()).strip()
+        clean = _HONORIFIC_PREFIX_RE.sub("", entity.text.strip()).strip()
         words = clean.lower().split()
         if len(words) == 1 and words[0].rstrip(".,:;") in exact:
             return False

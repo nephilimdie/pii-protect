@@ -176,3 +176,28 @@ def test_date_born_rule_matches_birth_context_only():
     assert rule.search("data di nascita: ")
     assert rule.search("nata il ")
     assert not rule.search("documento emesso il ")
+
+
+@pytest.mark.parametrize(("text", "value"), [
+    ("protocollo n. 2026/AE/000123 del 01/02/2026", "2026/AE/000123"),
+    ("Prot. n. 0012345/2026", "0012345/2026"),
+    ("prot. 4521-B", "4521-B"),
+    ("n. protocollo AGE.DP-MI.123456", "AGE.DP-MI.123456"),
+    ("numero di protocollo: 98765432.", "98765432"),
+    ("Protocollo nr. 2026-000789", "2026-000789"),
+])
+def test_free_form_protocol_numbers_need_a_label(text, value):
+    assert ("TAX_DOCUMENT_ID", value) in _protected(text, "tax_accounting")
+
+
+@pytest.mark.parametrize("text", [
+    "protocollo 2026 del ministero",
+    "prot. n. 2026, art. 2043 c.c.",
+    "protocollo n. 1.234 e prot. 1.234,56",
+    "protocollo d'intesa ai sensi del D.Lgs. 196/2003",
+    "protocollo art. 2043 c.c.",
+    "protocollo COVID-19 e prot. 123",
+    "il numero 2026/AE/000123 senza etichetta",
+])
+def test_free_form_protocol_rejects_years_amounts_and_law_refs(text):
+    assert not {v for t, v in _protected(text, "tax_accounting") if t == "TAX_DOCUMENT_ID"}
