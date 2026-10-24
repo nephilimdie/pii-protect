@@ -72,7 +72,7 @@ class PresidioDetector(DetectorContract):
             cls._supported_languages = langs
             logger.info("Presidio loaded for languages: %s", langs)
         except Exception as exc:
-            logger.warning("Presidio failed to load: %s", exc)
+            logger.error("Presidio failed to load: %s", exc)
 
     @classmethod
     def reload(cls, lang_models: list[dict]) -> None:

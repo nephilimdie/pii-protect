@@ -100,7 +100,7 @@ class Ai4PrivacyDetector(DetectorContract):
             )
             logger.info("Ai4Privacy model loaded: %s", model)
         except Exception as exc:
-            logger.warning("Ai4Privacy model unavailable: %s", exc)
+            logger.error("Ai4Privacy model unavailable: %s", exc)
 
     def detect(self, text: str, language: str = "it", layer_config: dict | None = None) -> list[PiiEntity]:
         cfg = layer_config or {}

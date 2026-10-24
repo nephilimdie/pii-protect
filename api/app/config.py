@@ -93,6 +93,13 @@ class Settings(BaseSettings):
             raise ValueError("PII_DATA_RESIDENCY_REGION is required when residency enforcement is enabled")
         return self
 
+    def layer_enabled(self, name: str) -> bool:
+        """Why: one source of truth for which detector layers startup loads and readiness requires.
+        What: True unless detection_layers[name].enabled is explicitly false (unknown layers default on).
+        Test: Settings(detection_layers={"presidio": {"enabled": False}}).layer_enabled("presidio") is False.
+        """
+        return bool(self.detection_layers.get(name, {}).get("enabled", True))
+
 
 settings = Settings()
 os.environ.setdefault("HF_HOME", settings.model_cache_dir)
