@@ -64,10 +64,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _layer_enabled(name: str) -> bool:
-    return bool(settings.detection_layers.get(name, {}).get("enabled", True))
-
-
 def _detection_layers_raw() -> list[dict]:
     meta = {
         "regex": ("Regex", "Deterministic database and built-in regular-expression detection"),
@@ -80,7 +76,7 @@ def _detection_layers_raw() -> list[dict]:
             "code": code,
             "display_name": label,
             "description": description,
-            "enabled": _layer_enabled(code),
+            "enabled": settings.layer_enabled(code),
         }
         for code, (label, description) in meta.items()
     ]
@@ -197,20 +193,20 @@ async def lifespan(app: FastAPI):
     ]
     if not lang_models:
         lang_models = [{"lang_code": "it", "model_name": settings.spacy_model}]
-    if _layer_enabled("presidio"):
+    if settings.layer_enabled("presidio"):
         logger.info("Preloading Presidio detector")
         PresidioDetector.preload(lang_models)
     else:
         logger.info("Skipping Presidio detector preload because layer is disabled")
     app.state.installed_languages = [m["lang_code"] for m in lang_models]
 
-    if _layer_enabled("privacy_filter"):
+    if settings.layer_enabled("privacy_filter"):
         logger.info("Preloading PrivacyFilter detector")
         PrivacyFilterDetector.preload(settings.privacy_filter_model, settings.privacy_filter_revision)
     else:
         logger.info("Skipping PrivacyFilter detector preload because layer is disabled")
 
-    if _layer_enabled("ai4privacy"):
+    if settings.layer_enabled("ai4privacy"):
         logger.info("Preloading Ai4Privacy detector")
         Ai4PrivacyDetector.preload(settings.ai4privacy_model, settings.ai4privacy_revision)
     else:

@@ -171,7 +171,7 @@ class PrivacyFilterDetector(DetectorContract):
             cls._tokenizer = Tokenizer.from_file(tok_path)
             logger.info("PrivacyFilter model loaded via ONNX: %s", model)
         except Exception as exc:
-            logger.warning("PrivacyFilter model unavailable: %s", exc)
+            logger.error("PrivacyFilter model unavailable: %s", exc)
 
     def detect(self, text: str, language: str = "it", layer_config: dict | None = None) -> list[PiiEntity]:
         cfg = layer_config or {}
