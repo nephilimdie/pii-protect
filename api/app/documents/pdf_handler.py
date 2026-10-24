@@ -117,6 +117,10 @@ class PdfDocument:
         return buffer.getvalue()
 
     def _render_page(self, page, edits: list[SegmentEdit], output) -> None:
+        # Render in the unrotated (/MediaBox) frame and re-apply /Rotate on the new page,
+        # so both the displayed orientation and the page's rotation attribute survive.
+        rotation = page.get_rotation()
+        undo = (360 - rotation) % 360
         width_pt, height_pt = page.get_size()
         scale = self._limits.pdf_dpi / 72
         pixels = width_pt * height_pt * scale * scale
@@ -124,33 +128,34 @@ class PdfDocument:
             scale *= (self._limits.max_pixels / pixels) ** 0.5
         # Annotations and form widgets are not part of the text layer, so they are
         # never drawn: anything we cannot inspect must not reach the output.
-        bitmap = page.render(scale=scale, may_draw_forms=False, draw_annots=False)
+        bitmap = page.render(scale=scale, rotation=undo, may_draw_forms=False, draw_annots=False)
         image = bitmap.to_pil().convert("RGB")
         draw = ImageDraw.Draw(image)
-        for box in self._boxes(page, edits, image.width, image.height):
+        for box in self._boxes(page, edits, image.width, image.height, undo // 90):
             draw.rectangle(box, fill="black")
         jpeg = io.BytesIO()
         image.save(jpeg, format="JPEG", quality=_JPEG_QUALITY)
         jpeg.seek(0)
-        # The bitmap is the unrotated page; re-apply /Rotate so viewers show it as before.
-        new_page = output.new_page(image.width / scale, image.height / scale)
-        new_page.set_rotation(page.get_rotation())
+        # Exact source page size (not the rounded bitmap size), in the unrotated frame.
+        frame = (height_pt, width_pt) if rotation % 180 else (width_pt, height_pt)
+        new_page = output.new_page(*frame)
+        new_page.set_rotation(rotation)
         picture = pdfium.PdfImage.new(output)
         picture.load_jpeg(jpeg, inline=True)
-        picture.set_matrix(pdfium.PdfMatrix().scale(image.width / scale, image.height / scale))
+        picture.set_matrix(pdfium.PdfMatrix().scale(*frame))
         new_page.insert_obj(picture)
         new_page.gen_content()
         new_page.close()
 
     @staticmethod
-    def _boxes(page, edits: list[SegmentEdit], width: int, height: int) -> list[tuple[int, int, int, int]]:
+    def _boxes(page, edits: list[SegmentEdit], width: int, height: int, rotate: int) -> list[tuple[int, int, int, int]]:
         if not edits:
             return []
         textpage = page.get_textpage()
         x, y = ctypes.c_int(), ctypes.c_int()
 
         def to_device(px: float, py: float) -> tuple[int, int]:
-            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, width, height, 0, px, py, ctypes.byref(x), ctypes.byref(y))
+            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, width, height, rotate, px, py, ctypes.byref(x), ctypes.byref(y))
             return x.value, y.value
 
         rects = []

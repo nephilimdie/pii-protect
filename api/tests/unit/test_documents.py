@@ -28,7 +28,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
-from PIL import Image, ImageStat
+from PIL import Image, ImageChops, ImageFilter, ImageStat
 
 import app.documents.docx_handler  # noqa: F401  (pre-import: no lazy import during file-watch tests)
 import app.documents.pdf_handler  # noqa: F401
@@ -192,16 +192,17 @@ def make_docx() -> bytes:
 PDF_DPI = 200
 PDF_FONT = ("Helvetica", 14)
 PDF_LABEL = "Dipendente: "
-PDF_XY = (72, 700)
+PDF_XY = (72, 500)  # inside the page box for every rotation
 
 
-def make_pdf(pages: int = 1) -> bytes:
+def make_pdf(pages: int = 1, rotation: int = 0) -> bytes:
     out = io.BytesIO()
     pdf = canvas.Canvas(out, pagesize=A4)
     for _ in range(pages):
+        pdf.setPageRotation(rotation)
         pdf.setFont(*PDF_FONT)
         pdf.drawString(*PDF_XY, f"{PDF_LABEL}{PERSON}")
-        pdf.drawString(72, 650, "Mansione: impiegato amministrativo")
+        pdf.drawString(72, 450, "Mansione: impiegato amministrativo")
         pdf.showPage()
     pdf.save()
     return out.getvalue()
@@ -346,6 +347,44 @@ def test_pdf_redact_rasterizes_and_boxes_entity(env):
     label_box = image.crop((int(PDF_XY[0] * scale), y_px - 10, int((PDF_XY[0] + label_w - 8) * scale), y_px + 10))
     assert ImageStat.Stat(label_box).mean[0] > 120  # label not blacked out
     assert r.headers["x-pii-entity-count"] == "2"
+
+
+def _displayed(payload: bytes):
+    pdf = pdfium.PdfDocument(payload)
+    try:
+        page = pdf[0]
+        return page.get_rotation(), page.get_size(), page.render(scale=PDF_DPI / 72).to_pil().convert("L")
+    finally:
+        pdf.close()
+
+
+def _dark(image) -> int:
+    return sum(image.point(lambda v: 255 if v < 128 else 0).histogram()[255:])
+
+
+@pytest.mark.parametrize("rotation", [90, 180, 270])
+def test_pdf_redact_preserves_rotation_size_and_box_position(env, rotation):
+    source = make_pdf(rotation=rotation)
+    r = _post(env, "redact", source)
+    assert r.status_code == 200, r.text
+    src_rot, src_size, before = _displayed(source)
+    out_rot, out_size, after = _displayed(r.content)
+    assert out_rot == src_rot == rotation
+    assert out_size == pytest.approx(src_size, abs=0.01)
+    common = (0, 0, min(before.width, after.width), min(before.height, after.height))
+    assert abs(after.width - before.width) <= 1 and abs(after.height - before.height) <= 1
+    before, after = before.crop(common), after.crop(common)
+    # Only the name changed, it is now a solid box, and every other glyph is still visible.
+    # Pixels that turned from paper to ink; erosion drops isolated anti-aliasing/JPEG noise.
+    changed = ImageChops.multiply(before.point(lambda v: 255 if v > 128 else 0),
+                                  after.point(lambda v: 255 if v < 128 else 0)).filter(ImageFilter.MinFilter(5)).getbbox()
+    assert changed is not None
+    assert ImageStat.Stat(after.crop(changed)).mean[0] < 40
+    outside = Image.new("L", before.size, 255)
+    outside.paste(0, (changed[0] - 4, changed[1] - 4, changed[2] + 4, changed[3] + 4))  # undo erosion
+    keep_before = ImageChops.lighter(before, ImageChops.invert(outside))
+    keep_after = ImageChops.lighter(after, ImageChops.invert(outside))
+    assert _dark(keep_after) == pytest.approx(_dark(keep_before), rel=0.1) and _dark(keep_before) > 500
 
 
 def test_pdf_preview_reports_pages(env):
