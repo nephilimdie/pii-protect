@@ -63,7 +63,88 @@ components:
       schema: {type: string, default: it}
       description: Language hint for OCR text detection.
 
+  requestBodies:
+    DocumentUpload:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file:
+                type: string
+                format: binary
+                description: |
+                  PDF, DOCX or plain text (UTF-8, UTF-16 with BOM, or cp1252). The type is
+                  detected from the content, not the filename. Max `PII_DOCUMENT_UPLOAD_MAX_BYTES`
+                  (default 20 MB); PDF max `PII_DOCUMENT_UPLOAD_MAX_PAGES` (default 200).
+              domain:
+                type: string
+                description: Domain policy preset (e.g. hr_payroll, tax_accounting, real_estate_insurance, generic_professional).
+              context_type:
+                type: string
+                description: Context type, used when `domain` is absent (default `generic`).
+              language:
+                type: string
+                description: Detection language (default the engine default, usually `it`).
+              entities:
+                type: string
+                description: |
+                  redact/pseudonymize only. JSON array `[{"start": 10, "end": 21, "type": "PERSON"}]`
+                  with offsets into `text` returned by `/v1/documents/preview` (typically the
+                  preview entities after the user removed/added some). When present, detection
+                  is skipped and exactly these spans are processed. Spans must lie inside the
+                  text and must not overlap; `type` matches `^[A-Z][A-Z0-9_]*$`. Ignored by preview.
+
+  responses:
+    DocumentError:
+      description: |
+        Document request rejected; no document is returned. Codes: 400 INVALID_MULTIPART;
+        413 DOCUMENT_TOO_LARGE, DOCUMENT_PAGE_LIMIT_EXCEEDED, DOCUMENT_TEXT_TOO_LONG;
+        415 MULTIPART_REQUIRED, UNSUPPORTED_DOCUMENT_TYPE; 422 FILE_REQUIRED, EMPTY_DOCUMENT,
+        INVALID_DOCUMENT, LEGACY_OR_ENCRYPTED_OFFICE_FILE, PDF_NO_TEXT_LAYER,
+        PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF, INVALID_ENTITIES, PII_BLOCKED;
+        503 PII_PROCESSING_FAILED; 504 DOCUMENT_PROCESSING_TIMEOUT (`PII_DOCUMENT_TIMEOUT_SECONDS`, default 60).
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error: {type: string, example: PDF_NO_TEXT_LAYER}
+              message: {type: string, example: "This PDF has pages without a text layer (scanned image). OCR is not supported yet."}
+              safe: {type: boolean, example: false}
+
+  headers:
+    DocumentFormat:
+      description: Detected format (pdf, docx, txt)
+      schema: {type: string}
+    EntityCount:
+      description: Number of redacted/pseudonymized entities
+      schema: {type: integer}
+    EntityTypes:
+      description: Comma-separated entity types processed
+      schema: {type: string}
+    DocumentWarnings:
+      description: Comma-separated warnings (e.g. pdf_images_not_inspected, embedded_images_or_objects_not_inspected)
+      schema: {type: string}
+    DocumentSanitized:
+      description: Comma-separated list of structures removed from the output (e.g. core_properties, comments, tracked_changes, text_layer)
+      schema: {type: string}
+
   schemas:
+    DocumentWarnings:
+      type: array
+      items: {type: string}
+      description: |
+        Parts that were not inspected. `pdf_images_not_inspected`: images on text pages are
+        kept as-is; `pdf_annotations_and_form_fields_removed`: annotations/form fields are
+        dropped from the output; `embedded_images_or_objects_not_inspected` (DOCX).
+    DocumentSanitized:
+      type: array
+      items: {type: string}
+      description: Structures removed from the output regardless of detection.
     AnonymizeRequest:
       type: object
       required: [text, context_id, context_type]
@@ -1211,6 +1292,157 @@ paths:
         "413": {description: PDF exceeds the configured byte limit}
         "415": {description: Unsupported document type}
         "503": {description: PDF plugin is unavailable; request failed closed}
+
+  /v1/documents/preview:
+    post:
+      summary: Detect entities in a document (no document returned)
+      description: |
+        Extracts the text of a PDF, DOCX or plain-text file **in memory** and runs
+        the same policy + detection pipeline as `/v1/anonymize`. Returns the
+        extracted text and the entities, so a UI can let the user add or remove
+        entities before calling `redact` or `pseudonymize` with `entities`.
+
+        **Zero retention:** the file is never written to disk or the database;
+        content, filenames and mappings are never logged. Only metadata (size,
+        format, entity counts, duration) is recorded in usage/audit tables.
+
+        **Fail-closed:** any detection or processing error returns an error and
+        no document, regardless of `PII_FAILURE_MODE`.
+
+        Offsets (`start`/`end`) index `text`, the document text as extracted by the
+        engine (PDF: one segment per page; DOCX: one per paragraph/field code, in
+        body, tables, text boxes, headers, footers, footnotes and endnotes order;
+        segments are joined with a blank line `\n\n`). Extraction is
+        deterministic, so offsets are valid for the same file in later calls.
+      operationId: previewDocument
+      tags: [Documents]
+      requestBody: {$ref: "#/components/requestBodies/DocumentUpload"}
+      responses:
+        "200":
+          description: Extracted text and detected entities
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [format, pages, text, entity_count, pii_types_found, entities, policy, warnings, sanitized]
+                properties:
+                  format: {type: string, enum: [pdf, docx, txt]}
+                  pages: {type: [integer, "null"], description: PDF page count; null for DOCX/TXT}
+                  text: {type: string, description: Extracted document text that entity offsets refer to}
+                  entity_count: {type: integer}
+                  pii_types_found: {type: array, items: {type: string}}
+                  entities:
+                    type: array
+                    items:
+                      type: object
+                      required: [start, end, type, text, confidence, page]
+                      properties:
+                        start: {type: integer}
+                        end: {type: integer}
+                        type: {type: string, example: PERSON}
+                        text: {type: string, example: Mario Rossi}
+                        confidence: {type: number}
+                        page: {type: [integer, "null"], description: 1-based PDF page; null for DOCX/TXT}
+                  policy: {$ref: "#/components/schemas/PolicyMetadata"}
+                  warnings: {$ref: "#/components/schemas/DocumentWarnings"}
+                  sanitized: {$ref: "#/components/schemas/DocumentSanitized"}
+        "400": {$ref: "#/components/responses/DocumentError"}
+        "401": {description: Missing or invalid API key}
+        "413": {$ref: "#/components/responses/DocumentError"}
+        "415": {$ref: "#/components/responses/DocumentError"}
+        "422": {$ref: "#/components/responses/DocumentError"}
+        "429": {description: API key rate/size limit exceeded}
+        "503": {$ref: "#/components/responses/DocumentError"}
+        "504": {$ref: "#/components/responses/DocumentError"}
+
+  /v1/documents/redact:
+    post:
+      summary: Irreversibly redact a PDF, DOCX or TXT document
+      description: |
+        Returns the redacted file itself (`Content-Disposition: attachment;
+        filename="redacted.<pdf|docx|txt>"`).
+
+        - **PDF**: each page is rendered at `PII_DOCUMENT_PDF_DPI` (default 200),
+          black boxes are painted over the detected text and the PDF is rebuilt
+          from the page images. No text layer, metadata, annotations, form fields
+          or attachments survive; the output text is **not selectable** (accepted
+          MVP trade-off — higher DPI = sharper output, larger file). Page
+          rotation is preserved. Pages without a text layer (scans) are rejected
+          with `422 PDF_NO_TEXT_LAYER` — OCR is not supported yet. Images inside
+          text pages are not inspected (`X-Pii-Warnings: pdf_images_not_inspected`).
+        - **DOCX**: each entity is replaced in place by `█████` keeping the
+          paragraph/run formatting; document metadata, comments, tracked
+          changes, external link targets, image alt text and thumbnails are
+          removed (`X-Pii-Sanitized`).
+        - **TXT**: entities replaced by `█████`; output is UTF-8.
+
+        With `entities` (from `/preview`, edited by the user) detection is
+        skipped and exactly those spans are redacted.
+      operationId: redactDocument
+      tags: [Documents]
+      requestBody: {$ref: "#/components/requestBodies/DocumentUpload"}
+      responses:
+        "200":
+          description: Redacted document
+          headers:
+            X-Pii-Document-Format: {$ref: "#/components/headers/DocumentFormat"}
+            X-Pii-Entity-Count: {$ref: "#/components/headers/EntityCount"}
+            X-Pii-Types: {$ref: "#/components/headers/EntityTypes"}
+            X-Pii-Warnings: {$ref: "#/components/headers/DocumentWarnings"}
+            X-Pii-Sanitized: {$ref: "#/components/headers/DocumentSanitized"}
+          content:
+            application/pdf: {schema: {type: string, format: binary}}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document: {schema: {type: string, format: binary}}
+            text/plain: {schema: {type: string}}
+        "400": {$ref: "#/components/responses/DocumentError"}
+        "401": {description: Missing or invalid API key}
+        "413": {$ref: "#/components/responses/DocumentError"}
+        "415": {$ref: "#/components/responses/DocumentError"}
+        "422": {$ref: "#/components/responses/DocumentError"}
+        "429": {description: API key rate/size limit exceeded}
+        "503": {$ref: "#/components/responses/DocumentError"}
+        "504": {$ref: "#/components/responses/DocumentError"}
+
+  /v1/documents/pseudonymize:
+    post:
+      summary: Pseudonymize a DOCX or TXT document (mapping returned, never stored)
+      description: |
+        Replaces entities with stable tags exactly like `/v1/anonymize` tag mode
+        (`[PERSON_1]`, the same value always gets the same tag). Policy
+        `remove_types` are deleted. Surrogate (fake-value) mode is not used for
+        documents because it would persist values server-side.
+
+        Returns `application/zip` (`pseudonymized.zip`) containing:
+        - `pseudonymized.docx` or `pseudonymized.txt`
+        - `mapping.json`:
+          `{"format_version": 1, "document": "pseudonymized.docx",
+            "entities": [{"token": "[PERSON_1]", "type": "PERSON", "original": "Mario Rossi"}]}`
+
+        The mapping exists only in this response: the server keeps no copy, so
+        `/v1/deanonymize` cannot reverse it. PDF is not supported in this
+        version (`422 PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF`).
+      operationId: pseudonymizeDocument
+      tags: [Documents]
+      requestBody: {$ref: "#/components/requestBodies/DocumentUpload"}
+      responses:
+        "200":
+          description: ZIP with the pseudonymized document and mapping.json
+          headers:
+            X-Pii-Document-Format: {$ref: "#/components/headers/DocumentFormat"}
+            X-Pii-Entity-Count: {$ref: "#/components/headers/EntityCount"}
+            X-Pii-Types: {$ref: "#/components/headers/EntityTypes"}
+            X-Pii-Warnings: {$ref: "#/components/headers/DocumentWarnings"}
+            X-Pii-Sanitized: {$ref: "#/components/headers/DocumentSanitized"}
+          content:
+            application/zip: {schema: {type: string, format: binary}}
+        "400": {$ref: "#/components/responses/DocumentError"}
+        "401": {description: Missing or invalid API key}
+        "413": {$ref: "#/components/responses/DocumentError"}
+        "415": {$ref: "#/components/responses/DocumentError"}
+        "422": {$ref: "#/components/responses/DocumentError"}
+        "429": {description: API key rate/size limit exceeded}
+        "503": {$ref: "#/components/responses/DocumentError"}
+        "504": {$ref: "#/components/responses/DocumentError"}
 
   /v1/anonymize/batch:
     post:
@@ -2488,6 +2720,8 @@ paths:
 tags:
   - name: Pseudonymization
     description: Core anonymize / deanonymize operations
+  - name: Documents
+    description: Zero-retention document redaction and pseudonymization (PDF, DOCX, TXT), processed in memory
   - name: Admin
     description: Statistics, audit log, data cleanup, and configuration (reclassification rules, PII types, domain policies, context types)
   - name: Auth

@@ -6,6 +6,9 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- Zero-retention document service: `POST /v1/documents/preview`, `/redact`, `/pseudonymize` for PDF (redact only, rasterized black boxes, no text layer), DOCX (in-place, metadata/comments/tracked changes stripped) and TXT. In-memory only, always fail-closed, mapping returned to the client in a ZIP and never stored. Limits via `PII_DOCUMENT_UPLOAD_MAX_BYTES`, `PII_DOCUMENT_UPLOAD_MAX_PAGES`, `PII_DOCUMENT_TIMEOUT_SECONDS`, `PII_DOCUMENT_PDF_DPI`.
+
 ### Changed
 - Batch multiline Privacy Filter inference to reduce ONNX overhead while preserving entity offsets and single-line fallback compatibility.
 

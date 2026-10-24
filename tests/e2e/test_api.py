@@ -711,3 +711,68 @@ class TestBlock:
             json={"text": "test", "context_id": "x", "context_type": "default", "policy": {"block": ["EMAIL"]}},
         )
         assert r.status_code == 401
+
+
+class TestDocuments:
+    """Zero-retention document service against the real detection stack."""
+
+    TXT = "Il codice fiscale del dipendente è RSSMRA80A01H501U.\nScrivere a mario.rossi@example.com\nFine."
+
+    def _post(self, client, headers, op, payload, **data):
+        return client.post(
+            f"/v1/documents/{op}", headers=headers, timeout=120,
+            files={"file": ("documento", payload)}, data={"domain": "hr_payroll", **data},
+        )
+
+    def test_preview_returns_entities_and_offsets(self, client: httpx.Client, service_headers: dict):
+        r = self._post(client, service_headers, "preview", self.TXT.encode())
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["format"] == "txt" and body["text"] == self.TXT
+        assert {"FISCAL_CODE", "EMAIL"} <= set(body["pii_types_found"])
+        for entity in body["entities"]:
+            assert body["text"][entity["start"]:entity["end"]] == entity["text"]
+
+    def test_txt_redact(self, client: httpx.Client, service_headers: dict):
+        r = self._post(client, service_headers, "redact", self.TXT.encode())
+        assert r.status_code == 200, r.text
+        out = r.content.decode()
+        assert "RSSMRA80A01H501U" not in out and "mario.rossi@example.com" not in out
+        assert out.startswith("Il codice fiscale") and out.endswith("Fine.")
+        assert r.headers["cache-control"] == "no-store"
+
+    def test_txt_pseudonymize_zip_mapping(self, client: httpx.Client, service_headers: dict):
+        import io
+        import json
+        import zipfile
+
+        r = self._post(client, service_headers, "pseudonymize", self.TXT.encode())
+        assert r.status_code == 200, r.text
+        with zipfile.ZipFile(io.BytesIO(r.content)) as archive:
+            text = archive.read("pseudonymized.txt").decode()
+            mapping = json.loads(archive.read("mapping.json"))
+        assert "[FISCAL_CODE_1]" in text and "RSSMRA80A01H501U" not in text
+        assert {"token": "[FISCAL_CODE_1]", "type": "FISCAL_CODE", "original": "RSSMRA80A01H501U"} in mapping["entities"]
+
+    def test_pdf_redact_returns_image_only_pdf(self, client: httpx.Client, service_headers: dict):
+        import io
+
+        canvas = pytest.importorskip("reportlab.pdfgen.canvas")
+        buffer = io.BytesIO()
+        pdf = canvas.Canvas(buffer)
+        pdf.drawString(72, 700, "Codice fiscale RSSMRA80A01H501U")
+        pdf.save()
+        r = self._post(client, service_headers, "redact", buffer.getvalue())
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
+        assert int(r.headers["x-pii-entity-count"]) >= 1
+        assert b"RSSMRA80A01H501U" not in r.content
+
+    def test_pdf_pseudonymize_not_supported(self, client: httpx.Client, service_headers: dict):
+        r = self._post(client, service_headers, "pseudonymize", b"%PDF-1.4 not really")
+        assert r.status_code in (422,)
+        assert "error" in r.json()
+
+    def test_requires_api_key(self, client: httpx.Client):
+        r = client.post("/v1/documents/redact", files={"file": ("x.txt", b"ciao")})
+        assert r.status_code == 401
