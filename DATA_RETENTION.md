@@ -9,6 +9,15 @@ This document describes the intended retention posture for `pii-protect` deploym
 - Usage events should remain payload-free and should be retained for reporting and limits according to your policy.
 - Policy metadata can be retained longer because it does not contain raw user text.
 
+## Document service (`/v1/documents/*`)
+
+Document requests are zero-retention by design: uploads are parsed in memory
+(never spooled to temporary files), no document content, filename, content hash
+or pseudonymization mapping is written to the database or to logs, and the
+pseudonymization mapping exists only in the response returned to the caller.
+Only metadata is recorded (usage event and audit entry: sizes, entity counts
+and types, policy id, duration).
+
 ## Recommended retention guidance
 
 - Mappings: short TTL, aligned to the reverse-anonymization window.

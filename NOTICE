@@ -2,3 +2,21 @@ Pseudora Core
 Copyright 2026 Stefano Bassetto
 
 Pseudora Core is distributed under the Apache License, Version 2.0.
+
+Third-party components
+----------------------
+The document service (/v1/documents/*) depends on the following packages.
+They are installed as dependencies, not vendored into this repository; the
+Docker image redistributes them under their own licenses:
+
+- pypdfium2 (Apache-2.0 OR BSD-3-Clause), bundling PDFium binaries
+  (BSD-3-Clause / Apache-2.0) with permissively licensed third-party code:
+  Abseil, fast_float, llvm-libc (Apache-2.0); AGG 2.3, FreeType (FTL),
+  ICU (Unicode-3.0), Little CMS, libjpeg-turbo (IJG/BSD), libpng, OpenJPEG,
+  simdutf, zlib. The full texts ship in the wheel's dist-info/licenses.
+- Pillow (MIT-CMU / HPND)
+- python-docx (MIT) and lxml (BSD-3-Clause)
+- python-multipart (Apache-2.0)
+- reportlab (BSD-3-Clause), test/development dependency only
+
+No GPL/AGPL component (e.g. PyMuPDF) is used by the core.

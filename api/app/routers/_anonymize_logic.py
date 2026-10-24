@@ -63,6 +63,50 @@ async def run_detection(
     return result.entities
 
 
+async def detect_protected_entities(
+    anonymizer: PiiAnonymizer,
+    policy: dict,
+    text: str,
+    context_id: str,
+    context_type: str,
+    language: str,
+) -> list:
+    """Why: text and document endpoints must share one detection + policy path (same fail-closed semantics).
+    What: restricts layers per policy, detects, rejects blocked types (422 PII_BLOCKED), returns entities to protect.
+    Test: policy with block_types={"EMAIL"} and an EMAIL entity raises 422; keep_types filters entities out.
+    """
+    anonymizer.restrict_layers(policy.get("detection_layers"))
+    entities = await run_detection(
+        anonymizer=anonymizer,
+        text=text,
+        context_id=context_id,
+        context_type=context_type,
+        language=language,
+    )
+    # Block check runs on ALL detected entities (before policy filtering)
+    block_types = policy["block_types"]
+    if block_types:
+        blocked = [e.pii_type for e in entities if e.pii_type in block_types]
+        if blocked:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "PII_BLOCKED",
+                    "message": "Request rejected: blocked PII type(s) detected.",
+                    "blocked_types": list(set(blocked)),
+                },
+            )
+    return filter_detected_entities(
+        entities=entities,
+        keep_types=policy["keep_types"],
+        protect_types=policy["protect_types"],
+        always_include_types=policy["surrogate_types"],
+        remove_types=policy["remove_types"],
+        confidence_thresholds=policy["confidence_thresholds"],
+        allowlist=policy["allowlist"],
+    )
+
+
 async def get_anonymizer(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -156,14 +200,8 @@ async def _process_anonymization(
             inline_mode=body.mode,
             domain=body.domain,
         )
-        anonymizer.restrict_layers(policy.get("detection_layers"))
-        protect_types = policy["protect_types"]
-        keep_types = policy["keep_types"]
         surrogate_types = policy["surrogate_types"]
         remove_types = policy["remove_types"]
-        block_types = policy["block_types"]
-        confidence_thresholds = policy["confidence_thresholds"]
-        allowlist = policy["allowlist"]
         resolved_mode = policy["mode"]
 
         if body.include_entity_values and api_key.role != "admin":
@@ -174,35 +212,8 @@ async def _process_anonymization(
         # then "generic".
         effective_context = body.context_type or body.domain or "generic"
 
-        entities = await run_detection(
-            anonymizer=anonymizer,
-            text=body.text,
-            context_id=body.context_id,
-            context_type=effective_context,
-            language=lang,
-        )
-
-        # Block check runs on ALL detected entities (before policy filtering)
-        if block_types:
-            blocked = [e.pii_type for e in entities if e.pii_type in block_types]
-            if blocked:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error": "PII_BLOCKED",
-                        "message": "Request rejected: blocked PII type(s) detected.",
-                        "blocked_types": list(set(blocked)),
-                    },
-                )
-
-        entities_to_protect = filter_detected_entities(
-            entities=entities,
-            keep_types=keep_types,
-            protect_types=protect_types,
-            always_include_types=surrogate_types,
-            remove_types=remove_types,
-            confidence_thresholds=confidence_thresholds,
-            allowlist=allowlist,
+        entities_to_protect = await detect_protected_entities(
+            anonymizer, policy, body.text, body.context_id, effective_context, lang
         )
 
         from app.settings_repository import SettingsRepository

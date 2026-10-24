@@ -22,6 +22,7 @@ from starlette.datastructures import MutableHeaders
 from app.routers import anonymize, deanonymize, detect as detect_router, health
 from app.routers import image as image_router
 from app.routers import document as document_router
+from app.routers import documents as documents_router
 from app.routers import mask as mask_router
 from app.routers import identity as identity_router
 from app.routers import reporting as reporting_router
@@ -358,7 +359,8 @@ app.add_middleware(
     allow_credentials=bool(_allowed_origins),
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Request-Id"],
+    expose_headers=["X-Request-Id", "Content-Disposition", "X-Pii-Document-Format", "X-Pii-Entity-Count",
+                    "X-Pii-Types", "X-Pii-Warnings", "X-Pii-Sanitized"],
 )
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
@@ -408,6 +410,7 @@ app.include_router(scoped_config_router.router, prefix="/v1/admin")
 app.include_router(plugins_router.router, prefix="/v1/admin")
 app.include_router(image_router.router, prefix="/v1")
 app.include_router(document_router.router, prefix="/v1")
+app.include_router(documents_router.router, prefix="/v1")
 app.include_router(retention_router.router, prefix="/v1/admin")
 app.include_router(layer_settings_router.router, prefix="/v1/admin")
 app.include_router(effective_config_router.router, prefix="/v1/admin")

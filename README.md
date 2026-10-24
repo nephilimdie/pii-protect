@@ -43,6 +43,7 @@ Detects and pseudonymizes PII through a 4-layer detection pipeline (Presidio + s
 | **DB-configurable regex** | Patterns hot-reloaded from DB on every change. No restart needed. |
 | **Denylist** | Exclude recurring false positives (exact or substring match). |
 | **Mask mode** | Irreversible redaction via `POST /v1/mask`. Fill style (length-preserving `████`) or label style (`[PERSON]`). No mappings stored. |
+| **Document redaction** | Zero-retention `POST /v1/documents/{preview,redact,pseudonymize}` for PDF, DOCX and TXT, processed entirely in memory. PDF: black boxes on a rasterized copy with no text layer left (scans without a text layer are rejected; no OCR yet). DOCX: in-place replacement keeping formatting, metadata/comments/tracked changes stripped. Pseudonymize returns a ZIP with `mapping.json` that the server never stores. Always fail-closed. |
 | **Batch anonymization** | Process multiple items in one request via `/v1/anonymize/batch` with configurable max items. |
 | **Audit log** | Every API call logged: action, entity count, context type, API key used. |
 | **API key management** | Roles: `admin`, `service`, `auditor`. Keys support expiry and request/character limits. |

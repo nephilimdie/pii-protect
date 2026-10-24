@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     image_max_pixels: int = Field(default=25_000_000, ge=1_000_000, le=200_000_000, validation_alias=AliasChoices("IMAGE_MAX_PIXELS", "PII_IMAGE_MAX_PIXELS"))
     document_max_bytes: int = Field(default=4_000_000, ge=1_024, le=100_000_000, validation_alias=AliasChoices("DOCUMENT_MAX_BYTES", "PII_DOCUMENT_MAX_BYTES"))
     document_max_pages: int = Field(default=10, ge=1, le=100, validation_alias=AliasChoices("DOCUMENT_MAX_PAGES", "PII_DOCUMENT_MAX_PAGES"))
+    # Zero-retention document service (/v1/documents/*).
+    document_upload_max_bytes: int = Field(default=20_000_000, ge=1_024, le=200_000_000, validation_alias=AliasChoices("DOCUMENT_UPLOAD_MAX_BYTES", "PII_DOCUMENT_UPLOAD_MAX_BYTES"))
+    document_upload_max_pages: int = Field(default=200, ge=1, le=2_000, validation_alias=AliasChoices("DOCUMENT_UPLOAD_MAX_PAGES", "PII_DOCUMENT_UPLOAD_MAX_PAGES"))
+    document_timeout_seconds: float = Field(default=60.0, ge=1.0, le=600.0, validation_alias=AliasChoices("DOCUMENT_TIMEOUT_SECONDS", "PII_DOCUMENT_TIMEOUT_SECONDS"))
+    document_pdf_dpi: int = Field(default=200, ge=72, le=400, validation_alias=AliasChoices("DOCUMENT_PDF_DPI", "PII_DOCUMENT_PDF_DPI"))
     grpc_enabled: bool = Field(default=False, validation_alias=AliasChoices("GRPC_ENABLED", "PII_GRPC_ENABLED"))
     grpc_host: str = Field(default="127.0.0.1", validation_alias=AliasChoices("GRPC_HOST", "PII_GRPC_HOST"))
     grpc_port: int = Field(default=50051, ge=1, le=65535, validation_alias=AliasChoices("GRPC_PORT", "PII_GRPC_PORT"))
