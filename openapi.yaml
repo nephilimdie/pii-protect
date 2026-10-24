@@ -1366,8 +1366,8 @@ paths:
           black boxes are painted over the detected text and the PDF is rebuilt
           from the page images. No text layer, metadata, annotations, form fields
           or attachments survive; the output text is **not selectable** (accepted
-          MVP trade-off — higher DPI = sharper output, larger file). Page
-          rotation is preserved. Pages without a text layer (scans) are rejected
+          MVP trade-off — higher DPI = sharper output, larger file). Page size
+          and rotation (`/Rotate`) are preserved. Pages without a text layer (scans) are rejected
           with `422 PDF_NO_TEXT_LAYER` — OCR is not supported yet. Images inside
           text pages are not inspected (`X-Pii-Warnings: pdf_images_not_inspected`).
         - **DOCX**: each entity is replaced in place by `█████` keeping the
