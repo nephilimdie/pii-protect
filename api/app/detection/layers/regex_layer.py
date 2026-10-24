@@ -1,4 +1,7 @@
 import re
+from typing import Callable
+
+from app.detection.checksums import VALIDATORS
 from app.detection.contracts.detector_contract import DetectorContract
 from app.detection.entities import PiiEntity
 from app.detection.models import RegexPattern
@@ -22,16 +25,26 @@ _ADDRESS = re.compile(
 )
 _PERSON_CONTEXT = re.compile(
     r"(?:\b(?:sig(?:nora)?|sig\.ra|mr|ms|referente|paziente|cliente|utente|"
-    r"nome|nato|nata|intestat\w*)\b|\bintestat\w*\s+a)\s*[:]?\s*$",
+    r"nome|nato|nata|intestat\w*|dott(?:\.ssa|essa)?|avv|rag|geom|"
+    r"dipendente|lavorat(?:ore|rice)|contribuente|assicurat[oa]|contraente|"
+    r"locat(?:ore|rice)|conduttore|conduttrice|proprietari[oa]|acquirente|venditore|"
+    r"beneficiari[oa]|danneggiat[oa]|legale\s+rappresentante)\b|\bintestat\w*\s+a)\s*[.:]?\s*$",
     re.IGNORECASE,
 )
 
 
+_VALIDATE_FLAG = "VALIDATE:"
+
+
 class CompiledPattern:
-    def __init__(self, pii_type: str, pattern: re.Pattern, capture_group: int) -> None:
+    def __init__(
+        self, pii_type: str, pattern: re.Pattern, capture_group: int,
+        validator: Callable[[str], bool] | None = None,
+    ) -> None:
         self.pii_type = pii_type
         self.pattern = pattern
         self.capture_group = capture_group
+        self.validator = validator
 
 
 class ItalianRegexDetector(DetectorContract):
@@ -59,7 +72,7 @@ class ItalianRegexDetector(DetectorContract):
                     end = match.end(cp.capture_group)
                 except IndexError:
                     continue
-                if matched_text:
+                if matched_text and (cp.validator is None or cp.validator(matched_text)):
                     entities.append(PiiEntity(
                         start=start,
                         end=end,
@@ -76,14 +89,18 @@ def _detect_structured_entities(text: str) -> list[PiiEntity]:
     """Detect high-signal names and addresses without broad capitalized-word rules."""
     entities: list[PiiEntity] = []
     for pattern in (_ABBREVIATED_NAME, _COMPOUND_NAME):
-        for match in pattern.finditer(text):
-            prefix = text[max(0, match.start() - 48):match.start()]
-            if not _PERSON_CONTEXT.search(prefix):
+        pos = 0
+        while match := pattern.search(text, pos):
+            # A rejected match may be "<Context> <First>" (e.g. "Contribuente Laura"):
+            # retry from the next word so "Laura Bianchi" is still considered.
+            pos = match.start() + 1
+            if not _PERSON_CONTEXT.search(text[max(0, match.start() - 48):match.start()]):
                 continue
             entities.append(PiiEntity(
                 start=match.start(), end=match.end(), pii_type="PERSON",
                 text=match.group(), score=1.0, source="regex",
             ))
+            pos = match.end()
 
     for match in _ADDRESS.finditer(text):
         entities.append(PiiEntity(
@@ -94,12 +111,20 @@ def _detect_structured_entities(text: str) -> list[PiiEntity]:
 
 
 def _compile(patterns: list[RegexPattern]) -> list[CompiledPattern]:
+    """Why: patterns are DB/tenant data, so regex flags and checksum gates travel in `flags`.
+    What: compiles each pattern; `VALIDATE:<name>` attaches a checksums.VALIDATORS entry.
+    An unknown validator name keeps the pattern unvalidated (fail closed: still detects).
+    Test: a pattern with flags "VALIDATE:iban" drops matches failing mod 97.
+    """
     result = []
     for p in patterns:
         flag_value = 0
+        validator = None
         for flag_name in p.flags.split(","):
             flag_name = flag_name.strip()
-            if flag_name == "IGNORECASE":
+            if flag_name.startswith(_VALIDATE_FLAG):
+                validator = VALIDATORS.get(flag_name[len(_VALIDATE_FLAG):])
+            elif flag_name == "IGNORECASE":
                 flag_value |= re.IGNORECASE
             elif flag_name == "MULTILINE":
                 flag_value |= re.MULTILINE
@@ -107,7 +132,7 @@ def _compile(patterns: list[RegexPattern]) -> list[CompiledPattern]:
                 flag_value |= re.DOTALL
         try:
             compiled = re.compile(p.pattern, flag_value)
-            result.append(CompiledPattern(p.pii_type, compiled, p.capture_group))
+            result.append(CompiledPattern(p.pii_type, compiled, p.capture_group, validator))
         except re.error:
             pass
     return result
