@@ -10,6 +10,9 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.config import settings
+from app.documents.upload import FORM_OVERHEAD_BYTES
+
 logger = logging.getLogger(__name__)
 _MAX_BODY_BYTES = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(6 * 1024 * 1024)))
 
@@ -36,9 +39,14 @@ class JsonFormatter(logging.Formatter):
 class MaxBodySizeMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > _MAX_BODY_BYTES:
+        # Document uploads have their own (larger) limit, enforced while streaming.
+        limit = (
+            settings.document_upload_max_bytes + FORM_OVERHEAD_BYTES
+            if request.url.path.startswith("/v1/documents/") else _MAX_BODY_BYTES
+        )
+        if content_length and int(content_length) > limit:
             return JSONResponse(
-                {"detail": "request_body_too_large", "max_bytes": _MAX_BODY_BYTES},
+                {"detail": "request_body_too_large", "max_bytes": limit},
                 status_code=413,
             )
         return await call_next(request)
