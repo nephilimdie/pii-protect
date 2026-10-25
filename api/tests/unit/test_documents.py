@@ -469,6 +469,53 @@ def test_timeout_returns_504(env, monkeypatch):
     assert r.status_code == 504 and r.json()["error"] == "DOCUMENT_PROCESSING_TIMEOUT"
 
 
+def make_dense_pdf(pages: int) -> bytes:
+    """~2,200 extracted chars per page (40 lines x 55 chars), like a text-dense contract."""
+    out = io.BytesIO()
+    pdf = canvas.Canvas(out, pagesize=A4)
+    line = "Il presente contratto regola il rapporto tra le parti. "
+    for _ in range(pages):
+        pdf.setFont(*PDF_FONT)
+        for row in range(40):
+            pdf.drawString(40, 800 - row * 19, line)
+        pdf.showPage()
+    pdf.save()
+    return out.getvalue()
+
+
+@pytest.mark.parametrize("op", ["preview", "redact", "pseudonymize"])
+def test_text_over_limit_fails_fast_with_page_estimate(env, monkeypatch, op):
+    monkeypatch.setattr(settings, "document_max_text_chars", 4_400)
+    payload = TXT + b"\n" + b"x" * 4_400
+    r = _post(env, op, payload)
+    assert r.status_code == 422, r.text
+    body = r.json()
+    assert body["error"] == "DOCUMENT_TOO_LONG" and body["safe"] is False
+    assert body["max_chars"] == 4_400 and body["chars"] == len(payload.decode())
+    assert body["estimated_max_pages"] == 2  # 4,400 // CHARS_PER_PAGE (2,200)
+    assert PERSON not in r.text
+    assert env.anonymizer.calls == 0 and env.usage == [] and env.audit == []  # nothing detected or charged
+
+
+def test_text_at_limit_is_processed(env, monkeypatch):
+    monkeypatch.setattr(settings, "document_max_text_chars", len(TXT.decode()))
+    assert _post(env, "preview", TXT).status_code == 200
+
+
+def test_long_pdf_rejected_after_extraction_without_detection(env, monkeypatch):
+    import time as _time
+    monkeypatch.setattr(settings, "document_max_text_chars", 90_000)
+    payload = make_dense_pdf(180)
+    for op in ("preview", "redact"):
+        started = _time.perf_counter()
+        r = _post(env, op, payload)
+        elapsed = _time.perf_counter() - started
+        assert r.status_code == 422 and r.json()["error"] == "DOCUMENT_TOO_LONG", r.text
+        assert r.json()["chars"] > 90_000 and r.json()["estimated_max_pages"] == 40
+        assert elapsed < 5, f"{op} took {elapsed:.2f}s; must fail before detection/rendering"
+    assert env.anonymizer.calls == 0
+
+
 def test_upload_size_limit(env, monkeypatch):
     monkeypatch.setattr(settings, "document_upload_max_bytes", 2048)
     r = _post(env, "redact", b"a" * 4096)

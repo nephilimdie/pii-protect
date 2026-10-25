@@ -82,9 +82,32 @@ def get_document_admission() -> DocumentAdmission:
                              settings.document_max_rss_mb * 1024 * 1024)
 
 
-def _error(status: int, code: str, message: str, headers: dict[str, str] | None = None) -> HTTPException:
-    return HTTPException(status_code=status, detail={"error": code, "message": message, "safe": False},
-                         headers=headers)
+# Dense A4 text page (11 pt, single spacing) is ~2,200 extracted characters; used only to turn
+# PII_DOCUMENT_MAX_TEXT_CHARS into a page estimate users understand (DOCUMENT_TOO_LONG).
+CHARS_PER_PAGE = 2_200
+
+
+def _error(status: int, code: str, message: str, headers: dict[str, str] | None = None,
+           extra: dict[str, int] | None = None) -> HTTPException:
+    return HTTPException(status_code=status, detail={"error": code, "message": message, "safe": False,
+                                                     **(extra or {})}, headers=headers)
+
+
+def _check_text_length(chars: int) -> None:
+    """Why: detection runs at ~1.1k chars/s, so an over-long document would only fail at the
+    timeout after burning a slot for the full deadline; refusing it right after extraction
+    answers in about a second and charges nothing.
+    What: raises 422 DOCUMENT_TOO_LONG with max_chars, chars and estimated_max_pages when
+    chars exceeds PII_DOCUMENT_MAX_TEXT_CHARS.
+    Test: set the limit to 1000, post 1001 chars of text -> 422 with estimated_max_pages == 0.
+    """
+    max_chars = settings.document_max_text_chars
+    if chars > max_chars:
+        raise DocumentError(422, "DOCUMENT_TOO_LONG",
+                            f"The document has {chars} characters of text; the limit is {max_chars}. "
+                            "Split it into smaller parts.",
+                            extra={"max_chars": max_chars, "chars": chars,
+                                   "estimated_max_pages": max_chars // CHARS_PER_PAGE})
 
 
 class _StreamAborted(Exception):
@@ -170,9 +193,7 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         raise DocumentError(422, "PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF",
                             "PDF supports redact only; use DOCX or TXT for pseudonymization.")
     joined = JoinedText(doc.segments)
-    max_chars = settings.document_max_text_chars
-    if len(joined.text) > max_chars:
-        raise DocumentError(413, "DOCUMENT_TEXT_TOO_LONG", f"The document has more than {max_chars} characters.")
+    _check_text_length(len(joined.text))
     state["chars"] = len(joined.text)
     await usage.ensure_within_limits(api_key, len(joined.text))
 
@@ -259,7 +280,7 @@ async def _handle(op: str, request: Request, api_key: ApiKey, db: AsyncSession,
             timeout=settings.document_timeout_seconds,
         )
     except DocumentError as exc:
-        raise _error(exc.status, exc.code, exc.message, exc.headers) from None
+        raise _error(exc.status, exc.code, exc.message, exc.headers, exc.extra) from None
     except HTTPException:
         raise
     except asyncio.TimeoutError:
