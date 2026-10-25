@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from collections import defaultdict
 
@@ -11,9 +12,17 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import qn
 from lxml import etree
 
-from app.documents.models import DocumentError, DocumentFormat, SegmentEdit
+from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 
-_UNCOMPRESSED_RATIO = 10  # zip-bomb guard: max inflated size = ratio x upload limit
+_RATIO_FLOOR_BYTES = 1_000_000  # small parts legitimately compress far beyond any ratio limit
+_MAGIC_BYTES = 8
+_ARCHIVE_MAGIC = (b"PK\x03\x04", b"7z\xbc\xaf", b"Rar!", b"\x1f\x8b", b"BZh", b"\xfd7zXZ")
+_ARCHIVE_SUFFIXES = (".zip", ".docx", ".docm", ".dotx", ".xlsx", ".xlsm", ".pptx", ".pptm", ".jar", ".7z", ".rar",
+                     ".gz", ".tar", ".bz2", ".xz")
+# External targets that are removed from the output (hyperlink targets, attached template).
+_ALLOWED_EXTERNAL_RELS = ("/hyperlink", "/attachedTemplate")
+_EXTERNAL_REL = re.compile(rb"<(?:\w+:)?Relationship\b[^>]*TargetMode=\"External\"[^>]*>")
+_REL_TYPE = re.compile(rb'\bType="([^"]+)"')
 
 _W_P, _W_T, _W_INSTR = qn("w:p"), qn("w:t"), qn("w:instrText")
 _EDITABLE = {_W_T, _W_INSTR}
@@ -45,16 +54,47 @@ DOCX_SANITIZED = (
 )
 
 
-def _check_zip(payload: bytes, max_bytes: int) -> None:
+def _external_types(rels_xml: bytes) -> list[str]:
+    return [m.group(1).decode("ascii", "replace") for rel in _EXTERNAL_REL.finditer(rels_xml)
+            if (m := _REL_TYPE.search(rel.group(0)))]
+
+
+def _check_zip(payload: bytes, limits: DocumentLimits) -> None:
+    """Why: a DOCX is a ZIP; the central directory is checked before any part is inflated or
+    parsed, so zip bombs and packages that reach outside the document never get loaded.
+    What: rejects (422, one error code each) too many parts, total inflated size or per-part
+    ratio above the limits, nested archives, and external references other than
+    hyperlinks/attached templates (both of those are stripped from the output anyway).
+    Test: 900 MB of XML deflated to 2.6 MB -> 422 DOCX_UNCOMPRESSED_TOO_LARGE before python-docx runs; a header rel
+    with TargetMode="External" to an image -> 422 DOCX_EXTERNAL_REFERENCE.
+    """
     try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            infos = archive.infolist()
+        archive = zipfile.ZipFile(io.BytesIO(payload))
     except zipfile.BadZipFile as exc:
         raise DocumentError(422, "INVALID_DOCUMENT", "The DOCX file is corrupted.") from exc
-    if not any(info.filename == "word/document.xml" for info in infos):
-        raise DocumentError(415, "UNSUPPORTED_DOCUMENT_TYPE", "Only PDF, DOCX and plain-text files are supported.")
-    if sum(info.file_size for info in infos) > max_bytes * _UNCOMPRESSED_RATIO:
-        raise DocumentError(413, "DOCUMENT_TOO_LARGE", "The DOCX file expands beyond the allowed size.")
+    with archive:
+        infos = archive.infolist()
+        if not any(info.filename == "word/document.xml" for info in infos):
+            raise DocumentError(415, "UNSUPPORTED_DOCUMENT_TYPE", "Only PDF, DOCX and plain-text files are supported.")
+        if len(infos) > limits.docx_max_entries:
+            raise DocumentError(422, "DOCX_TOO_MANY_PARTS", f"The DOCX file has more than {limits.docx_max_entries} parts.")
+        if sum(info.file_size for info in infos) > limits.docx_max_uncompressed_bytes:
+            raise DocumentError(422, "DOCX_UNCOMPRESSED_TOO_LARGE", "The DOCX file expands beyond the allowed size.")
+        for info in infos:
+            if info.file_size > _RATIO_FLOOR_BYTES and info.file_size > info.compress_size * limits.docx_max_ratio:
+                raise DocumentError(422, "DOCX_COMPRESSION_RATIO_EXCEEDED",
+                              "The DOCX file contains a part with a suspicious compression ratio.")
+            with archive.open(info) as member:
+                magic = member.read(_MAGIC_BYTES)
+            if info.filename.lower().endswith(_ARCHIVE_SUFFIXES) or magic.startswith(_ARCHIVE_MAGIC):
+                raise DocumentError(422, "DOCX_NESTED_ARCHIVE",
+                              "DOCX files with embedded archives or Office documents are not supported.")
+            if info.filename.endswith(".rels"):
+                external = _external_types(archive.read(info))
+                if any(not t.endswith(_ALLOWED_EXTERNAL_RELS) for t in external):
+                    raise DocumentError(422, "DOCX_EXTERNAL_REFERENCE",
+                                  "DOCX files that link to external content (images, objects, sub-documents) "
+                                  "are not supported.")
 
 
 def _owner_paragraph(node):
@@ -136,8 +176,8 @@ class DocxDocument:
     SANITIZED = DOCX_SANITIZED
     pages = None
 
-    def __init__(self, payload: bytes, max_bytes: int) -> None:
-        _check_zip(payload, max_bytes)
+    def __init__(self, payload: bytes, limits: DocumentLimits) -> None:
+        _check_zip(payload, limits)
         try:
             self._doc = Document(io.BytesIO(payload))
         except Exception as exc:

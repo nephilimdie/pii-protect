@@ -36,7 +36,7 @@ def load_document(payload: bytes, limits: DocumentLimits) -> LoadedDocument:
         return PdfDocument(payload, limits)
     if payload.startswith(b"PK\x03\x04"):
         from app.documents.docx_handler import DocxDocument
-        return DocxDocument(payload, limits.max_bytes)
+        return DocxDocument(payload, limits)
     if payload.startswith(b"\xd0\xcf\x11\xe0"):
         raise DocumentError(422, "LEGACY_OR_ENCRYPTED_OFFICE_FILE",
                             "Legacy .doc and password-protected Office files are not supported; save as DOCX.")

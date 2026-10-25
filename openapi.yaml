@@ -101,11 +101,23 @@ components:
     DocumentError:
       description: |
         Document request rejected; no document is returned. Codes: 400 INVALID_MULTIPART;
-        413 DOCUMENT_TOO_LARGE, DOCUMENT_PAGE_LIMIT_EXCEEDED, DOCUMENT_TEXT_TOO_LONG;
+        413 DOCUMENT_TOO_LARGE, DOCUMENT_PAGE_LIMIT_EXCEEDED, DOCUMENT_TEXT_TOO_LONG
+        (`PII_DOCUMENT_MAX_TEXT_CHARS`, default 500000);
         415 MULTIPART_REQUIRED, UNSUPPORTED_DOCUMENT_TYPE; 422 FILE_REQUIRED, EMPTY_DOCUMENT,
-        INVALID_DOCUMENT, LEGACY_OR_ENCRYPTED_OFFICE_FILE, PDF_NO_TEXT_LAYER,
+        INVALID_DOCUMENT, LEGACY_OR_ENCRYPTED_OFFICE_FILE, PDF_NO_TEXT_LAYER, PDF_PAGE_TOO_LARGE,
         PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF, INVALID_ENTITIES, PII_BLOCKED;
-        503 PII_PROCESSING_FAILED; 504 DOCUMENT_PROCESSING_TIMEOUT (`PII_DOCUMENT_TIMEOUT_SECONDS`, default 60).
+        422 DOCX package inspection (central directory checked before anything is inflated or parsed):
+        DOCX_TOO_MANY_PARTS (`PII_DOCUMENT_DOCX_MAX_ENTRIES`, default 1000),
+        DOCX_UNCOMPRESSED_TOO_LARGE (total inflated size, `PII_DOCUMENT_DOCX_MAX_UNCOMPRESSED_BYTES`,
+        default 100 MB), DOCX_COMPRESSION_RATIO_EXCEEDED (a part > 1 MB inflated with ratio above
+        `PII_DOCUMENT_DOCX_MAX_RATIO`, default 100:1), DOCX_NESTED_ARCHIVE (embedded ZIP/Office/7z/RAR/gzip
+        parts, by name or magic bytes), DOCX_EXTERNAL_REFERENCE (external relationships other than
+        hyperlinks and the attached template, e.g. remote images/objects/sub-documents);
+        503 PII_PROCESSING_FAILED; 503 ENGINE_BUSY (all document slots of this worker are in use or
+        the memory ceiling is reached; carries `Retry-After` in seconds — retry later, the request
+        was not processed); 504 DOCUMENT_PROCESSING_TIMEOUT (`PII_DOCUMENT_TIMEOUT_SECONDS`, default 60).
+      headers:
+        Retry-After: {$ref: "#/components/headers/RetryAfter"}
       content:
         application/json:
           schema:
@@ -132,6 +144,12 @@ components:
     DocumentSanitized:
       description: Comma-separated list of structures removed from the output (e.g. core_properties, comments, tracked_changes, text_layer)
       schema: {type: string}
+    DocumentPages:
+      description: PDF page count (present on every successful PDF response, including streamed redactions)
+      schema: {type: integer}
+    RetryAfter:
+      description: Seconds to wait before retrying a request rejected with 503 ENGINE_BUSY
+      schema: {type: integer}
 
   schemas:
     DocumentWarnings:
@@ -1320,6 +1338,8 @@ paths:
       responses:
         "200":
           description: Extracted text and detected entities
+          headers:
+            X-Pseudora-Pages: {$ref: "#/components/headers/DocumentPages"}
           content:
             application/json:
               schema:
@@ -1362,7 +1382,10 @@ paths:
         Returns the redacted file itself (`Content-Disposition: attachment;
         filename="redacted.<pdf|docx|txt>"`).
 
-        - **PDF**: each page is rendered at `PII_DOCUMENT_PDF_DPI` (default 200),
+        - **PDF**: each page is rendered at `PII_DOCUMENT_PDF_DPI` (default 200;
+          lowered per page so a page never exceeds `PII_DOCUMENT_PDF_MAX_PAGE_PIXELS`,
+          default 16 MP; a page that would need less than `PII_DOCUMENT_PDF_MIN_DPI`,
+          default 50, is rejected with `422 PDF_PAGE_TOO_LARGE`),
           black boxes are painted over the detected text and the PDF is rebuilt
           from the page images. No text layer, metadata, annotations, form fields
           or attachments survive; the output text is **not selectable** (accepted
@@ -1378,6 +1401,25 @@ paths:
 
         With `entities` (from `/preview`, edited by the user) detection is
         skipped and exactly those spans are redacted.
+
+        **Streaming (PDF only).** Everything that can fail on the input is checked
+        *before* the first byte is sent: page count, every page's render plan,
+        text extraction, detection and policy. Only then the response starts
+        (`200`, chunked transfer, no `Content-Length`, `X-Pseudora-Pages: <n>`)
+        and pages are rendered and sent one at a time, so engine memory stays
+        at about one page regardless of page count. If rendering fails after the
+        headers were sent (rare: PDFium error, `PII_DOCUMENT_TIMEOUT_SECONDS`
+        reached) the connection is **aborted**: the chunked body is never
+        terminated and the PDF never reaches its trailer (`%%EOF`). Clients must
+        treat a transport error / incomplete chunked body as a failed request and
+        discard the partial bytes. DOCX and TXT responses are not streamed.
+
+        **Long text** is analysed in overlapping windows
+        (`PII_DOCUMENT_DETECTION_WINDOW_CHARS`, default 6000, overlap
+        `PII_DOCUMENT_DETECTION_WINDOW_OVERLAP`, default 300) cut at paragraph,
+        sentence or word breaks; entities found in two windows or cut by a window
+        edge are merged, and pseudonym numbering is assigned once over the whole
+        document, so results match single-pass detection.
       operationId: redactDocument
       tags: [Documents]
       requestBody: {$ref: "#/components/requestBodies/DocumentUpload"}
@@ -1390,6 +1432,7 @@ paths:
             X-Pii-Types: {$ref: "#/components/headers/EntityTypes"}
             X-Pii-Warnings: {$ref: "#/components/headers/DocumentWarnings"}
             X-Pii-Sanitized: {$ref: "#/components/headers/DocumentSanitized"}
+            X-Pseudora-Pages: {$ref: "#/components/headers/DocumentPages"}
           content:
             application/pdf: {schema: {type: string, format: binary}}
             application/vnd.openxmlformats-officedocument.wordprocessingml.document: {schema: {type: string, format: binary}}

@@ -10,17 +10,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 import uuid
+from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.anonymization.anonymizer import PiiAnonymizer
 from app.audit.audit_service import AuditService
 from app.config import settings
 from app.database import get_db
+from app.documents.admission import AdmissionSlot, DocumentAdmission
 from app.documents.models import MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
 from app.documents.service import (
     load_document,
@@ -34,7 +37,6 @@ from app.identity.dependencies import require_service
 from app.identity.models import ApiKey
 from app.identity.tenant import get_tenant_id
 from app.routers._anonymize_logic import detect_protected_entities, get_anonymizer
-from app.routers._anonymize_models import MAX_TEXT_CHARS
 from app.surrogates.policy_service import PolicyService
 from app.usage.service import UsageService
 
@@ -65,12 +67,83 @@ def _limits() -> DocumentLimits:
         max_bytes=settings.document_upload_max_bytes,
         max_pages=settings.document_upload_max_pages,
         pdf_dpi=settings.document_pdf_dpi,
-        max_pixels=settings.image_max_pixels,
+        max_pixels=settings.document_pdf_max_page_pixels,
+        pdf_min_dpi=settings.document_pdf_min_dpi,
+        docx_max_uncompressed_bytes=settings.document_docx_max_uncompressed_bytes,
+        docx_max_ratio=settings.document_docx_max_ratio,
+        docx_max_entries=settings.document_docx_max_entries,
     )
 
 
-def _error(status: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=status, detail={"error": code, "message": message, "safe": False})
+@lru_cache(maxsize=1)
+def get_document_admission() -> DocumentAdmission:
+    """Process-wide admission control for document jobs (FastAPI dependency; override in tests)."""
+    return DocumentAdmission(settings.document_max_concurrent_jobs, settings.document_busy_timeout_seconds,
+                             settings.document_max_rss_mb * 1024 * 1024)
+
+
+def _error(status: int, code: str, message: str, headers: dict[str, str] | None = None) -> HTTPException:
+    return HTTPException(status_code=status, detail={"error": code, "message": message, "safe": False},
+                         headers=headers)
+
+
+class _StreamAborted(Exception):
+    """Content-free error raised to the ASGI server so it drops the connection mid-body."""
+
+
+def _stream_pdf(doc, edits, deadline: float, slot: AdmissionSlot, done) -> StreamingResponse:
+    """Why: a 200-page redaction must not be assembled in memory, yet a failure after the headers
+    are sent can no longer change the status code.
+    What: renders and sends one page at a time; on any failure the body stops before the PDF
+    trailer and the connection is aborted (truncated chunked transfer, no `%%EOF`). The admission
+    slot is released only after PDFium resources are closed.
+    Test: make page 2 of 3 fail; the client sees a transport error and the received bytes do
+    not end with `%%EOF`.
+    """
+    pages = doc.render_stream(edits, deadline)
+    step_lock = threading.Lock()  # close() must never race a next() still running in a thread
+
+    def step():
+        with step_lock:
+            return next(pages, None)
+
+    def finish(completed: bool) -> None:
+        try:
+            with step_lock:
+                pages.close()  # no-op once exhausted; otherwise closes the PDFium source
+        finally:
+            slot.release()
+            done(completed)
+
+    async def body():
+        completed = False
+        try:
+            while (chunk := await asyncio.to_thread(step)) is not None:
+                yield chunk
+            completed = True
+        except Exception as exc:
+            logger.warning("document redact stream aborted: %s", type(exc).__name__)
+            raise _StreamAborted() from None
+        if completed:
+            finish(True)
+
+    return _SlotStreamingResponse(finish, body(), media_type=MEDIA_TYPES[DocumentFormat.PDF], headers={
+        "Content-Disposition": 'attachment; filename="redacted.pdf"'})
+
+
+class _SlotStreamingResponse(StreamingResponse):
+    """Runs `finish(False)` once the ASGI call ends however it ends (never iterated, client gone,
+    render failure); in a worker thread, because a page may still be rendering. Idempotent."""
+
+    def __init__(self, finish, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._finish = finish
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            asyncio.get_running_loop().run_in_executor(None, self._finish, False)
 
 
 async def _record_usage(usage: UsageService, api_key: ApiKey, tenant_id: str | None, policy: dict | None,
@@ -90,15 +163,16 @@ async def _record_usage(usage: UsageService, api_key: ApiKey, tenant_id: str | N
 
 async def _process(op: str, request: Request, fields: dict[str, str], payload: bytes, api_key: ApiKey,
                    db: AsyncSession, anonymizer: PiiAnonymizer, tenant_id: str | None,
-                   usage: UsageService, state: dict) -> Response:
+                   usage: UsageService, state: dict, slot: AdmissionSlot) -> Response:
     doc = await asyncio.to_thread(load_document, payload, _limits())
     state["format"], state["pages"] = doc.format, doc.pages
     if op == Operation.PSEUDONYMIZE and doc.format == DocumentFormat.PDF:
         raise DocumentError(422, "PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF",
                             "PDF supports redact only; use DOCX or TXT for pseudonymization.")
     joined = JoinedText(doc.segments)
-    if len(joined.text) > MAX_TEXT_CHARS:
-        raise DocumentError(413, "DOCUMENT_TEXT_TOO_LONG", f"The document has more than {MAX_TEXT_CHARS} characters.")
+    max_chars = settings.document_max_text_chars
+    if len(joined.text) > max_chars:
+        raise DocumentError(413, "DOCUMENT_TEXT_TOO_LONG", f"The document has more than {max_chars} characters.")
     state["chars"] = len(joined.text)
     await usage.ensure_within_limits(api_key, len(joined.text))
 
@@ -111,7 +185,8 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     else:
         language = fields.get("language") or getattr(request.app.state, "default_language", "it")
         entities = await detect_protected_entities(
-            anonymizer, policy, joined.text, str(uuid.uuid4()), domain or context_type or "generic", language)
+            anonymizer, policy, joined.text, str(uuid.uuid4()), domain or context_type or "generic", language,
+            window=(settings.document_detection_window_chars, settings.document_detection_window_overlap))
     entities = sorted(entities, key=lambda e: e.start)
     state["entities"] = entities
     types = sorted({e.pii_type for e in entities})
@@ -127,6 +202,9 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
             "policy": {"id": policy["policy_id"], "version": policy["policy_version"], "hash": policy["policy_hash"]},
             "warnings": doc.warnings, "sanitized": sanitized,
         })
+    elif op == Operation.REDACT and doc.format == DocumentFormat.PDF:
+        response = _stream_pdf(doc, redaction_edits(joined, entities), state["deadline"], slot, state["stream_done"])
+        state["streaming"] = True
     elif op == Operation.REDACT:
         content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities))
         response = Response(content, media_type=MEDIA_TYPES[doc.format],
@@ -145,25 +223,42 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         "X-Pii-Warnings": ",".join(doc.warnings),
         "X-Pii-Sanitized": ",".join(sanitized),
     })
+    if doc.pages is not None:
+        response.headers["X-Pseudora-Pages"] = str(doc.pages)
     return response
 
 
 async def _handle(op: str, request: Request, api_key: ApiKey, db: AsyncSession,
-                  anonymizer: PiiAnonymizer, tenant_id: str | None) -> Response:
+                  anonymizer: PiiAnonymizer, tenant_id: str | None, admission: DocumentAdmission) -> Response:
     started = time.perf_counter()
     usage = UsageService(db)
-    state: dict = {"chars": 0, "entities": [], "policy": None, "format": None, "pages": None}
     request_id = getattr(request.state, "request_id", None)
+
+    def log_ok(completed: bool = True) -> None:
+        if completed:
+            logger.info(
+                "document %s ok format=%s bytes=%d pages=%s entities=%d duration_ms=%d",
+                op, state["format"], state["bytes"], state["pages"], len(state["entities"]),
+                int((time.perf_counter() - started) * 1000), extra={"request_id": request_id},
+            )
+
+    state: dict = {"chars": 0, "bytes": 0, "entities": [], "policy": None, "format": None, "pages": None,
+                   "deadline": time.monotonic() + settings.document_timeout_seconds, "stream_done": log_ok}
     error_code: str | None = None
+    try:
+        slot = await admission.acquire()
+    except DocumentError as exc:
+        raise _error(exc.status, exc.code, exc.message, exc.headers) from None
     try:
         upload = await read_document_upload(request, settings.document_upload_max_bytes)
         state["bytes"] = len(upload.payload)
         response = await asyncio.wait_for(
-            _process(op, request, upload.fields, upload.payload, api_key, db, anonymizer, tenant_id, usage, state),
+            _process(op, request, upload.fields, upload.payload, api_key, db, anonymizer, tenant_id, usage, state,
+                     slot),
             timeout=settings.document_timeout_seconds,
         )
     except DocumentError as exc:
-        raise _error(exc.status, exc.code, exc.message) from None
+        raise _error(exc.status, exc.code, exc.message, exc.headers) from None
     except HTTPException:
         raise
     except asyncio.TimeoutError:
@@ -174,6 +269,8 @@ async def _handle(op: str, request: Request, api_key: ApiKey, db: AsyncSession,
         logger.warning("document %s failed closed: %s", op, type(exc).__name__, extra={"request_id": request_id})
         raise _error(503, error_code, "The document could not be safely processed; no document was returned.") from None
     finally:
+        if not state.get("streaming"):
+            slot.release()  # a streamed PDF releases its slot when the body is finished
         if error_code is not None and state["chars"]:
             await _record_usage(usage, api_key, tenant_id, state["policy"], started, state["chars"], [], "error", error_code)
     entities = state["entities"]
@@ -186,11 +283,8 @@ async def _handle(op: str, request: Request, api_key: ApiKey, db: AsyncSession,
         )
     except Exception:
         logger.warning("document audit log failed")
-    logger.info(
-        "document %s ok format=%s bytes=%d pages=%s entities=%d duration_ms=%d",
-        op, state["format"], state["bytes"], state["pages"], len(entities),
-        int((time.perf_counter() - started) * 1000), extra={"request_id": request_id},
-    )
+    if not state.get("streaming"):
+        log_ok()
     return response
 
 
@@ -201,8 +295,9 @@ def _endpoint(op: str, summary: str):
         db: AsyncSession = Depends(get_db),
         anonymizer: PiiAnonymizer = Depends(get_anonymizer),
         tenant_id: str | None = Depends(get_tenant_id),
+        admission: DocumentAdmission = Depends(get_document_admission),
     ) -> Response:
-        return await _handle(op, request, api_key, db, anonymizer, tenant_id)
+        return await _handle(op, request, api_key, db, anonymizer, tenant_id, admission)
 
     endpoint.__name__ = f"document_{op}"
     router.add_api_route(f"/{op}", endpoint, methods=["POST"], summary=summary, openapi_extra=_OPENAPI_FORM)

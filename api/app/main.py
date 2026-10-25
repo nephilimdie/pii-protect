@@ -360,7 +360,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["X-Request-Id", "Content-Disposition", "X-Pii-Document-Format", "X-Pii-Entity-Count",
-                    "X-Pii-Types", "X-Pii-Warnings", "X-Pii-Sanitized"],
+                    "X-Pii-Types", "X-Pii-Warnings", "X-Pii-Sanitized", "X-Pseudora-Pages", "Retry-After"],
 )
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)

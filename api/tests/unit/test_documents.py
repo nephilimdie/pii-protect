@@ -131,7 +131,7 @@ def env(monkeypatch):
     @app.exception_handler(HTTPException)
     async def _flat(request, exc):  # same flattening as app.main.http_exception_handler
         payload = exc.detail if isinstance(exc.detail, dict) else {"detail": exc.detail}
-        return JSONResponse(payload, status_code=exc.status_code)
+        return JSONResponse(payload, status_code=exc.status_code, headers=exc.headers)
 
     app.include_router(documents_module.router, prefix="/v1")
 
@@ -513,7 +513,7 @@ def test_processing_creates_no_files(env, monkeypatch, tmp_path):
             opened.append(str(file))
         return real_open(file, mode, *args, **kwargs)
 
-    monkeypatch.setattr(documents_module, "MAX_TEXT_CHARS", 3_000_000)
+    monkeypatch.setattr(settings, "document_max_text_chars", 3_000_000)
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(os, "open", watch_os_open)
     monkeypatch.setattr(builtins, "open", watch_open)
