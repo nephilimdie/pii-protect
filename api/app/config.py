@@ -103,8 +103,9 @@ class Settings(BaseSettings):
     }
 
     def inference_thread_count(self) -> int:
-        """Intra-op threads per model call: explicit setting, else CPUs shared by the window workers."""
-        return self.inference_threads or max(1, (os.cpu_count() or 1) // self.document_detection_workers)
+        """Intra-op threads per model call: explicit setting, else CPUs / window workers rounded up
+        (measured: rounding down to 1 thread costs single-window latency ~1.6x for ~6% more parallel throughput)."""
+        return self.inference_threads or max(1, -(-(os.cpu_count() or 1) // self.document_detection_workers))
 
     model_config = SettingsConfigDict(
         env_file=".env",

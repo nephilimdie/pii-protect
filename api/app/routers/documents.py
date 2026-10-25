@@ -24,6 +24,7 @@ from app.audit.audit_service import AuditService
 from app.config import settings
 from app.database import get_db
 from app.documents.admission import AdmissionSlot, DocumentAdmission
+from app.documents.chunking import detection_executor
 from app.documents.models import MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
 from app.documents.service import (
     load_document,
@@ -93,7 +94,13 @@ def _error(status: int, code: str, message: str, headers: dict[str, str] | None 
                                                      **(extra or {})}, headers=headers)
 
 
-def _check_text_length(chars: int) -> None:
+def check_pseudonymizable(document_format: str) -> None:
+    if document_format == DocumentFormat.PDF:
+        raise DocumentError(422, "PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF",
+                            "PDF supports redact only; use DOCX or TXT for pseudonymization.")
+
+
+def check_text_length(chars: int) -> None:
     """Why: detection runs at ~1.1k chars/s, so an over-long document would only fail at the
     timeout after burning a slot for the full deadline; refusing it right after extraction
     answers in about a second and charges nothing.
@@ -114,12 +121,12 @@ class _StreamAborted(Exception):
     """Content-free error raised to the ASGI server so it drops the connection mid-body."""
 
 
-def _stream_pdf(doc, edits, deadline: float, slot: AdmissionSlot, done) -> StreamingResponse:
+def _stream_pdf(doc, edits, deadline: float, release, done) -> StreamingResponse:
     """Why: a 200-page redaction must not be assembled in memory, yet a failure after the headers
     are sent can no longer change the status code.
     What: renders and sends one page at a time; on any failure the body stops before the PDF
-    trailer and the connection is aborted (truncated chunked transfer, no `%%EOF`). The admission
-    slot is released only after PDFium resources are closed.
+    trailer and the connection is aborted (truncated chunked transfer, no `%%EOF`). `release`
+    (admission slot, or the job deletion) runs only after PDFium resources are closed.
     Test: make page 2 of 3 fail; the client sees a transport error and the received bytes do
     not end with `%%EOF`.
     """
@@ -135,7 +142,7 @@ def _stream_pdf(doc, edits, deadline: float, slot: AdmissionSlot, done) -> Strea
             with step_lock:
                 pages.close()  # no-op once exhausted; otherwise closes the PDFium source
         finally:
-            slot.release()
+            release()
             done(completed)
 
     async def body():
@@ -150,11 +157,11 @@ def _stream_pdf(doc, edits, deadline: float, slot: AdmissionSlot, done) -> Strea
         if completed:
             finish(True)
 
-    return _SlotStreamingResponse(finish, body(), media_type=MEDIA_TYPES[DocumentFormat.PDF], headers={
+    return _FinishStreamingResponse(finish, body(), media_type=MEDIA_TYPES[DocumentFormat.PDF], headers={
         "Content-Disposition": 'attachment; filename="redacted.pdf"'})
 
 
-class _SlotStreamingResponse(StreamingResponse):
+class _FinishStreamingResponse(StreamingResponse):
     """Runs `finish(False)` once the ASGI call ends however it ends (never iterated, client gone,
     render failure); in a worker thread, because a page may still be rendering. Idempotent."""
 
@@ -189,11 +196,10 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
                    usage: UsageService, state: dict, slot: AdmissionSlot) -> Response:
     doc = await asyncio.to_thread(load_document, payload, _limits())
     state["format"], state["pages"] = doc.format, doc.pages
-    if op == Operation.PSEUDONYMIZE and doc.format == DocumentFormat.PDF:
-        raise DocumentError(422, "PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF",
-                            "PDF supports redact only; use DOCX or TXT for pseudonymization.")
+    if op == Operation.PSEUDONYMIZE:
+        check_pseudonymizable(doc.format)
     joined = JoinedText(doc.segments)
-    _check_text_length(len(joined.text))
+    check_text_length(len(joined.text))
     state["chars"] = len(joined.text)
     await usage.ensure_within_limits(api_key, len(joined.text))
 
@@ -207,26 +213,51 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         language = fields.get("language") or getattr(request.app.state, "default_language", "it")
         entities = await detect_protected_entities(
             anonymizer, policy, joined.text, str(uuid.uuid4()), domain or context_type or "generic", language,
-            window=(settings.document_detection_window_chars, settings.document_detection_window_overlap,
-                    state["deadline"]))
+            window=detection_window(state["deadline"]), executor=window_executor())
     entities = sorted(entities, key=lambda e: e.start)
     state["entities"] = entities
-    types = sorted({e.pii_type for e in entities})
-    sanitized = list(doc.SANITIZED)
-
     if op == Operation.PREVIEW:
-        response: Response = JSONResponse({
-            "format": doc.format, "pages": doc.pages, "text": joined.text,
-            "entity_count": len(entities), "pii_types_found": types,
-            "entities": [{"start": e.start, "end": e.end, "type": e.pii_type, "text": e.text,
-                          "confidence": round(e.score, 4), "page": doc.page_of(joined.segment_at(e.start))}
-                         for e in entities],
-            "policy": {"id": policy["policy_id"], "version": policy["policy_version"], "hash": policy["policy_hash"]},
-            "warnings": doc.warnings, "sanitized": sanitized,
-        })
-    elif op == Operation.REDACT and doc.format == DocumentFormat.PDF:
-        response = _stream_pdf(doc, redaction_edits(joined, entities), state["deadline"], slot, state["stream_done"])
-        state["streaming"] = True
+        return document_headers(JSONResponse(preview_payload(doc, joined, entities, policy)), doc, entities)
+    response = await render_document(op, doc, joined, entities, policy, state["deadline"], slot.release,
+                                     state["stream_done"])
+    state["streaming"] = isinstance(response, StreamingResponse)
+    return response
+
+
+def detection_window(deadline: float) -> tuple[int, int, float]:
+    return settings.document_detection_window_chars, settings.document_detection_window_overlap, deadline
+
+
+def window_executor():
+    """Shared window pool (PII_DOCUMENT_DETECTION_WORKERS) for sync documents and jobs."""
+    return detection_executor(settings.document_detection_workers)
+
+
+def preview_payload(doc, joined: JoinedText, entities: list, policy: dict) -> dict:
+    """Why: /preview and GET /jobs/{id}/entities must return the same payload the UI reviews.
+    What: format, pages, text, entities (with `id` = list index, used by job render `exclude`), policy.
+    Test: two entities -> ids 0 and 1, each with its page (PDF) or null (DOCX/TXT).
+    """
+    return {
+        "format": doc.format, "pages": doc.pages, "text": joined.text,
+        "entity_count": len(entities), "pii_types_found": sorted({e.pii_type for e in entities}),
+        "entities": [{"id": i, "start": e.start, "end": e.end, "type": e.pii_type, "text": e.text,
+                      "confidence": round(e.score, 4), "page": doc.page_of(joined.segment_at(e.start))}
+                     for i, e in enumerate(entities)],
+        "policy": {"id": policy["policy_id"], "version": policy["policy_version"], "hash": policy["policy_hash"]},
+        "warnings": doc.warnings, "sanitized": list(doc.SANITIZED),
+    }
+
+
+async def render_document(op: str, doc, joined: JoinedText, entities: list, policy: dict, deadline: float,
+                          release, done) -> Response:
+    """Why: sync redact/pseudonymize and job render must produce byte-identical files.
+    What: streamed PDF redaction (`release`/`done` run when the body ends) or an in-memory
+    DOCX/TXT redaction / pseudonymization ZIP, with the X-Pii-* headers.
+    Test: covered by the redact/pseudonymize endpoint tests and the job render tests.
+    """
+    if op == Operation.REDACT and doc.format == DocumentFormat.PDF:
+        response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done)
     elif op == Operation.REDACT:
         content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities))
         response = Response(content, media_type=MEDIA_TYPES[doc.format],
@@ -237,13 +268,17 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         archive = zip_pseudonymized(content, f"pseudonymized.{doc.format}", mapping)
         response = Response(archive, media_type="application/zip",
                             headers={"Content-Disposition": 'attachment; filename="pseudonymized.zip"'})
+    return document_headers(response, doc, entities)
+
+
+def document_headers(response: Response, doc, entities: list) -> Response:
     response.headers.update({
         "Cache-Control": "no-store",
         "X-Pii-Document-Format": doc.format,
         "X-Pii-Entity-Count": str(len(entities)),
-        "X-Pii-Types": ",".join(types),
+        "X-Pii-Types": ",".join(sorted({e.pii_type for e in entities})),
         "X-Pii-Warnings": ",".join(doc.warnings),
-        "X-Pii-Sanitized": ",".join(sanitized),
+        "X-Pii-Sanitized": ",".join(doc.SANITIZED),
     })
     if doc.pages is not None:
         response.headers["X-Pseudora-Pages"] = str(doc.pages)
