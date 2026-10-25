@@ -11,9 +11,12 @@ the merged list (apply_replacements), never per window.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import Executor, ThreadPoolExecutor
 from dataclasses import replace
+from functools import lru_cache
 
 from app.detection.entities import PiiEntity
 
@@ -104,24 +107,75 @@ def _resolve(text: str, group: list[tuple[PiiEntity, bool]]) -> list[PiiEntity]:
     return chosen
 
 
+class DetectionCancelled(Exception):
+    """Raised before a window when the caller asked detection to stop (job cancelled/deleted)."""
+
+
+@lru_cache(maxsize=None)
+def detection_executor(workers: int) -> ThreadPoolExecutor:
+    """Why: windows of every document (sync requests and jobs) share one bounded pool, so total
+    detection CPU stays capped however many documents are in flight.
+    What: one process-wide ThreadPoolExecutor per worker count (in practice one, from settings).
+    Test: detection_executor(2) is detection_executor(2).
+    """
+    return ThreadPoolExecutor(max_workers=workers, thread_name_prefix="pii-window")
+
+
+class _Progress:
+    """Thread-safe progress over windows finishing in any order: `chars` counts each window's
+    own (non-overlap) part; `covered` is the end of the longest fully finished prefix."""
+
+    def __init__(self, spans: list[tuple[int, int]], callback: Callable[[int, int], None] | None) -> None:
+        self._spans, self._callback = spans, callback
+        self._own = [end - (spans[i - 1][1] if i else 0) for i, (_, end) in enumerate(spans)]
+        self._done = [False] * len(spans)
+        self._chars = self._prefix = 0
+        self._lock = threading.Lock()
+
+    def done(self, index: int) -> None:
+        if self._callback is None:
+            return
+        with self._lock:
+            self._done[index] = True
+            self._chars += self._own[index]
+            while self._prefix < len(self._spans) and self._done[self._prefix]:
+                self._prefix += 1
+            self._callback(self._chars, self._spans[self._prefix - 1][1] if self._prefix else 0)
+
+
 def detect_in_windows(detect: Callable[[str], list[PiiEntity]], text: str, size: int, overlap: int,
-                      deadline: float | None = None) -> list[PiiEntity]:
+                      deadline: float | None = None, executor: Executor | None = None,
+                      progress: Callable[[int, int], None] | None = None,
+                      should_stop: Callable[[], bool] | None = None) -> list[PiiEntity]:
     """Why: one entry point so callers get identical results for short texts and bounded
     memory for long ones; a request timeout cannot cancel a worker thread, so without the
-    deadline an abandoned 200-page job kept every core busy for minutes after its 504.
-    What: runs `detect` on each window sequentially (one window's model input alive at a
-    time), shifts offsets to document coordinates and merges across windows; raises
-    TimeoutError before a window once `deadline` (time.monotonic()) has passed.
+    deadline/stop check an abandoned 200-page job kept every core busy for minutes after its 504.
+    What: runs `detect` on each window (in `executor` when given, else sequentially), shifts
+    offsets to document coordinates and merges in document order, so the result is the same
+    whatever order windows finish in. Before each window it raises TimeoutError once `deadline`
+    (time.monotonic()) has passed and DetectionCancelled once `should_stop()` is true.
+    `progress(chars_done, covered_end)` is called after each window.
     Test: a fake detector over a 3-window text returns each planted name once, at the
-    document offset of the name; with a past deadline it raises before calling `detect`.
+    document offset of the name, identically with and without an executor; with a past
+    deadline it raises before calling `detect`.
     """
     spans = windows(text, size, overlap)
-    if len(spans) == 1:
-        return detect(text)
-    found = []
-    for start, end in spans:
+    tracker = _Progress(spans, progress)
+
+    def run(index: int) -> tuple[tuple[int, int], list[PiiEntity]]:
+        if should_stop is not None and should_stop():
+            raise DetectionCancelled()
         if deadline is not None and time.monotonic() > deadline:
             raise TimeoutError("document detection deadline exceeded")
-        entities = [replace(e, start=e.start + start, end=e.end + start) for e in detect(text[start:end])]
-        found.append(((start, end), entities))
+        start, end = spans[index]
+        found = detect(text) if len(spans) == 1 else [
+            replace(e, start=e.start + start, end=e.end + start) for e in detect(text[start:end])]
+        tracker.done(index)
+        return (start, end), found
+
+    if len(spans) == 1:
+        return run(0)[1]
+    indexes = range(len(spans))
+    # Executor.map yields in submission order and cancels pending windows if one fails.
+    found = list(executor.map(run, indexes)) if executor is not None else [run(i) for i in indexes]
     return merge_windows(text, found)

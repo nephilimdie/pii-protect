@@ -1,0 +1,22 @@
+[
+  {
+    "pages": 40,
+    "chars": 83307,
+    "workers": 1,
+    "seconds": 15.37,
+    "chars_per_s": 5421,
+    "entities": 1859,
+    "identical_to_first": true,
+    "cpus": 6
+  },
+  {
+    "pages": 180,
+    "chars": 374870,
+    "workers": 1,
+    "seconds": 70.14,
+    "chars_per_s": 5345,
+    "entities": 8544,
+    "identical_to_first": true,
+    "cpus": 6
+  }
+]

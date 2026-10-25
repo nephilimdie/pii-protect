@@ -150,7 +150,8 @@ class PrivacyFilterDetector(DetectorContract):
         return self._session is not None and self._tokenizer is not None
 
     @classmethod
-    def preload(cls, model: str = _DEFAULT_MODEL, revision: str | None = None) -> None:
+    def preload(cls, model: str = _DEFAULT_MODEL, revision: str | None = None, threads: int = 0) -> None:
+        """`threads` > 0 caps ONNX intra-op threads per run (parallel document windows run several at once)."""
         try:
             import os
             import onnxruntime as ort
@@ -163,8 +164,12 @@ class PrivacyFilterDetector(DetectorContract):
                 allow_patterns=["onnx/model_quantized.onnx*", "tokenizer.json"],
             )
             onnx_path = _materialize_onnx_files(model_dir)
+            options = ort.SessionOptions()
+            if threads:
+                options.intra_op_num_threads = threads
             cls._session = ort.InferenceSession(
                 onnx_path,
+                sess_options=options,
                 providers=["CPUExecutionProvider"],
             )
             tok_path = os.path.join(model_dir, "tokenizer.json")

@@ -58,12 +58,14 @@ async def run_detection(
     context_type: str,
     language: str,
     window: tuple[int, int] | tuple[int, int, float] | None = None,
+    **window_options,
 ):
-    """`window` = (chars, overlap[, monotonic deadline]): detect in overlapping windows (bounded model input) and merge."""
+    """`window` = (chars, overlap[, monotonic deadline]): detect in overlapping windows (bounded model input)
+    and merge; `window_options` (executor, progress, should_stop) go to detect_in_windows."""
     def detect(chunk: str) -> list:
         return anonymizer.detect_only(chunk, context_id, context_type, language).entities
 
-    run = partial(detect_in_windows, detect, text, *window) if window else partial(detect, text)
+    run = partial(detect_in_windows, detect, text, *window, **window_options) if window else partial(detect, text)
     return await asyncio.get_running_loop().run_in_executor(None, run)
 
 
@@ -75,6 +77,7 @@ async def detect_protected_entities(
     context_type: str,
     language: str,
     window: tuple[int, int] | tuple[int, int, float] | None = None,
+    **window_options,
 ) -> list:
     """Why: text and document endpoints must share one detection + policy path (same fail-closed semantics).
     What: restricts layers per policy, detects, rejects blocked types (422 PII_BLOCKED), returns entities to protect.
@@ -88,6 +91,7 @@ async def detect_protected_entities(
         context_type=context_type,
         language=language,
         window=window,
+        **window_options,
     )
     # Block check runs on ALL detected entities (before policy filtering)
     block_types = policy["block_types"]
