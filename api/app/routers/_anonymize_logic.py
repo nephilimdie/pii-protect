@@ -5,6 +5,7 @@ import hashlib
 import logging
 import time
 import uuid
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ from app.surrogates.policy_service import PolicyService
 from app.surrogates.surrogate_service import SurrogateService
 from app.surrogates.generators import language_to_locale
 from app.detection.entities import MappingEntry
+from app.documents.chunking import detect_in_windows
 from app.usage.service import UsageService
 from app.plugins.registry import plugin_registry
 from app.routers._anonymize_models import (
@@ -55,12 +57,14 @@ async def run_detection(
     context_id: str,
     context_type: str,
     language: str,
+    window: tuple[int, int] | None = None,
 ):
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        None, anonymizer.detect_only, text, context_id, context_type, language
-    )
-    return result.entities
+    """`window` = (chars, overlap): detect in overlapping windows (bounded model input) and merge."""
+    def detect(chunk: str) -> list:
+        return anonymizer.detect_only(chunk, context_id, context_type, language).entities
+
+    run = partial(detect_in_windows, detect, text, *window) if window else partial(detect, text)
+    return await asyncio.get_running_loop().run_in_executor(None, run)
 
 
 async def detect_protected_entities(
@@ -70,6 +74,7 @@ async def detect_protected_entities(
     context_id: str,
     context_type: str,
     language: str,
+    window: tuple[int, int] | None = None,
 ) -> list:
     """Why: text and document endpoints must share one detection + policy path (same fail-closed semantics).
     What: restricts layers per policy, detects, rejects blocked types (422 PII_BLOCKED), returns entities to protect.
@@ -82,6 +87,7 @@ async def detect_protected_entities(
         context_id=context_id,
         context_type=context_type,
         language=language,
+        window=window,
     )
     # Block check runs on ALL detected entities (before policy filtering)
     block_types = policy["block_types"]

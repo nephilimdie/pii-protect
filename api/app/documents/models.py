@@ -32,11 +32,12 @@ class DocumentError(Exception):
     Test: raise DocumentError(413, "DOCUMENT_TOO_LARGE", "...") and assert .status == 413.
     """
 
-    def __init__(self, status: int, code: str, message: str) -> None:
+    def __init__(self, status: int, code: str, message: str, headers: dict[str, str] | None = None) -> None:
         super().__init__(code)
         self.status = status
         self.code = code
         self.message = message
+        self.headers = headers
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,11 @@ class DocumentLimits:
     max_bytes: int
     max_pages: int
     pdf_dpi: int
-    max_pixels: int
+    max_pixels: int  # per rendered PDF page
+    pdf_min_dpi: int = 50
+    docx_max_uncompressed_bytes: int = 100_000_000
+    docx_max_ratio: int = 100
+    docx_max_entries: int = 1_000
 
 
 class LoadedDocument(Protocol):
