@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     inference_threads: int = Field(default=0, ge=0, le=256, validation_alias=AliasChoices("INFERENCE_THREADS", "PII_INFERENCE_THREADS"))
     # In-memory document jobs (/v1/documents/jobs): RAM only, deleted on delivery, failure, cancel or idle TTL.
     document_job_ttl_seconds: int = Field(default=900, ge=10, le=86_400, validation_alias=AliasChoices("DOCUMENT_JOB_TTL_SECONDS", "PII_DOCUMENT_JOB_TTL_SECONDS"))
+    document_job_max_text_chars: int = Field(default=500_000, ge=1_000, le=5_000_000, validation_alias=AliasChoices("DOCUMENT_JOB_MAX_TEXT_CHARS", "PII_DOCUMENT_JOB_MAX_TEXT_CHARS"))
     document_max_jobs: int = Field(default=20, ge=1, le=1_000, validation_alias=AliasChoices("DOCUMENT_MAX_JOBS", "PII_DOCUMENT_MAX_JOBS"))
     document_max_job_bytes_total: int = Field(default=1_000_000_000, ge=1_000_000, le=64_000_000_000, validation_alias=AliasChoices("DOCUMENT_MAX_JOB_BYTES_TOTAL", "PII_DOCUMENT_MAX_JOB_BYTES_TOTAL"))
     grpc_enabled: bool = Field(default=False, validation_alias=AliasChoices("GRPC_ENABLED", "PII_GRPC_ENABLED"))

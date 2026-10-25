@@ -1,0 +1,42 @@
+[
+  {
+    "pages": 40,
+    "chars": 83307,
+    "workers": 1,
+    "seconds": 15.04,
+    "chars_per_s": 5540,
+    "entities": 1859,
+    "identical_to_first": true,
+    "cpus": 6
+  },
+  {
+    "pages": 40,
+    "chars": 83307,
+    "workers": 4,
+    "seconds": 11.71,
+    "chars_per_s": 7117,
+    "entities": 1859,
+    "identical_to_first": true,
+    "cpus": 6
+  },
+  {
+    "pages": 180,
+    "chars": 374870,
+    "workers": 1,
+    "seconds": 67.23,
+    "chars_per_s": 5576,
+    "entities": 8543,
+    "identical_to_first": true,
+    "cpus": 6
+  },
+  {
+    "pages": 180,
+    "chars": 374870,
+    "workers": 4,
+    "seconds": 56.08,
+    "chars_per_s": 6684,
+    "entities": 8543,
+    "identical_to_first": true,
+    "cpus": 6
+  }
+]

@@ -44,6 +44,12 @@ components:
       description: API key passed in the X-Api-Key header. Configure as PII_PROTECT_API_KEY in the caller's environment.
 
   parameters:
+    PiiUserId:
+      name: X-Pii-User-Id
+      in: header
+      required: false
+      description: End-user id inside the calling service (max 128 chars); scopes document jobs.
+      schema: {type: string, maxLength: 128}
     ContextId:
       name: context_id
       in: query
@@ -131,6 +137,20 @@ components:
               error: {type: string, example: PDF_NO_TEXT_LAYER}
               message: {type: string, example: "This PDF has pages without a text layer (scanned image). OCR is not supported yet."}
               safe: {type: boolean, example: false}
+
+    DocumentJobError:
+      description: |
+        Document job error (flat body like DocumentError). 404 JOB_NOT_FOUND (unknown, delivered,
+        deleted, owned by someone else, or lost on restart); 409 JOB_ALREADY_ACTIVE (this owner
+        already has a live job); 409 JOB_NOT_READY (entities/render before `ready`).
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error: {type: string, example: JOB_NOT_FOUND}
+              message: {type: string}
 
   headers:
     DocumentFormat:
@@ -1490,6 +1510,167 @@ paths:
         "429": {description: API key rate/size limit exceeded}
         "503": {$ref: "#/components/responses/DocumentError"}
         "504": {$ref: "#/components/responses/DocumentError"}
+
+  /v1/documents/jobs:
+    post:
+      summary: Upload a document and start an in-memory analysis job
+      description: |
+        For documents too long for one synchronous request. The upload is validated and its text
+        extracted before answering (same codes as `/v1/documents/redact`); detection then runs in
+        the background, windows in parallel (`PII_DOCUMENT_DETECTION_WORKERS`, detection layers
+        concurrently inside each window). Results are identical to sequential detection.
+
+        **Zero retention.** Jobs live only in the engine process RAM: never written to disk,
+        database, queue or logs, and lost on restart (`404 JOB_NOT_FOUND`). A job is deleted as soon
+        as its document has been delivered by `/render`, when analysis or rendering fails, on
+        `DELETE`, or after `PII_DOCUMENT_JOB_TTL_SECONDS` (default 900) without activity. A failed or
+        expired job keeps only a content-free tombstone (`status` + `error`) until the TTL so
+        pollers see why it ended.
+
+        **Isolation.** A job is visible only to the same tenant + API key + `X-Pii-User-Id`
+        header (absent = empty user); other callers get `404 JOB_NOT_FOUND`.
+
+        **Limits.** One live job (`queued|analyzing|ready|rendering`) per owner → `409
+        JOB_ALREADY_ACTIVE`. At most `PII_DOCUMENT_MAX_JOBS` (default 20) jobs and
+        `PII_DOCUMENT_MAX_JOB_BYTES_TOTAL` (default 1 GB: upload + extracted text) per worker →
+        `503 ENGINE_BUSY` with `Retry-After`. Extracted text above `PII_DOCUMENT_JOB_MAX_TEXT_CHARS`
+        (default 500000; separate from the synchronous `PII_DOCUMENT_MAX_TEXT_CHARS`) is refused
+        upfront with `422 DOCUMENT_TOO_LONG`.
+      operationId: createDocumentJob
+      tags: [Documents]
+      parameters: [{$ref: "#/components/parameters/PiiUserId"}]
+      requestBody: {$ref: "#/components/requestBodies/DocumentUpload"}
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id, status, format, pages_total]
+                properties:
+                  job_id: {type: string, format: uuid}
+                  status: {type: string, enum: [queued, analyzing]}
+                  format: {type: string, enum: [pdf, docx, txt]}
+                  pages_total: {type: integer, description: "PDF pages (0 for DOCX/TXT)"}
+        "400": {$ref: "#/components/responses/DocumentError"}
+        "401": {description: Missing or invalid API key}
+        "409": {$ref: "#/components/responses/DocumentJobError"}
+        "413": {$ref: "#/components/responses/DocumentError"}
+        "415": {$ref: "#/components/responses/DocumentError"}
+        "422": {$ref: "#/components/responses/DocumentError"}
+        "429": {description: API key rate/size limit exceeded}
+        "503": {$ref: "#/components/responses/DocumentError"}
+
+  /v1/documents/jobs/{job_id}:
+    parameters:
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {$ref: "#/components/parameters/PiiUserId"}
+    get:
+      summary: Document job status and progress
+      operationId: getDocumentJob
+      tags: [Documents]
+      responses:
+        "200":
+          description: "Job status (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id, status, pages_done, pages_total, chars_done, chars_total, error]
+                properties:
+                  job_id: {type: string}
+                  status: {type: string, enum: [queued, analyzing, ready, rendering, failed, expired]}
+                  pages_done: {type: integer, description: "PDF pages fully covered by finished windows"}
+                  pages_total: {type: integer}
+                  chars_done: {type: integer}
+                  chars_total: {type: integer}
+                  error:
+                    type: object
+                    nullable: true
+                    description: "null unless failed/expired. `error` codes: PII_BLOCKED, DOCUMENT_PROCESSING_TIMEOUT, PII_PROCESSING_FAILED, JOB_EXPIRED; `message` never contains document content."
+                    properties: {error: {type: string}, message: {type: string}}
+        "404": {$ref: "#/components/responses/DocumentJobError"}
+    delete:
+      summary: Cancel a document job and delete it from memory
+      description: Stops the running detection (no further windows are started) and deletes the job.
+      operationId: deleteDocumentJob
+      tags: [Documents]
+      responses:
+        "204": {description: Deleted}
+        "404": {$ref: "#/components/responses/DocumentJobError"}
+
+  /v1/documents/jobs/{job_id}/entities:
+    parameters:
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {$ref: "#/components/parameters/PiiUserId"}
+    get:
+      summary: Detected entities of a ready job
+      description: |
+        Same body and headers as `/v1/documents/preview`; every entity additionally carries `id`,
+        its index in this list, used by `/render` `exclude`. Can be read any number of times
+        while the job is `ready`; otherwise `409 JOB_NOT_READY`.
+      operationId: getDocumentJobEntities
+      tags: [Documents]
+      responses:
+        "200": {description: Preview payload (text, entities with id, pages)}
+        "404": {$ref: "#/components/responses/DocumentJobError"}
+        "409": {$ref: "#/components/responses/DocumentJobError"}
+
+  /v1/documents/jobs/{job_id}/render:
+    parameters:
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {$ref: "#/components/parameters/PiiUserId"}
+    post:
+      summary: Render the reviewed document once; the job is deleted after delivery
+      description: |
+        Applies the user's corrections and returns the file exactly like `/v1/documents/redact`
+        or `/pseudonymize` (PDF streamed page by page with the same abort-on-failure semantics).
+        `exclude`: entity ids to drop. `include_terms`: terms added at every case-insensitive
+        occurrence not overlapping a kept entity. `entities` (optional) replaces the detected
+        list entirely and cannot be combined with the other two. The job is deleted right after
+        the file has been sent (PDF: after the last chunk), or on any failure (a PDF stream that
+        fails mid-body is aborted and the job is gone). Invalid bodies (`422
+        INVALID_RENDER_REQUEST`, `PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF`, `INVALID_ENTITIES`) keep
+        the job so the client can retry.
+      operationId: renderDocumentJob
+      tags: [Documents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: {type: string, enum: [redact, pseudonymize]}
+                exclude: {type: array, items: {type: integer}}
+                include_terms:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [text, type]
+                    properties:
+                      text: {type: string, maxLength: 500}
+                      type: {type: string, pattern: "^[A-Z][A-Z0-9_]*$"}
+                entities:
+                  type: array
+                  items:
+                    type: object
+                    required: [start, end, type]
+                    properties: {start: {type: integer}, end: {type: integer}, type: {type: string}}
+      responses:
+        "200":
+          description: The rendered document (same headers as the synchronous endpoints)
+          content:
+            application/pdf: {schema: {type: string, format: binary}}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document: {schema: {type: string, format: binary}}
+            text/plain: {schema: {type: string}}
+        "404": {$ref: "#/components/responses/DocumentJobError"}
+        "409": {$ref: "#/components/responses/DocumentJobError"}
+        "422": {$ref: "#/components/responses/DocumentError"}
+        "503": {$ref: "#/components/responses/DocumentError"}
 
   /v1/anonymize/batch:
     post:

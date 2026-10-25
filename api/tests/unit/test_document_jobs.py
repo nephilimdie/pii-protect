@@ -196,7 +196,7 @@ def test_entities_and_render_need_a_ready_job(jobs, monkeypatch):
 def test_cancel_stops_detection_and_deletes_the_job(jobs, monkeypatch):
     monkeypatch.setattr(settings, "document_detection_window_chars", 300)
     monkeypatch.setattr(settings, "document_detection_window_overlap", 30)
-    monkeypatch.setattr(settings, "document_max_text_chars", 10**7)
+    monkeypatch.setattr(settings, "document_job_max_text_chars", 10**7)
     started, gate = threading.Event(), threading.Event()
     real = jobs.anonymizer.detect_only
 
@@ -271,6 +271,18 @@ def test_one_active_job_per_user_and_global_limits(jobs):
     jobs.store._max_jobs, jobs.store._max_bytes = 20, sum(j.bytes for j in jobs.store._jobs.values()) + len(TXT) - 1
     assert _create(jobs, TXT, user="u3").json()["error"] == "ENGINE_BUSY"
     assert len(jobs.store) == 1  # refused uploads left nothing behind
+
+
+def test_jobs_use_their_own_text_cap_upfront(jobs, monkeypatch):
+    big = TXT * 4
+    monkeypatch.setattr(settings, "document_max_text_chars", len(TXT))
+    monkeypatch.setattr(settings, "document_job_max_text_chars", len(big.decode()) - 1)
+    refused = _create(jobs, big)
+    assert refused.status_code == 422 and refused.json()["error"] == "DOCUMENT_TOO_LONG"
+    assert refused.json()["max_chars"] == len(big.decode()) - 1 and len(jobs.store) == 0
+    monkeypatch.setattr(settings, "document_job_max_text_chars", len(big.decode()))
+    assert _create(jobs, big).status_code == 202  # above the sync cap, within the job cap
+    assert jobs.jobs.post("/v1/documents/redact", files={"file": ("d", big)}).json()["error"] == "DOCUMENT_TOO_LONG"
 
 
 def test_sync_endpoints_still_work_alongside_jobs(jobs):

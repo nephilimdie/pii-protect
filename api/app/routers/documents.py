@@ -100,15 +100,15 @@ def check_pseudonymizable(document_format: str) -> None:
                             "PDF supports redact only; use DOCX or TXT for pseudonymization.")
 
 
-def check_text_length(chars: int) -> None:
+def check_text_length(chars: int, max_chars: int | None = None) -> None:
     """Why: detection runs at ~1.1k chars/s, so an over-long document would only fail at the
     timeout after burning a slot for the full deadline; refusing it right after extraction
     answers in about a second and charges nothing.
     What: raises 422 DOCUMENT_TOO_LONG with max_chars, chars and estimated_max_pages when
-    chars exceeds PII_DOCUMENT_MAX_TEXT_CHARS.
+    chars exceeds `max_chars` (jobs: PII_DOCUMENT_JOB_MAX_TEXT_CHARS), else PII_DOCUMENT_MAX_TEXT_CHARS.
     Test: set the limit to 1000, post 1001 chars of text -> 422 with estimated_max_pages == 0.
     """
-    max_chars = settings.document_max_text_chars
+    max_chars = max_chars or settings.document_max_text_chars
     if chars > max_chars:
         raise DocumentError(422, "DOCUMENT_TOO_LONG",
                             f"The document has {chars} characters of text; the limit is {max_chars}. "

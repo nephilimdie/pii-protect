@@ -165,7 +165,7 @@ async def create_document_job(
             job = store.reserve(owner, len(upload.payload))
             doc = await asyncio.to_thread(load_document, upload.payload, docs._limits())
             joined = JoinedText(doc.segments)
-            docs.check_text_length(len(joined.text))
+            docs.check_text_length(len(joined.text), settings.document_job_max_text_chars)
             await docs.UsageService(db).ensure_within_limits(api_key, len(joined.text))
             domain = upload.fields.get("domain") or None
             context_type = upload.fields.get("context_type") or (None if domain else "generic")
