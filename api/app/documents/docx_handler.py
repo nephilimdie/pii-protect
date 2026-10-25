@@ -62,10 +62,10 @@ def _external_types(rels_xml: bytes) -> list[str]:
 def _check_zip(payload: bytes, limits: DocumentLimits) -> None:
     """Why: a DOCX is a ZIP; the central directory is checked before any part is inflated or
     parsed, so zip bombs and packages that reach outside the document never get loaded.
-    What: rejects too many parts, total inflated size or per-part ratio above the limits (413),
-    nested archives and external references other than hyperlinks/templates (422; both of
-    those are stripped from the output anyway).
-    Test: 900 MB of XML deflated to 2.6 MB -> 413 before python-docx runs; a header rel
+    What: rejects (422, one error code each) too many parts, total inflated size or per-part
+    ratio above the limits, nested archives, and external references other than
+    hyperlinks/attached templates (both of those are stripped from the output anyway).
+    Test: 900 MB of XML deflated to 2.6 MB -> 422 DOCX_UNCOMPRESSED_TOO_LARGE before python-docx runs; a header rel
     with TargetMode="External" to an image -> 422 DOCX_EXTERNAL_REFERENCE.
     """
     try:
@@ -77,12 +77,12 @@ def _check_zip(payload: bytes, limits: DocumentLimits) -> None:
         if not any(info.filename == "word/document.xml" for info in infos):
             raise DocumentError(415, "UNSUPPORTED_DOCUMENT_TYPE", "Only PDF, DOCX and plain-text files are supported.")
         if len(infos) > limits.docx_max_entries:
-            raise DocumentError(413, "DOCX_TOO_MANY_PARTS", f"The DOCX file has more than {limits.docx_max_entries} parts.")
+            raise DocumentError(422, "DOCX_TOO_MANY_PARTS", f"The DOCX file has more than {limits.docx_max_entries} parts.")
         if sum(info.file_size for info in infos) > limits.docx_max_uncompressed_bytes:
-            raise DocumentError(413, "DOCUMENT_TOO_LARGE", "The DOCX file expands beyond the allowed size.")
+            raise DocumentError(422, "DOCX_UNCOMPRESSED_TOO_LARGE", "The DOCX file expands beyond the allowed size.")
         for info in infos:
             if info.file_size > _RATIO_FLOOR_BYTES and info.file_size > info.compress_size * limits.docx_max_ratio:
-                raise DocumentError(413, "DOCX_COMPRESSION_RATIO_EXCEEDED",
+                raise DocumentError(422, "DOCX_COMPRESSION_RATIO_EXCEEDED",
                               "The DOCX file contains a part with a suspicious compression ratio.")
             with archive.open(info) as member:
                 magic = member.read(_MAGIC_BYTES)

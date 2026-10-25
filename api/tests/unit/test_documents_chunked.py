@@ -9,6 +9,7 @@ import json
 import re
 import time
 import zipfile
+import zlib
 
 import pypdfium2 as pdfium
 import pytest
@@ -22,7 +23,7 @@ from app.documents.admission import DocumentAdmission
 from app.documents.chunking import detect_in_windows, merge_windows, windows
 from app.documents.models import DocumentError, DocumentLimits
 from app.documents.pdf_handler import plan_page
-from app.documents.pdf_writer import EOF_MARKER
+from app.documents.pdf_writer import EOF_MARKER, ImagePdfWriter, PageImage
 from app.routers import documents as documents_module
 from tests.unit.test_documents import PERSON, _post, env, make_docx, make_pdf  # noqa: F401  (fixture reuse)
 
@@ -137,6 +138,25 @@ def test_huge_page_is_rendered_within_budget_and_keeps_its_size(env):
 def test_page_beyond_minimum_dpi_is_rejected_before_any_output(env):
     r = _post(env, "redact", _pdf((14_400, 14_400)))
     assert r.status_code == 422 and r.json()["error"] == "PDF_PAGE_TOO_LARGE"
+    assert env.anonymizer.calls == 0  # every page plan is validated before detection
+
+
+def test_image_pdf_writer_output_is_valid_and_text_free():
+    writer = ImagePdfWriter()
+    gray = PageImage(zlib.compress(b"\x80" * 40 * 30), 40, 30, "DeviceGray", "FlateDecode")
+    payload = b"".join([writer.start(), writer.add_page(gray, (400, 300), 0),
+                        writer.add_page(gray, (300, 400), 90), writer.finish()])
+    assert payload.rstrip().endswith(EOF_MARKER)
+    pdf = pdfium.PdfDocument(payload)
+    try:
+        assert len(pdf) == 2 and pdf[0].get_size() == (400, 300) and pdf[1].get_rotation() == 90
+        assert sum(pdf[i].get_textpage().count_chars() for i in range(2)) == 0
+    finally:
+        pdf.close()
+
+
+def test_pdf_preview_carries_page_header(env):
+    assert _post(env, "preview", make_pdf(pages=2)).headers["x-pseudora-pages"] == "2"
 
 
 def test_streamed_pdf_is_complete_and_image_only(env):
@@ -225,25 +245,26 @@ def test_zip_bomb_rejected_before_parsing(env, no_docx_parse):
     payload = _bomb()
     assert len(payload) < 200_000
     r = _post(env, "redact", payload)
-    assert r.status_code == 413 and r.json()["error"] == "DOCX_COMPRESSION_RATIO_EXCEEDED"
+    assert r.status_code == 422 and r.json()["error"] == "DOCX_COMPRESSION_RATIO_EXCEEDED"
 
 
 def test_total_inflated_size_limit(env, no_docx_parse, monkeypatch):
     monkeypatch.setattr(settings, "document_docx_max_uncompressed_bytes", 1_000_000)
     monkeypatch.setattr(settings, "document_docx_max_ratio", 10_000)
     r = _post(env, "redact", _bomb())
-    assert r.status_code == 413 and r.json()["error"] == "DOCUMENT_TOO_LARGE"
+    assert r.status_code == 422 and r.json()["error"] == "DOCX_UNCOMPRESSED_TOO_LARGE"
 
 
 def test_too_many_parts(env, no_docx_parse, monkeypatch):
     monkeypatch.setattr(settings, "document_docx_max_entries", 10)
     r = _post(env, "redact", make_docx())
-    assert r.status_code == 413 and r.json()["error"] == "DOCX_TOO_MANY_PARTS"
+    assert r.status_code == 422 and r.json()["error"] == "DOCX_TOO_MANY_PARTS"
 
 
 @pytest.mark.parametrize("name,data", [
     ("word/embeddings/sheet.xlsx", b"PK\x03\x04whatever"),
     ("word/embeddings/oleObject1.bin", b"PK\x03\x04disguised zip"),
+    ("word/media/image1.png", b"7z\xbc\xaf\x27\x1c disguised 7z"),
 ])
 def test_nested_archives_rejected(env, no_docx_parse, name, data):
     r = _post(env, "redact", _with_member(name, data))
@@ -291,3 +312,21 @@ def test_slot_is_released_after_errors(env):
     assert _post(env, "redact", b"").status_code == 422
     assert _post(env, "redact", make_pdf()).status_code == 200
     assert _slots_free(admission, 1)
+
+
+async def test_admission_slot_release_is_idempotent_and_waits_within_timeout():
+    admission = DocumentAdmission(1, 1.0, 0)
+    slot = await admission.acquire()
+    asyncio.get_running_loop().call_later(0.1, slot.release)
+    second = await admission.acquire()  # waits for the first slot instead of failing at once
+    slot.release()  # already released: must not over-release the semaphore
+    second.release()
+    assert admission._semaphore._value == 1
+    (await DocumentAdmission(1, 0.0, 100, rss=lambda: None).acquire()).release()  # RSS unknown: no guard
+
+
+def test_text_endpoints_do_not_take_document_slots():
+    from app.routers import anonymize
+
+    calls = {dep.call for route in anonymize.router.routes for dep in route.dependant.dependencies}
+    assert documents_module.get_document_admission not in calls

@@ -128,7 +128,7 @@ def _stream_pdf(doc, edits, deadline: float, slot: AdmissionSlot, done) -> Strea
             finish(True)
 
     return _SlotStreamingResponse(finish, body(), media_type=MEDIA_TYPES[DocumentFormat.PDF], headers={
-        "Content-Disposition": 'attachment; filename="redacted.pdf"', "X-Pseudora-Pages": str(doc.pages)})
+        "Content-Disposition": 'attachment; filename="redacted.pdf"'})
 
 
 class _SlotStreamingResponse(StreamingResponse):
@@ -223,6 +223,8 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         "X-Pii-Warnings": ",".join(doc.warnings),
         "X-Pii-Sanitized": ",".join(sanitized),
     })
+    if doc.pages is not None:
+        response.headers["X-Pseudora-Pages"] = str(doc.pages)
     return response
 
 
