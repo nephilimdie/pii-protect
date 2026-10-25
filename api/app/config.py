@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     document_docx_max_uncompressed_bytes: int = Field(default=100_000_000, ge=1_000_000, le=1_000_000_000, validation_alias=AliasChoices("DOCUMENT_DOCX_MAX_UNCOMPRESSED_BYTES", "PII_DOCUMENT_DOCX_MAX_UNCOMPRESSED_BYTES"))
     document_docx_max_ratio: int = Field(default=100, ge=10, le=10_000, validation_alias=AliasChoices("DOCUMENT_DOCX_MAX_RATIO", "PII_DOCUMENT_DOCX_MAX_RATIO"))
     document_docx_max_entries: int = Field(default=1_000, ge=10, le=100_000, validation_alias=AliasChoices("DOCUMENT_DOCX_MAX_ENTRIES", "PII_DOCUMENT_DOCX_MAX_ENTRIES"))
+    # Window detection runs in one shared pool; inference_threads=0 sizes torch/ONNX intra-op threads to fit it.
+    document_detection_workers: int = Field(default=min(4, os.cpu_count() or 1), ge=1, le=64, validation_alias=AliasChoices("DOCUMENT_DETECTION_WORKERS", "PII_DOCUMENT_DETECTION_WORKERS"))
+    inference_threads: int = Field(default=0, ge=0, le=256, validation_alias=AliasChoices("INFERENCE_THREADS", "PII_INFERENCE_THREADS"))
+    # In-memory document jobs (/v1/documents/jobs): RAM only, deleted on delivery, failure, cancel or idle TTL.
+    document_job_ttl_seconds: int = Field(default=900, ge=10, le=86_400, validation_alias=AliasChoices("DOCUMENT_JOB_TTL_SECONDS", "PII_DOCUMENT_JOB_TTL_SECONDS"))
+    document_job_max_text_chars: int = Field(default=500_000, ge=1_000, le=5_000_000, validation_alias=AliasChoices("DOCUMENT_JOB_MAX_TEXT_CHARS", "PII_DOCUMENT_JOB_MAX_TEXT_CHARS"))
+    document_max_jobs: int = Field(default=20, ge=1, le=1_000, validation_alias=AliasChoices("DOCUMENT_MAX_JOBS", "PII_DOCUMENT_MAX_JOBS"))
+    document_max_job_bytes_total: int = Field(default=1_000_000_000, ge=1_000_000, le=64_000_000_000, validation_alias=AliasChoices("DOCUMENT_MAX_JOB_BYTES_TOTAL", "PII_DOCUMENT_MAX_JOB_BYTES_TOTAL"))
     grpc_enabled: bool = Field(default=False, validation_alias=AliasChoices("GRPC_ENABLED", "PII_GRPC_ENABLED"))
     grpc_host: str = Field(default="127.0.0.1", validation_alias=AliasChoices("GRPC_HOST", "PII_GRPC_HOST"))
     grpc_port: int = Field(default=50051, ge=1, le=65535, validation_alias=AliasChoices("GRPC_PORT", "PII_GRPC_PORT"))
@@ -94,6 +102,11 @@ class Settings(BaseSettings):
         "ai4privacy":     {"enabled": True},
         "regex":          {"enabled": True},
     }
+
+    def inference_thread_count(self) -> int:
+        """Intra-op threads per model call: explicit setting, else CPUs / window workers rounded up
+        (measured: rounding down to 1 thread costs single-window latency ~1.6x for ~6% more parallel throughput)."""
+        return self.inference_threads or max(1, -(-(os.cpu_count() or 1) // self.document_detection_workers))
 
     model_config = SettingsConfigDict(
         env_file=".env",

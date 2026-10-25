@@ -22,6 +22,7 @@ from starlette.datastructures import MutableHeaders
 from app.routers import anonymize, deanonymize, detect as detect_router, health
 from app.routers import image as image_router
 from app.routers import document as document_router
+from app.routers import document_jobs as document_jobs_router
 from app.routers import documents as documents_router
 from app.routers import mask as mask_router
 from app.routers import identity as identity_router
@@ -194,6 +195,13 @@ async def lifespan(app: FastAPI):
     ]
     if not lang_models:
         lang_models = [{"lang_code": "it", "model_name": settings.spacy_model}]
+    # Several document windows run at once: size per-call intra-op threads so they share the CPUs.
+    inference_threads = settings.inference_thread_count()
+    try:
+        import torch
+        torch.set_num_threads(inference_threads)
+    except ImportError:  # pragma: no cover - torch ships in the engine image
+        pass
     if settings.layer_enabled("presidio"):
         logger.info("Preloading Presidio detector")
         PresidioDetector.preload(lang_models)
@@ -203,7 +211,7 @@ async def lifespan(app: FastAPI):
 
     if settings.layer_enabled("privacy_filter"):
         logger.info("Preloading PrivacyFilter detector")
-        PrivacyFilterDetector.preload(settings.privacy_filter_model, settings.privacy_filter_revision)
+        PrivacyFilterDetector.preload(settings.privacy_filter_model, settings.privacy_filter_revision, inference_threads)
     else:
         logger.info("Skipping PrivacyFilter detector preload because layer is disabled")
 
@@ -411,6 +419,7 @@ app.include_router(plugins_router.router, prefix="/v1/admin")
 app.include_router(image_router.router, prefix="/v1")
 app.include_router(document_router.router, prefix="/v1")
 app.include_router(documents_router.router, prefix="/v1")
+app.include_router(document_jobs_router.router, prefix="/v1")
 app.include_router(retention_router.router, prefix="/v1/admin")
 app.include_router(layer_settings_router.router, prefix="/v1/admin")
 app.include_router(effective_config_router.router, prefix="/v1/admin")
