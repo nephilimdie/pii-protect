@@ -63,6 +63,14 @@ def test_entity_on_every_window_boundary_is_detected_once_and_whole():
     assert all(text[e.start:e.end] == e.text for e in found)
 
 
+def test_past_deadline_stops_window_detection_before_the_next_window():
+    calls = []
+    text = "testo neutro " * 400
+    with pytest.raises(TimeoutError):
+        detect_in_windows(lambda chunk: calls.append(chunk) or [], text, 700, 120, deadline=time.monotonic() - 1)
+    assert calls == []
+
+
 def test_fragments_cut_by_a_window_edge_are_unioned():
     text = "aaaa Mario Rossi bbbb"
     left = ((0, 11), [PiiEntity(5, 11, "PERSON", "Mario ", 0.6, "x")])  # touches A's end
