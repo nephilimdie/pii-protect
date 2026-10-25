@@ -101,8 +101,12 @@ components:
     DocumentError:
       description: |
         Document request rejected; no document is returned. Codes: 400 INVALID_MULTIPART;
-        413 DOCUMENT_TOO_LARGE, DOCUMENT_PAGE_LIMIT_EXCEEDED, DOCUMENT_TEXT_TOO_LONG
-        (`PII_DOCUMENT_MAX_TEXT_CHARS`, default 500000);
+        413 DOCUMENT_TOO_LARGE, DOCUMENT_PAGE_LIMIT_EXCEEDED;
+        422 DOCUMENT_TOO_LONG: the extracted text exceeds `PII_DOCUMENT_MAX_TEXT_CHARS` (default
+        500000). Checked right after text extraction, before detection, rendering or usage
+        accounting, so it answers in about a second and nothing is charged. Extra integer body
+        fields: `max_chars` (the limit), `chars` (extracted characters), `estimated_max_pages`
+        (`max_chars // 2200`, assuming ~2,200 characters per dense A4 text page);
         415 MULTIPART_REQUIRED, UNSUPPORTED_DOCUMENT_TYPE; 422 FILE_REQUIRED, EMPTY_DOCUMENT,
         INVALID_DOCUMENT, LEGACY_OR_ENCRYPTED_OFFICE_FILE, PDF_NO_TEXT_LAYER, PDF_PAGE_TOO_LARGE,
         PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF, INVALID_ENTITIES, PII_BLOCKED;

@@ -28,16 +28,19 @@ MEDIA_TYPES = {
 
 class DocumentError(Exception):
     """Why: input problems must map to clear 4xx answers without leaking content.
-    What: carries an HTTP status, a stable error code and a fixed human message.
+    What: carries an HTTP status, a stable error code, a fixed human message and optional
+    content-free numeric fields (`extra`) merged into the JSON body.
     Test: raise DocumentError(413, "DOCUMENT_TOO_LARGE", "...") and assert .status == 413.
     """
 
-    def __init__(self, status: int, code: str, message: str, headers: dict[str, str] | None = None) -> None:
+    def __init__(self, status: int, code: str, message: str, headers: dict[str, str] | None = None,
+                 extra: dict[str, int] | None = None) -> None:
         super().__init__(code)
         self.status = status
         self.code = code
         self.message = message
         self.headers = headers
+        self.extra = extra or {}
 
 
 @dataclass(frozen=True)
