@@ -11,6 +11,7 @@ the merged list (apply_replacements), never per window.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -103,19 +104,24 @@ def _resolve(text: str, group: list[tuple[PiiEntity, bool]]) -> list[PiiEntity]:
     return chosen
 
 
-def detect_in_windows(detect: Callable[[str], list[PiiEntity]], text: str, size: int, overlap: int) -> list[PiiEntity]:
+def detect_in_windows(detect: Callable[[str], list[PiiEntity]], text: str, size: int, overlap: int,
+                      deadline: float | None = None) -> list[PiiEntity]:
     """Why: one entry point so callers get identical results for short texts and bounded
-    memory for long ones.
+    memory for long ones; a request timeout cannot cancel a worker thread, so without the
+    deadline an abandoned 200-page job kept every core busy for minutes after its 504.
     What: runs `detect` on each window sequentially (one window's model input alive at a
-    time), shifts offsets to document coordinates and merges across windows.
+    time), shifts offsets to document coordinates and merges across windows; raises
+    TimeoutError before a window once `deadline` (time.monotonic()) has passed.
     Test: a fake detector over a 3-window text returns each planted name once, at the
-    document offset of the name.
+    document offset of the name; with a past deadline it raises before calling `detect`.
     """
     spans = windows(text, size, overlap)
     if len(spans) == 1:
         return detect(text)
     found = []
     for start, end in spans:
+        if deadline is not None and time.monotonic() > deadline:
+            raise TimeoutError("document detection deadline exceeded")
         entities = [replace(e, start=e.start + start, end=e.end + start) for e in detect(text[start:end])]
         found.append(((start, end), entities))
     return merge_windows(text, found)

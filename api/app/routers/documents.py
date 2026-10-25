@@ -186,7 +186,8 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         language = fields.get("language") or getattr(request.app.state, "default_language", "it")
         entities = await detect_protected_entities(
             anonymizer, policy, joined.text, str(uuid.uuid4()), domain or context_type or "generic", language,
-            window=(settings.document_detection_window_chars, settings.document_detection_window_overlap))
+            window=(settings.document_detection_window_chars, settings.document_detection_window_overlap,
+                    state["deadline"]))
     entities = sorted(entities, key=lambda e: e.start)
     state["entities"] = entities
     types = sorted({e.pii_type for e in entities})

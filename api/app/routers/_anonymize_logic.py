@@ -57,9 +57,9 @@ async def run_detection(
     context_id: str,
     context_type: str,
     language: str,
-    window: tuple[int, int] | None = None,
+    window: tuple[int, int] | tuple[int, int, float] | None = None,
 ):
-    """`window` = (chars, overlap): detect in overlapping windows (bounded model input) and merge."""
+    """`window` = (chars, overlap[, monotonic deadline]): detect in overlapping windows (bounded model input) and merge."""
     def detect(chunk: str) -> list:
         return anonymizer.detect_only(chunk, context_id, context_type, language).entities
 
@@ -74,7 +74,7 @@ async def detect_protected_entities(
     context_id: str,
     context_type: str,
     language: str,
-    window: tuple[int, int] | None = None,
+    window: tuple[int, int] | tuple[int, int, float] | None = None,
 ) -> list:
     """Why: text and document endpoints must share one detection + policy path (same fail-closed semantics).
     What: restricts layers per policy, detects, rejects blocked types (422 PII_BLOCKED), returns entities to protect.
