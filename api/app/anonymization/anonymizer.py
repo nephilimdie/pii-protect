@@ -1,4 +1,5 @@
 from __future__ import annotations
+import dataclasses
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,6 +26,16 @@ _HONORIFIC_PREFIX_RE = re.compile(
     r"|ingegnere|professor(?:e|essa)|architetto|geometra|ragioniere)\s+)+",
     re.IGNORECASE,
 )
+
+# Italian form-field labels next to a value ("Mario Rossi, C.F. ...", "Rossi nato a ..."). ML layers tag
+# them as PERSON fragments that the merger then glues onto the real name; they are never PII themselves.
+_FIELD_LABEL = (
+    r"(?<![^\W_])(?:c\.\s?f\.?|cf|cod(?:ice|\.)\s*fisc(?:ale|\.)?|p\.?\s?iva|partita\s+iva|nat[oa]|residente"
+    r"|domiciliat[oa]|tel(?:efono|\.)|cell(?:ulare|\.)|e-?mail|pec|n\.|nr\.|matr(?:icola|\.))(?![^\W_])"
+)
+_SEPARATORS = r"[\s,;:.\-–—]"
+_LABEL_PREFIX_RE = re.compile(rf"^(?:{_FIELD_LABEL}{_SEPARATORS}*)+", re.IGNORECASE)
+_PERSON_SUFFIX_RE = re.compile(rf"(?:{_SEPARATORS}|{_FIELD_LABEL})+$", re.IGNORECASE)
 
 # Compiled reclassification rules loaded from DB at startup / on change.
 # Each entry: (context_re | None, entity_re | None, from_type, to_type | None, context_window)
@@ -70,7 +81,7 @@ _KINSHIP_PREFIX_RE = re.compile(
 )
 
 
-def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
+def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity | None:
     start, end = entity.start, entity.end
 
     # Strip leading whitespace from entity (BPE tokens often include preceding space)
@@ -92,12 +103,26 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity:
         for prefix_re in (_KINSHIP_PREFIX_RE, _HONORIFIC_PREFIX_RE):
             if m := prefix_re.match(text[start:end]):
                 start += m.end()
+        # Strip trailing punctuation and field labels ("Mario Rossi, C.F." -> "Mario Rossi")
+        if m := _PERSON_SUFFIX_RE.search(text[start:end]):
+            end = start + m.start()
+    if entity.pii_type not in _PASSWORD_TYPES and (m := _LABEL_PREFIX_RE.match(text[start:end])):
+        start += m.end()
 
     if start >= end:
-        return entity
+        return None  # span was only a title/label: nothing left to protect
     if start == entity.start and end == entity.end:
         return entity
-    return PiiEntity(start=start, end=end, pii_type=entity.pii_type, text=text[start:end], score=entity.score)
+    return dataclasses.replace(entity, start=start, end=end, text=text[start:end])
+
+
+def _snap_all(text: str, entities: list[PiiEntity]) -> list[PiiEntity]:
+    """Why: ML spans carry stray whitespace, titles and field labels that must go before merging,
+    or the merger glues label fragments onto adjacent names.
+    What: snaps every entity to word boundaries and drops those that were only a title/label.
+    Test: [PERSON ' C.F.'] -> []; [PERSON 'Mario Rossi, C.F.'] -> [PERSON 'Mario Rossi'].
+    """
+    return [snapped for e in entities if (snapped := _snap_to_word_boundary(text, e)) is not None]
 
 
 def _is_valid_entity(entity: PiiEntity, denylist: dict[str, dict]) -> bool:
@@ -221,30 +246,16 @@ class PiiAnonymizer:
     def detect_only(self, text: str, context_id: str, context_type: str, language: str = "it") -> DetectionResult:
         """Run detection pipeline and return merged/reclassified entities without token assignment.
         Called by the policy-aware anonymize router so it can filter by protect/keep lists."""
-        all_entities: list[PiiEntity] = self._run_detectors(text, language)
-
-        merged = self._merger.merge(all_entities, text)
+        # Snap raw spans first so label-only fragments are dropped before the merger can join them
+        merged = self._merger.merge(_snap_all(text, self._run_detectors(text, language)), text)
+        # Reclassify entities based on surrounding context (e.g. PERSON → ACCOUNT after "username:")
         reclassified = [r for e in merged if (r := self._reclassify_entity(e, text)) is not None]
-        snapped = [_snap_to_word_boundary(text, e)
-                   for e in reclassified if _is_valid_entity(e, self._denylist)]
-        snapped = self._merger.merge(snapped, text)
-        return DetectionResult(entities=snapped)
+        valid = [e for e in reclassified if _is_valid_entity(e, self._denylist)]
+        # Re-merge after snapping in case boundaries now overlap
+        return DetectionResult(entities=self._merger.merge(_snap_all(text, valid), text))
 
     def anonymize(self, text: str, context_id: str, context_type: str, language: str = "it") -> AnonymizationResult:
-        all_entities: list[PiiEntity] = self._run_detectors(text, language)
-
-        merged = self._merger.merge(all_entities, text)
-
-        # Reclassify entities based on surrounding context (e.g. PERSON → ACCOUNT after "username:")
-        reclassified = []
-        for e in merged:
-            r = self._reclassify_entity(e, text)
-            if r is not None:
-                reclassified.append(r)
-
-        snapped = [_snap_to_word_boundary(text, e) for e in reclassified if _is_valid_entity(e, self._denylist)]
-        # Re-merge after snapping in case boundaries now overlap
-        snapped = self._merger.merge(snapped, text)
+        snapped = self.detect_only(text, context_id, context_type, language).entities
 
         generator = TokenGenerator()
         # Pass 1: assign tokens in left-to-right text order so [TYPE_1] is

@@ -1,9 +1,26 @@
+from dataclasses import replace
+
 from app.detection.entities import PiiEntity
 
 _MAX_MERGE_GAP = 5
 
 
 class EntityMerger:
+    @staticmethod
+    def _replace_clipped(deduped: list[PiiEntity], winner: PiiEntity, text: str) -> None:
+        """Why: dropping a loser that starts before the winner leaks its leading part
+        ("Mario Rossi, C.F. RSSM..." losing to a regex FISCAL_CODE left "Mario Rossi" in clear).
+        What: replaces deduped[-1] with winner, keeping the loser's part before winner.start (trimmed).
+        Test: PERSON 0-30 vs regex FISCAL_CODE 18-30 -> [PERSON 0-11, FISCAL_CODE 18-30].
+        """
+        loser = deduped[-1]
+        head = text[loser.start:winner.start].rstrip(" \t,;:.-") if text else ""
+        if head.strip():
+            deduped[-1] = replace(loser, end=loser.start + len(head), text=head)
+            deduped.append(winner)
+        else:
+            deduped[-1] = winner
+
     def merge(self, entities: list[PiiEntity], text: str = "") -> list[PiiEntity]:
         if not entities:
             return []
@@ -25,7 +42,7 @@ class EntityMerger:
 
                 # Regex (deterministic) always beats ML layers on any overlap
                 if entity.source == "regex" and last.source != "regex":
-                    deduped[-1] = entity
+                    self._replace_clipped(deduped, entity, text)
                 elif last.source == "regex" and entity.source != "regex":
                     pass  # keep last (regex/deterministic)
                 elif same_span:
@@ -34,7 +51,7 @@ class EntityMerger:
                 elif entity_contains_last:
                     deduped[-1] = entity  # wider span wins
                 elif not last_contains_entity and entity.score > last.score:
-                    deduped[-1] = entity  # partial overlap: higher score wins
+                    self._replace_clipped(deduped, entity, text)  # partial overlap: higher score wins
                 continue
             deduped.append(entity)
 
