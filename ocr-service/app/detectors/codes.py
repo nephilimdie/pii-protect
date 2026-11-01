@@ -8,7 +8,8 @@ from PIL import Image
 
 from app.detectors import Hit, grow
 
-_QR = {"QRCode", "MicroQRCode", "RMQRCode"}
+_QR = {getattr(zxingcpp.BarcodeFormat, n) for n in ("QRCode", "MicroQRCode", "RMQRCode", "QRCodeModel1", "QRCodeModel2")
+       if hasattr(zxingcpp.BarcodeFormat, n)}
 _QUIET = 0.1  # quiet zone + module bleed, of the code size on each side
 
 
@@ -37,12 +38,11 @@ class Codes:
             box = (float(min(xs)), float(min(ys)), float(max(xs)), float(max(ys)))
             if box[2] - box[0] < 2 and box[3] - box[1] < 2:
                 continue
-            fmt = str(symbol.format).rsplit(".", 1)[-1]
             linear = box[3] - box[1] < 4  # linear codes are reported as a scan line: cover the bars
             if linear:
                 half = max(8.0, (box[2] - box[0]) * 0.25)
                 box = (box[0], box[1] - half, box[2], box[3] + half)
             valid = bool(symbol.valid)
-            hits.append(Hit("QR_CODE" if fmt in _QR else "BARCODE", grow(box, _QUIET, _QUIET, *gray.size),
+            hits.append(Hit("QR_CODE" if symbol.format in _QR else "BARCODE", grow(box, _QUIET, _QUIET, *gray.size),
                             1.0 if valid else 0.5, not valid or linear))
         return hits

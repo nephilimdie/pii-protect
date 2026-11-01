@@ -33,18 +33,13 @@ def iou(a: BBoxF, b: BBoxF) -> float:
 
 
 def nms(hits: list[Hit], threshold: float = 0.3) -> list[Hit]:
-    """Why: tiles and scales find the same face several times. What: greedy NMS by score,
-    keeping the union-free best box; the kept box inherits needs_review if any duplicate had it
-    (fail-closed: a doubtful duplicate keeps the review flag). Test: two 0.9-IoU boxes -> one.
+    """Why: tiles and scales find the same face several times. What: greedy NMS by score; the
+    best-scoring box (and its review flag) wins, weaker duplicates are dropped.
+    Test: two 0.9-IoU boxes -> one, the higher score.
     """
     kept: list[Hit] = []
     for hit in sorted(hits, key=lambda h: h.score, reverse=True):
-        for n, other in enumerate(kept):
-            if iou(hit.bbox, other.bbox) > threshold:
-                if hit.needs_review and not other.needs_review:
-                    kept[n] = Hit(other.type, other.bbox, other.score, True)
-                break
-        else:
+        if all(iou(hit.bbox, other.bbox) <= threshold for other in kept):
             kept.append(hit)
     return kept
 

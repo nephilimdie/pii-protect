@@ -8,7 +8,7 @@ from typing import Protocol
 from PIL import Image
 
 from app.config import Settings
-from app.detectors import Hit
+from app.detectors import Hit, grow
 from app.detectors.plates import find_plates
 from app.engines import Engine, remaining
 from app.errors import ErrorCode, OcrError
@@ -67,7 +67,9 @@ class VisualPipeline:
             if name == "plate":
                 engine = self._need(self._engines, "rapidocr")
                 words = engine.recognize(to_gray(image), "ita", page.dpi, deadline)  # type: ignore[attr-defined]
-                hits += find_plates(words, self._s.plate_review_conf)
+                # OCR boxes hug the glyphs: grow to the plate's border (and over a clipped first/last char)
+                hits += [Hit(h.type, grow(h.bbox, 0.08, 0.35, *image.size), h.score, h.needs_review)
+                         for h in find_plates(words, self._s.plate_review_conf)]
             else:
                 hits += self._need(self._detectors, name).detect(image)  # type: ignore[attr-defined]
         boxes = []
