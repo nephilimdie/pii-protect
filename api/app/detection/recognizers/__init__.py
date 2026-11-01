@@ -1,6 +1,6 @@
 """Code-level Italian recognizers and the ML precision filter, behind one entry point each.
 
-Why: context rules (birth data, cue-based names, key-aware logs, obfuscated identifiers) need
+Why: context rules (birth data, cue-based names, key-aware logs, obfuscated identifiers, full addresses) need
 code, not single DB regexes; the regex layer and the anonymizer call them through this module
 so neither has to know the individual recognizers.
 What: detect_contextual() runs every recognizer; precision_filter() drops ML false positives.
@@ -9,6 +9,7 @@ Test: tests/unit/test_recognizers.py covers each rule through these two function
 from __future__ import annotations
 
 from app.detection.entities import PiiEntity
+from app.detection.recognizers.address import detect_addresses
 from app.detection.recognizers.birth import detect_birth
 from app.detection.recognizers.common import BALANCED, MAXIMUM, MAXIMUM_ML_MIN_SCORE, ML_LAYERS, PROTECTION_LEVELS
 from app.detection.recognizers.identifiers import detect_identifiers
@@ -27,4 +28,4 @@ def detect_contextual(text: str, level: str = BALANCED) -> list[PiiEntity]:
     What: concatenated output of every recognizer (the merger resolves overlaps).
     Test: detect_contextual("ip=10.0.0.1") contains an IP_ADDRESS span "10.0.0.1".
     """
-    return [e for recognize in _RECOGNIZERS for e in recognize(text)]
+    return [e for recognize in _RECOGNIZERS for e in recognize(text)] + detect_addresses(text, level)

@@ -29,6 +29,8 @@ _PHONE_LOOSE = re.compile(
 )
 _PHONE_CUE = re.compile(r"(?i)(?:\btel(?:efono|\.)?|\bcell(?:ulare|\.)?|\bmobile|\bphone|\bnumero|\bchiam\w*|\bwhatsapp|\bfax)\b[^\n]{0,20}$")
 _SEPARATORS = re.compile(r"[\s.\-]")
+# label of a non-phone identifier right before the digits ("Matricola: 004927", "Posizione INPS: 36005...")
+_ID_LABEL = re.compile(r"(?i)\b(?:matricol\w*|inps|inail|pat|badge|posizione|protocollo|prot\.|pratica|codice|cod\.|id)\s*[:#n.°]*\s*$")
 _DATE_SHAPE = re.compile(r"\d{1,2}[./\-]\d{1,2}[./\-](?:\d{2}|\d{4})")
 _TO_LETTER = str.maketrans("0125486", "OIZSABG")
 _TO_DIGIT = str.maketrans("OoIlBZGDSs", "0011826055")
@@ -97,7 +99,7 @@ def detect_obfuscated(text: str) -> list[PiiEntity]:
             found.append(entity(text, m.start("v"), m.end("v"), "VAT_NUMBER"))
     for m in _PHONE_LOOSE.finditer(text):
         raw = m.group()
-        if _DATE_SHAPE.fullmatch(raw):
+        if _DATE_SHAPE.fullmatch(raw) or _ID_LABEL.search(text[max(0, m.start() - 30):m.start()]):
             continue
         digits = re.sub(r"\D", "", raw.translate(_TO_DIGIT))
         repaired = digits != re.sub(r"\D", "", raw)

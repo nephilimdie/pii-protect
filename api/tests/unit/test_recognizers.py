@@ -90,6 +90,12 @@ def test_spaced_and_lowercase_values_with_checksum(text, pii_type):
     assert any(t == pii_type for t, _ in _found(text))
 
 
+@pytest.mark.parametrize("text", ["Matricola: 004927", "Posizione INPS: 3600584292", "Prot. n. 0612345"])
+def test_identifier_labels_are_not_phones(text):
+    """Why: matricola / INPS numbers look like phones and were mislabelled PHONE (benchmark hr docs)."""
+    assert not any(t == "PHONE" for t, _ in _found(text))
+
+
 def test_ocr_damaged_fiscal_code_repaired_only_when_checksum_passes():
     assert any(t == "FISCAL_CODE" for t, _ in _found("codice RSSMRA8OAO1H5O1U"))  # O for 0
     assert not any(t == "FISCAL_CODE" for t, _ in _found("codice RSSMRA8OAO1H5O1A"))  # wrong check char
@@ -140,3 +146,21 @@ def test_with_protection_level_defaults_to_balanced_and_rejects_unknown():
     with pytest.raises(HTTPException) as err:
         with_protection_level({}, "max")
     assert err.value.status_code == 422
+
+
+@pytest.mark.parametrize("text, level, expected", [
+    ("residente in Corso Garibaldi 78/B, 35121 Padova (PD), a comparire", "balanced", "Corso Garibaldi 78/B, 35121 Padova (PD)"),
+    ("Studio: CORSO DELLA REPUBBLICA 35 int. 9 - 47921 RIMINI RN\n", "balanced", "CORSO DELLA REPUBBLICA 35 int. 9 - 47921 RIMINI RN"),
+    ("presso C.so Vittorio Emanuele II, 48 int. 1 - 35121 Padova. P.Q.M.", "balanced", "C.so Vittorio Emanuele II, 48 int. 1 - 35121 Padova"),
+    ("Studio: via iv novembre 20/C ancona\n", "maximum", "via iv novembre 20/C ancona"),
+    ("abita in Via Roma, vicino", "maximum", "Via Roma"),
+])
+def test_full_address_spans(text, level, expected):
+    from app.detection.recognizers.address import detect_addresses
+    assert expected in {e.text for e in detect_addresses(text, level) if e.pii_type == "ADDRESS"}
+
+
+def test_street_without_number_only_at_maximum_and_cadastral_ref():
+    from app.detection.recognizers.address import detect_addresses
+    assert not detect_addresses("abita in Via Roma, vicino", "balanced")
+    assert [e.text for e in detect_addresses("censita al N.C.E.U. al F. 51, P.lla 1309, sub 15. Il", "balanced")] == ["F. 51, P.lla 1309, sub 15"]
