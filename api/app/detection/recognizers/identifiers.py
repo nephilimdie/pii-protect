@@ -5,7 +5,7 @@ and usernames typed PERSON; these have precise shapes or cues, so code rules are
 What: IPv4/IPv6 (validated with ipaddress), court case numbers (R.G., N.R.G., ruolo generale,
 procedimento/causa n.), Italian plates (spaced/hyphenated; lowercase only after "targa"),
 paper ID cards with a space, health-card numbers, claim/policy numbers, usernames and handles.
-Test: "login da 10.1.2.3" -> IP_ADDRESS; "R.G. n. 1234/2025" -> CASE_NUMBER "1234/2025";
+Test: "login da 10.1.2.3" -> IP_ADDRESS; "R.G. n. 1234/2025" -> PRACTICE_ID "1234/2025";
 "L. 431/1998" -> nothing; "targa ly388zm" -> TARGA.
 """
 from __future__ import annotations
@@ -80,7 +80,7 @@ def detect_identifiers(text: str) -> list[PiiEntity]:
     found = _ip(text) + _username(text)
     for m in _CASE.finditer(text):
         group = "v" if m["v"] else "v2"
-        found.append(entity(text, m.start(group), m.end(group), "CASE_NUMBER"))
+        found.append(entity(text, m.start(group), m.end(group), "PRACTICE_ID"))
     found += [entity(text, m.start(1), m.end(1), "TARGA") for m in _PLATE.finditer(text)]
     found += [entity(text, m.start("v"), m.end("v"), "TARGA") for m in _PLATE_CUE.finditer(text)]
     found += [entity(text, m.start("v"), m.end("v"), "IDENTITY_CARD") for m in _ID_CARD.finditer(text)]

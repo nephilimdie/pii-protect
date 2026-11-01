@@ -5,6 +5,7 @@ from app.detection.checksums import VALIDATORS
 from app.detection.contracts.detector_contract import DetectorContract
 from app.detection.entities import PiiEntity
 from app.detection.models import RegexPattern
+from app.detection.recognizers import BALANCED, detect_contextual
 
 
 _NAME_WORD = r"[A-ZÀ-ÖØ-Ý][a-zà-öø-ÿ]+"
@@ -82,6 +83,7 @@ class ItalianRegexDetector(DetectorContract):
                         source="regex",
                     ))
         entities.extend(_detect_structured_entities(text))
+        entities.extend(detect_contextual(text, (layer_config or {}).get("protection_level", BALANCED)))
         return entities
 
 
