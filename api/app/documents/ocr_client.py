@@ -126,7 +126,9 @@ class OcrClient:
     What: ``recognize(image, dpi, deadline, engine)`` posts one PNG page with X-Internal-Key
     (``engine`` overrides the client default for this page, e.g. rapidocr for photos);
     ``visual(image, dpi, deadline)`` finds faces/codes/plates (``[]`` when ``visual_detectors``
-    is empty, i.e. PII_VISUAL_PII_ENABLED is off). Both honour
+    is empty, i.e. PII_VISUAL_PII_ENABLED is off; ``scan=True`` skips plates on scanned PDF pages:
+    their plate text is in the OCR text already, and the plate detector re-OCRs the whole page,
+    3.3 s per A4 page on prod). Both honour
     503 Retry-After (capped) and retries connection errors with backoff, up to ``max_retries``;
     maps everything else to 503/504/422 DocumentErrors. Thread-safe (one pooled httpx client).
     Test: an httpx.MockTransport answering 503 twice then 200 -> one result and two sleeps.
@@ -148,10 +150,11 @@ class OcrClient:
         return self._post("/v1/ocr", image, dpi, data, deadline,
                           lambda body: parse_result(body, image.width, image.height))
 
-    def visual(self, image: Image.Image, dpi: int, deadline: float) -> list[VisualHit]:
-        if not self.visual_detectors:
+    def visual(self, image: Image.Image, dpi: int, deadline: float, scan: bool = False) -> list[VisualHit]:
+        wanted = ",".join(d for d in self.visual_detectors.split(",") if d and not (scan and d == "plate"))
+        if not wanted:
             return []
-        return self._post("/v1/visual-pii", image, dpi, {"detectors": self.visual_detectors}, deadline,
+        return self._post("/v1/visual-pii", image, dpi, {"detectors": wanted}, deadline,
                           lambda body: parse_visual(body, image.width, image.height))
 
     def _post(self, path: str, image: Image.Image, dpi: int, data: dict[str, str], deadline: float,

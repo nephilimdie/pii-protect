@@ -165,7 +165,7 @@ def test_visual_pii_setting_builds_the_client(monkeypatch):
 
 def test_scanned_pdf_page_face_is_painted(env, monkeypatch):  # noqa: F811
     env.fake = FakeVisual(scan_tests.FakeOcr(), [("FACE", SCAN_FACE, True)], scan_tests.SCAN_SIZE)
-    _client(env.fake, monkeypatch, detectors="face,code")
+    _client(env.fake, monkeypatch)  # all detectors: plates are skipped on scans (text detection has them)
     monkeypatch.setitem(base._PATTERNS, scan_tests.IBAN, "IBAN")
     r = _post(env, "redact", scan_tests.make_scan_pdf(pages=2), domain="hr_payroll")
     assert r.status_code == 200, r.text

@@ -1507,6 +1507,8 @@ paths:
           With `PII_VISUAL_PII_ENABLED=true`, faces, QR codes/barcodes and licence plates on images and
           scanned PDF pages are painted too, always (`visual_entities` in the preview; FACE, BARCODE,
           LICENSE_PLATE in `X-Pii-Types`); a photo with no text but a face is redacted, not rejected.
+          Plates are detected visually on images only; on scanned PDF pages their text is in the OCR
+          text and goes through text detection (TARGA) like any other entity.
 
         With `entities` (from `/preview`, edited by the user) detection is
         skipped and exactly those spans are redacted.

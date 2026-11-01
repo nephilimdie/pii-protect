@@ -68,6 +68,24 @@ One image or PDF page per call; `detectors=face,code,plate` (default all). Retur
 Local timings (Apple M-series, docker, 2 CPUs): face 330x492 16 ms, face 3000x2000 tiled 0.3 s,
 face+code on A4@300 dpi 0.37 s, code 1600x1000 15 ms, face+code+plate 1200x800 0.3 s.
 
+## Visual PII benchmark (prod host, 2026-11-01)
+
+Same throwaway setup (`--cpus 4 --memory 4g --network none`), `python bench/visual_bench.py`,
+median of 3 after a warm-up, ms per image (boxes found in brackets):
+
+| scene | face | code | plate | all three |
+|---|---|---|---|---|
+| photo 1200x800 (face, QR, plate) | 174 (1) | 19 (1) | 594 (1) | 781 (3) |
+| photo 4000x3000 (4 small faces, tiled) | 851 (4) | 381 (1 false, review) | 1994 (0) | 2922 (5) |
+| A4 scan @300 DPI (ID photo) | 672 (1) | 213 (0) | 3291 (0) | 4219 (1) |
+
+4 concurrent photos 1200x800 (all detectors): 3.87 images/s. RAM: peak 1.39 GiB (`docker stats`,
+1 s samples; RSS 1.46 GiB), dominated by the RapidOCR sessions the plate detector shares with
+`/v1/ocr`, so it fits the existing `mem_limit: 4g`. The plate detector is a second full RapidOCR
+pass, so the engine skips it on scanned PDF pages (their plate text is already in the OCR text).
+False positive seen: zxing reads a row of identical pictures as a barcode (score 0.5,
+`needs_review`): it causes over-redaction only.
+
 ## Benchmark (prod host, 2026-11-01)
 
 Throwaway container on the prod host (12 vCPU, load ~0.4), `--cpus 4 --memory 4g --network none`,

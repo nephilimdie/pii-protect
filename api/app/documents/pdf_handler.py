@@ -193,7 +193,8 @@ class PdfDocument(ScannedPages):
             if time.monotonic() > deadline:
                 raise DocumentError(504, "OCR_TIMEOUT", "OCR of the scanned pages exceeded the time limit.")
             image, dpi = self._ocr_image(source, index)
-            return index, ScannedPage.from_ocr(client.recognize(image, dpi, deadline), client.visual(image, dpi, deadline))
+            visual = client.visual(image, dpi, deadline, scan=True)
+            return index, ScannedPage.from_ocr(client.recognize(image, dpi, deadline), visual)
 
         try:
             with ThreadPoolExecutor(max(1, min(concurrency, len(pending))), thread_name_prefix="pii-ocr") as pool:
