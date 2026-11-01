@@ -1,0 +1,45 @@
+name: CI OCR service
+
+on:
+  push:
+    branches: [master]
+    paths: ["ocr-service/**", ".github/workflows/ci-ocr.yml"]
+  pull_request:
+    branches: [master]
+    paths: ["ocr-service/**", ".github/workflows/ci-ocr.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: OCR service tests (container, no network)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ocr-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build test image (models pinned by sha256)
+        run: docker build --target test -t ocr-test .
+
+      - name: Run tests offline, read-only rootfs, RAM tmpfs only
+        run: >
+          docker run --rm --network none --read-only
+          --tmpfs /dev/shm:rw,size=256m --tmpfs /tmp:rw,size=16m
+          --cpus 2 --memory 2g ocr-test
+
+      - name: Runtime image becomes ready offline
+        run: |
+          docker build --target runtime -t ocr-runtime .
+          docker run -d --name ocr --network none --read-only --tmpfs /dev/shm:rw,size=256m \
+            -e OCR_INTERNAL_API_KEY=ci-key ocr-runtime
+          for i in $(seq 1 30); do
+            if docker exec ocr python -c "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:8090/readiness', timeout=2).status != 200)"; then
+              echo ready; docker rm -f ocr; exit 0
+            fi
+            sleep 2
+          done
+          docker logs ocr; docker rm -f ocr; exit 1
