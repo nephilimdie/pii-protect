@@ -75,6 +75,7 @@ services:
       MARKETPLACE_MAX_PACKAGE_BYTES: ${MARKETPLACE_MAX_PACKAGE_BYTES:-50000000}
     volumes:
       - pii_hf_cache:${PII_MODEL_CACHE_DIR:-/root/.cache/huggingface}
+    networks: [default, ocr_internal]
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,6 +106,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # OCR microservice (opt-in: `docker compose --profile ocr up`). Internal network only:
+  # no published port, no egress. The api reaches it at http://ocr:8090 (see ocr-service/README.md).
+  ocr:
+    profiles: ["ocr"]
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+      target: runtime
+    environment:
+      OCR_INTERNAL_API_KEY: ${PII_OCR_INTERNAL_API_KEY:-CHANGE_ME_ocr_internal_key}
+      OCR_WORKERS: ${PII_OCR_WORKERS:-2}
+      OCR_TESSDATA_VARIANT: ${PII_OCR_TESSDATA_VARIANT:-fast}
+    networks: [ocr_internal]
+    read_only: true
+    tmpfs:
+      - /dev/shm:rw,noexec,nosuid,size=256m
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: ${PII_OCR_CPUS:-2}
+    mem_limit: ${PII_OCR_MEM_LIMIT:-2g}
+    restart: unless-stopped
+
   ui:
     build:
       context: ./ui
@@ -113,6 +137,11 @@ services:
       - "${PII_UI_PORT:-15501}:80"
     depends_on:
       - api
+
+networks:
+  default:
+  ocr_internal:
+    internal: true
 
 volumes:
   pii_postgres_data:

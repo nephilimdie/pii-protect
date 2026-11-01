@@ -113,3 +113,16 @@ def test_build_lines_and_attempt_scoring() -> None:
 def test_metrics() -> None:
     assert edit_distance("kitten", "sitting") == 3
     assert cer_wer("a b c", "a  b c") == (0.0, 0.0)
+
+
+def test_openapi_error_codes_match_errors_module() -> None:
+    import re
+    from pathlib import Path
+
+    from app.errors import ErrorCode
+
+    spec = (Path(__file__).parents[1] / "openapi.yaml").read_text()
+    enum = re.search(r"ErrorCode:\s+type: string\s+enum: \[([^\]]+)\]", spec)
+    assert enum is not None
+    documented = {c.strip() for c in enum.group(1).replace("\n", " ").split(",")}
+    assert documented == {v for k, v in vars(ErrorCode).items() if k.isupper()}

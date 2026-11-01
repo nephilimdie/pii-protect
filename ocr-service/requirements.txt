@@ -1,0 +1,13 @@
+# Runtime dependencies. Licence rule: Apache-2.0 / MIT / BSD only (no PyMuPDF, OpenCV wheels,
+# Ultralytics, GPL/AGPL). Pinned exactly; licences listed in README.md.
+fastapi==0.137.2
+starlette==1.7.0
+uvicorn==0.30.6
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+anyio==4.15.1
+pypdfium2==5.14.0
+pillow==12.3.0
+numpy==2.4.6
+onnxruntime==1.30.0

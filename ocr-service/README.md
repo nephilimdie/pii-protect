@@ -1,0 +1,106 @@
+# OCR service (internal)
+
+FastAPI microservice that turns scanned PDFs and images into words with pixel boxes, for the
+engine's document redaction. Contract: [`openapi.yaml`](openapi.yaml). Not exposed publicly.
+
+- Engines: **Tesseract 5** (`ita+eng`, LSTM, `tessdata_fast` default or `tessdata_best`) and
+  **PP-OCRv4 mobile** ONNX models (RapidOCR's Apache-2.0 model files, run by our own small
+  numpy/onnxruntime runner because the `rapidocr_onnxruntime` package hard-depends on
+  `opencv-python`, whose wheels bundle LGPL FFmpeg/Qt).
+- PDF rendering: **pypdfium2** (no PyMuPDF/AGPL).
+- `engine=auto` (default): Tesseract + adaptive preprocessing (contrast/denoise, local
+  binarisation, 1.5x upscale) while mean confidence < 80, RapidOCR competes below 70.
+- Every page: EXIF orientation, projection-profile deskew (+/-10 deg), boxes mapped back to the
+  page frame as over-covering envelopes, `low_conf_regions` (conf < 60) and
+  `ink_without_text_regions` (signatures, stamps, handwriting, pictures).
+
+## Guarantees
+
+| Concern | How |
+|---|---|
+| RAM-only | body read with a hard cap, multipart spool limit above the cap (no temp file), PDF/images decoded from bytes, Tesseract via stdin/stdout; `TMPDIR=/dev/shm`; test asserts zero file writes for a 3 MB upload |
+| No egress | models baked in at build time (sha256-pinned); compose `internal: true` network; CI runs tests with `--network none`; test patches sockets |
+| No content in logs | logs carry status/engine/duration and exception *types* only; test asserts filename/content absent |
+| No caching | `Cache-Control: no-store` + `nosniff` on every response |
+| Fail-closed | any page failure -> whole request 5xx with flat `{"error","message"}`; deadline -> 504 (Tesseract killed) |
+| Bounded | file size, pages per request (no truncation), pixels per page (adaptive DPI, floor 100), input pixels, timeout, `OCR_WORKERS` semaphore -> `503 BUSY` + `Retry-After` |
+| Auth | `X-Internal-Key` (constant-time compare); empty key -> 503, readiness not ready |
+
+Known limitation: RapidOCR's detector can read a scribble/signature as a confident "word". Its
+word confidence is therefore the *weakest character* probability, and `auto`/`tesseract`
+(Tesseract reports such ink as `ink_without_text_regions`) are the recommended modes.
+Rotations of 90/180 deg without EXIF are not detected (only skew up to `OCR_MAX_SKEW_DEGREES`).
+The PP-OCRv4 alphabet lacks some Italian accented letters (`à` -> `a`).
+
+## Configuration (env, prefix `OCR_`)
+
+| Var | Default | |
+|---|---|---|
+| `INTERNAL_API_KEY` | (empty = refuse) | shared secret with the engine |
+| `WORKERS` | 4 | concurrent OCR jobs (one CPU each) |
+| `BUSY_TIMEOUT_SECONDS` / `RETRY_AFTER_SECONDS` | 1 / 5 | queue wait before 503 BUSY |
+| `TIMEOUT_SECONDS` | 120 | per request |
+| `MAX_FILE_BYTES` / `MAX_PAGES` | 20 MB / 20 | |
+| `MAX_PAGE_PIXELS` / `MAX_INPUT_PIXELS` | 20 MP / 100 MP | A4 @300 DPI = 8.7 MP |
+| `DEFAULT_DPI` / `MIN_DPI` / `MAX_DPI` | 300 / 100 / 600 | |
+| `TESSDATA_VARIANT` | `fast` | `best` = slower, see benchmark |
+| `LOW_CONF_THRESHOLD` / `ADAPTIVE_CONF_THRESHOLD` / `AUTO_FALLBACK_CONF` | 60 / 80 / 70 | |
+| `MAX_PASSES` / `MAX_SKEW_DEGREES` | 3 / 10 | |
+
+## Run / test
+
+```sh
+docker build --target runtime -t pseudora-ocr .
+docker build --target test -t pseudora-ocr-test . && docker run --rm --network none --read-only \
+  --tmpfs /dev/shm:rw,size=256m --tmpfs /tmp:rw,size=16m pseudora-ocr-test
+# local venv: sh scripts/fetch_models.sh /tmp/ocr-models
+#   OCR_TESSDATA_ROOT=/tmp/ocr-models/tessdata OCR_RAPIDOCR_MODEL_DIR=/tmp/ocr-models/rapidocr pytest -q
+```
+
+Engine dev compose: `docker compose --profile ocr up` (service `ocr`, network `ocr_internal`).
+
+### Production compose snippet (cloud repo; not applied from here)
+
+```yaml
+services:
+  ocr:
+    image: ghcr.io/<org>/pseudora-ocr:<tag>      # built from ocr-service/ (target runtime)
+    environment:
+      OCR_INTERNAL_API_KEY: ${OCR_INTERNAL_API_KEY:?set me}
+      OCR_WORKERS: "4"
+      OCR_TESSDATA_VARIANT: fast
+    networks: [ocr_internal]                    # no published ports
+    read_only: true
+    tmpfs:
+      - /dev/shm:rw,noexec,nosuid,size=512m
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 4
+    mem_limit: 4g
+    pids_limit: 256
+    restart: unless-stopped
+  api:
+    networks: [default, ocr_internal]
+networks:
+  ocr_internal:
+    internal: true                              # no route to the internet
+```
+
+## Dependencies and licences
+
+| Component | Licence |
+|---|---|
+| fastapi, pydantic, pydantic-settings, anyio | MIT |
+| starlette, uvicorn, numpy | BSD-3-Clause |
+| python-multipart | Apache-2.0 |
+| pypdfium2 (+ PDFium) | Apache-2.0 / BSD-3-Clause |
+| Pillow | MIT-CMU (HPND) |
+| onnxruntime | MIT |
+| Tesseract 5, Leptonica | Apache-2.0, BSD-2-Clause |
+| tessdata_fast / tessdata_best 4.1.0 (ita, eng) | Apache-2.0 |
+| PP-OCRv4 mobile det/rec ONNX (from rapidocr_onnxruntime 1.4.4 wheel, models only) | Apache-2.0 |
+| test only: pytest, httpx | MIT, BSD-3-Clause |
+
+Base image `python:3.12-slim-bookworm` (Debian; system libraries such as glibc are LGPL and
+dynamically linked, as in every Debian image).

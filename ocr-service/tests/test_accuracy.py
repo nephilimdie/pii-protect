@@ -43,7 +43,7 @@ def test_tesseract_clean_page_word_boxes(real_client: TestClient) -> None:
     result = ocr(real_client, png(PAGE.image, dpi=(300, 300)), engine="tesseract")
     cer, wer = cer_wer(PAGE.text, text_of(result))
     assert result["engine"] == "tesseract" and (result["width"], result["height"]) == PAGE.image.size
-    assert match_rate(PAGE.words, boxes(result), 0.7) >= 0.95
+    assert match_rate(PAGE.words, boxes(result), 0.6) >= 0.97
     assert cer <= 0.01 and wer <= 0.03
     assert any(w["text"].startswith("BNCMRA78C12L219K") for w in result["words"])
     assert any(w["text"].startswith("IT60X0542811101000000123456") for w in result["words"])
@@ -51,7 +51,7 @@ def test_tesseract_clean_page_word_boxes(real_client: TestClient) -> None:
 
 def test_tesseract_via_pdf_matches_image_frame(real_client: TestClient) -> None:
     result = ocr(real_client, pdf(PAGE.image, resolution=300.0), engine="tesseract")
-    assert result["dpi"] == 300 and match_rate(PAGE.words, boxes(result), 0.7) >= 0.95
+    assert result["dpi"] == 300 and match_rate(PAGE.words, boxes(result), 0.6) >= 0.97
 
 
 def test_noisy_page_stays_accurate(real_client: TestClient) -> None:

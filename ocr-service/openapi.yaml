@@ -1,0 +1,177 @@
+openapi: 3.1.0
+info:
+  title: Pseudora OCR service (internal)
+  version: 0.1.0
+  description: |
+    Internal OCR microservice used by the engine for scanned PDFs and images.
+    Never exposed publicly: runs on an internal Docker network without egress.
+
+    Guarantees:
+    - RAM-only processing; nothing is written to disk; responses carry `Cache-Control: no-store`.
+    - No document content or filenames are logged.
+    - Fail-closed: if any requested page fails, the whole request fails with one flat error
+      (no partial page list).
+    - Boxes are integer pixels `[x0, y0, x1, y1]` (x1/y1 exclusive) in the reported page frame:
+      PDF pages rendered at the effective `dpi`; images in their EXIF-upright original pixels.
+      After deskew, boxes are axis-aligned envelopes that over-cover the word.
+servers:
+  - url: http://ocr:8090
+security:
+  - internalKey: []
+paths:
+  /v1/ocr:
+    post:
+      operationId: ocr
+      summary: OCR a PDF or image; returns words, lines and regions that need fail-closed handling.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF (detected by `%PDF-` magic) or PNG/JPEG/TIFF/WebP/BMP/GIF. Multi-frame TIFF/GIF frames are pages.
+                dpi:
+                  type: integer
+                  minimum: 100
+                  maximum: 600
+                  default: 300
+                  description: PDF render resolution. Lowered per page (never below 100) to respect the pixel budget; the effective value is returned per page.
+                lang:
+                  type: string
+                  default: ita+eng
+                  pattern: '^[a-z_]{3,8}(\+[a-z_]{3,8}){0,3}$'
+                  description: Tesseract languages; only installed models (ita, eng) are accepted.
+                engine:
+                  type: string
+                  enum: [auto, tesseract, rapidocr]
+                  default: auto
+                  description: |
+                    `auto` runs Tesseract (with adaptive preprocessing) and lets RapidOCR compete when
+                    Tesseract confidence stays below `OCR_AUTO_FALLBACK_CONF` (70).
+                pages:
+                  type: string
+                  pattern: '^\s*\d{1,5}\s*(-\s*\d{1,5}\s*)?$'
+                  description: 1-based inclusive page or range (`3`, `2-5`). Default all pages; more than the page limit is rejected, never truncated.
+      responses:
+        "200":
+          description: Every requested page, in order.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OcrResponse"}
+        "401": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503":
+          description: "`BUSY` (all workers busy; honour `Retry-After`) or `NOT_READY`."
+          headers:
+            Retry-After: {schema: {type: integer}, description: Seconds (BUSY only).}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "504": {$ref: "#/components/responses/Error"}
+  /health:
+    get:
+      operationId: health
+      security: []
+      summary: Liveness (process is up).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string, const: ok}}}
+  /readiness:
+    get:
+      operationId: readiness
+      security: []
+      summary: Ready when the internal key is configured and both engines + models load.
+      responses:
+        "200": {description: Ready, content: {application/json: {schema: {$ref: "#/components/schemas/Readiness"}}}}
+        "503": {description: Not ready, content: {application/json: {schema: {$ref: "#/components/schemas/Readiness"}}}}
+components:
+  securitySchemes:
+    internalKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Key
+      description: Shared secret `OCR_INTERNAL_API_KEY`. Empty key = every OCR call is refused (503 NOT_READY).
+  responses:
+    Error:
+      description: Flat error.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    BBox:
+      type: array
+      items: {type: integer, minimum: 0}
+      minItems: 4
+      maxItems: 4
+      description: "[x0, y0, x1, y1] page pixels, x1/y1 exclusive."
+    Word:
+      type: object
+      required: [text, conf, bbox, line_id, block_id]
+      properties:
+        text: {type: string}
+        conf: {type: number, minimum: 0, maximum: 100, description: "Tesseract word confidence; RapidOCR: weakest character probability x 100."}
+        bbox: {$ref: "#/components/schemas/BBox"}
+        line_id: {type: integer}
+        block_id: {type: integer}
+    Line:
+      type: object
+      required: [id, bbox, text]
+      properties:
+        id: {type: integer}
+        bbox: {$ref: "#/components/schemas/BBox"}
+        text: {type: string}
+    Page:
+      type: object
+      required: [index, width, height, dpi, engine, words, lines, low_conf_regions, ink_without_text_regions]
+      properties:
+        index: {type: integer, description: 0-based page index in the document.}
+        width: {type: integer}
+        height: {type: integer}
+        dpi: {type: integer, description: Effective resolution of the reported frame.}
+        engine: {type: string, enum: [tesseract, rapidocr]}
+        words: {type: array, items: {$ref: "#/components/schemas/Word"}}
+        lines: {type: array, items: {$ref: "#/components/schemas/Line"}}
+        low_conf_regions:
+          type: array
+          items: {$ref: "#/components/schemas/BBox"}
+          description: Merged boxes of words with conf < OCR_LOW_CONF_THRESHOLD (60). Treat as possibly-PII.
+        ink_without_text_regions:
+          type: array
+          items: {$ref: "#/components/schemas/BBox"}
+          description: Ink not covered by any word (signatures, stamps, handwriting, pictures). Treat as possibly-PII.
+    OcrResponse:
+      type: object
+      required: [pages]
+      properties:
+        pages: {type: array, items: {$ref: "#/components/schemas/Page"}}
+    Error:
+      type: object
+      required: [error, message]
+      additionalProperties: false
+      properties:
+        error: {$ref: "#/components/schemas/ErrorCode"}
+        message: {type: string}
+    ErrorCode:
+      type: string
+      enum: [UNAUTHORIZED, FILE_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID_PARAMETER, INVALID_DOCUMENT,
+             TOO_MANY_PAGES, PAGE_TOO_LARGE, BUSY, NOT_READY, OCR_TIMEOUT, OCR_FAILED, NOT_FOUND]
+    Readiness:
+      type: object
+      properties:
+        status: {type: string, enum: [ready, not_ready]}
+        engines: {type: object, additionalProperties: {type: object}}
+        auth_configured: {type: boolean}
+        workers: {type: integer}
