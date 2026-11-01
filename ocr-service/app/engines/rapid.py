@@ -122,7 +122,7 @@ class RapidOcr:
                     continue
                 if current:
                     text = "".join(c[0] for c in current)
-                    conf = 100.0 * float(np.mean([c[1] for c in current]))
+                    conf = 100.0 * float(min(c[1] for c in current))  # weakest character: fail-closed
                     pad = (current[0][3] - current[0][2]) * 0.5
                     bbox = (max(box[0], current[0][2] - pad), box[1], min(box[2], current[-1][3] + pad), box[3])
                     words.append(RawWord(text, conf, bbox, line_id, line_id))

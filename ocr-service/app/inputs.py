@@ -78,10 +78,10 @@ def parse_pages(spec: str | None, total: int, max_pages: int) -> list[int]:
 def fit_scale(width: float, height: float, scale: float, max_pixels: int) -> float:
     """Why: one huge page must not allocate a 200 MP bitmap (same rule as the engine).
     What: lowers ``scale`` so width*height*scale^2 <= max_pixels.
-    Test: (1000, 1000, 1.0, 250_000) -> 0.5.
+    Test: (1000, 1000, 1.0, 250_000) -> 0.4975 (0.5 minus a rounding margin).
     """
     pixels = width * height * scale * scale
-    return scale * (max_pixels / pixels) ** 0.5 if pixels > max_pixels else scale
+    return scale * (max_pixels / pixels) ** 0.5 * 0.995 if pixels > max_pixels else scale  # margin: renderers round up
 
 
 def _open_pdf(data: bytes, settings: Settings, dpi: int, pages: str | None) -> Document:

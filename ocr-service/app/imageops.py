@@ -93,7 +93,8 @@ def otsu_threshold(array: np.ndarray) -> int:
     with np.errstate(divide="ignore", invalid="ignore"):
         between = (total_mean * back - means * total) ** 2 / (back * fore)
     between[~np.isfinite(between)] = -1
-    return int(np.argmax(between))
+    best = np.flatnonzero(between == between.max())  # pure black/white plateaus: take the middle
+    return int(best.mean())
 
 
 def _probe(gray: Image.Image, side: int) -> tuple[Image.Image, float]:
@@ -236,9 +237,9 @@ def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBo
     small, factor = _probe(gray, _INK_PROBE_SIDE)
     array = np.asarray(small, dtype=np.uint8)
     threshold = otsu_threshold(array)
-    if threshold < 40 or np.std(array) < 8:  # blank or uniform page
+    if int(array.max()) - int(array.min()) < 40:  # blank or uniform page (any real ink is darker)
         return []
-    ink = array < min(threshold, 200)
+    ink = array <= min(threshold, 200)
     pad = 3
     for x0, y0, x1, y1 in text_boxes:
         ink[max(0, int(y0 / factor) - pad): int(math.ceil(y1 / factor)) + pad,
