@@ -100,7 +100,9 @@ def test_txt_job_lifecycle_and_delete_after_delivery(jobs):
     assert ID_PATTERN.match(body["job_id"]) and body["status"] in STATUSES
     assert body["format"] == "txt" and body["pages_total"] == 0
     status = _wait(jobs, body["job_id"])
-    assert set(status) == {"job_id", "status", "pages_done", "pages_total", "chars_done", "chars_total", "error"}
+    assert set(status) == {"job_id", "status", "pages_done", "pages_total", "chars_done", "chars_total",
+                           "ocr_pages_done", "ocr_pages_total", "error"}
+    assert status["ocr_pages_total"] == status["ocr_pages_done"] == 0
     assert status["status"] == "ready" and status["error"] is None
     assert status["chars_done"] == status["chars_total"] == len(TXT.decode())
 

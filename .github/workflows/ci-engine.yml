@@ -55,8 +55,23 @@ jobs:
         run: |
           python -c "from cryptography.fernet import Fernet; print('ENCRYPTION_KEY=' + Fernet.generate_key().decode())" >> "$GITHUB_ENV"
 
+      - name: Start the real OCR service (scanned-PDF integration test)
+        working-directory: ocr-service
+        run: |
+          docker build --target runtime -t ocr-runtime .
+          docker run -d --name ocr -p 127.0.0.1:8090:8090 --read-only --tmpfs /dev/shm:rw,size=256m \
+            -e OCR_INTERNAL_API_KEY=ci-key ocr-runtime
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8090/readiness >/dev/null && exit 0
+            sleep 2
+          done
+          docker logs ocr; exit 1
+
       - name: Run unit tests
-        run: pytest tests/unit/ -q --tb=short
+        env:
+          PII_OCR_TEST_URL: http://127.0.0.1:8090
+          PII_OCR_TEST_KEY: ci-key
+        run: pytest tests/unit/ -q --tb=short -rs
 
       - name: Check demo regex fixture (not engine accuracy)
         run: python -m app.reporting.benchmark

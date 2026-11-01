@@ -48,6 +48,8 @@ class DocumentJob:
     pages_done: int = 0
     chars_total: int = 0
     chars_done: int = 0
+    ocr_pages_total: int = 0  # scanned pages; OCR runs first, inside `analyzing`
+    ocr_pages_done: int = 0
     error: dict[str, str] | None = None
     doc: LoadedDocument | None = None
     joined: JoinedText | None = None
@@ -60,7 +62,8 @@ class DocumentJob:
     def public(self) -> dict:
         return {"job_id": self.id, "status": self.status, "pages_done": self.pages_done,
                 "pages_total": self.pages_total, "chars_done": self.chars_done,
-                "chars_total": self.chars_total, "error": self.error}
+                "chars_total": self.chars_total, "ocr_pages_done": self.ocr_pages_done,
+                "ocr_pages_total": self.ocr_pages_total, "error": self.error}
 
     def progress(self, chars_done: int, covered_end: int) -> None:
         """Window-pool callback: chars analysed so far; pages fully covered by finished windows."""

@@ -115,6 +115,8 @@ components:
         (`max_chars // 2200`, assuming ~2,200 characters per dense A4 text page);
         415 MULTIPART_REQUIRED, UNSUPPORTED_DOCUMENT_TYPE; 422 FILE_REQUIRED, EMPTY_DOCUMENT,
         INVALID_DOCUMENT, LEGACY_OR_ENCRYPTED_OFFICE_FILE, PDF_NO_TEXT_LAYER, PDF_PAGE_TOO_LARGE,
+        OCR_TOO_MANY_PAGES, OCR_NO_TEXT_FOUND, OCR_PAGE_REJECTED (422), OCR_UNAVAILABLE / OCR_BUSY /
+        OCR_FAILED (503, fail-closed: no document), OCR_TIMEOUT (504),
         PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF, INVALID_ENTITIES, PII_BLOCKED;
         422 DOCX package inspection (central directory checked before anything is inflated or parsed):
         DOCX_TOO_MANY_PARTS (`PII_DOCUMENT_DOCX_MAX_ENTRIES`, default 1000),
@@ -176,6 +178,17 @@ components:
       schema: {type: integer}
 
   schemas:
+    PageBox:
+      type: object
+      required: [page, bbox]
+      properties:
+        page: {type: integer, description: 1-based PDF page}
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: {type: number}
+          description: "[x0, y0, x1, y1] as fractions of the displayed (rotated) page, top-left origin"
     DocumentWarnings:
       type: array
       items: {type: string}
@@ -1387,6 +1400,24 @@ paths:
                         text: {type: string, example: Mario Rossi}
                         confidence: {type: number}
                         page: {type: [integer, "null"], description: 1-based PDF page; null for DOCX/TXT}
+                        boxes:
+                          type: array
+                          description: "Scanned (OCR) PDF pages only, else empty: one rectangle per text-line segment the entity covers."
+                          items: {$ref: "#/components/schemas/PageBox"}
+                  ocr_pages: {type: array, items: {type: integer}, description: 1-based PDF pages whose text comes from OCR}
+                  needs_review:
+                    type: array
+                    description: |
+                      Scanned pages only. Regions OCR could not read reliably; they are **redacted by
+                      default** (fail-closed). A job render may list ids in `review_keep` to leave them visible.
+                    items:
+                      allOf:
+                        - {$ref: "#/components/schemas/PageBox"}
+                        - type: object
+                          required: [id, reason]
+                          properties:
+                            id: {type: integer}
+                            reason: {type: string, enum: [low_confidence, unrecognized_ink]}
                   policy: {$ref: "#/components/schemas/PolicyMetadata"}
                   warnings: {$ref: "#/components/schemas/DocumentWarnings"}
                   sanitized: {$ref: "#/components/schemas/DocumentSanitized"}
@@ -1415,7 +1446,15 @@ paths:
           or attachments survive; the output text is **not selectable** (accepted
           MVP trade-off — higher DPI = sharper output, larger file). Page size
           and rotation (`/Rotate`) are preserved. Pages without a text layer (scans) are rejected
-          with `422 PDF_NO_TEXT_LAYER` — OCR is not supported yet. Images inside
+          with `422 PDF_NO_TEXT_LAYER` unless the engine runs with `PII_OCR_ENABLED=true`
+          (default false): then each scanned page is OCR'd by the internal OCR service
+          (at most `PII_OCR_MAX_PAGES`, default 20, sync; `PII_OCR_JOB_MAX_PAGES`, default 100,
+          for jobs), its text runs through the same detection pipeline, and entities are
+          blacked out as one padded rectangle per text-line segment over the OCR word boxes.
+          **Fail-closed:** OCR low-confidence regions and ink without recognized text
+          (signatures, stamps, handwriting, pictures) are blacked out too and reported as
+          `needs_review`; if the OCR service is down or fails, no document is returned
+          (`503 OCR_UNAVAILABLE`). Mixed PDFs (text + scanned pages) are supported. Images inside
           text pages are not inspected (`X-Pii-Warnings: pdf_images_not_inspected`).
         - **DOCX**: each entity is replaced in place by `█████` keeping the
           paragraph/run formatting; document metadata, comments, tracked
@@ -1585,6 +1624,8 @@ paths:
                   pages_total: {type: integer}
                   chars_done: {type: integer}
                   chars_total: {type: integer}
+                  ocr_pages_done: {type: integer, description: Scanned pages OCR'd so far (0 without scanned pages)}
+                  ocr_pages_total: {type: integer, description: Scanned pages to OCR}
                   error:
                     type: object
                     nullable: true
@@ -1645,6 +1686,7 @@ paths:
               properties:
                 mode: {type: string, enum: [redact, pseudonymize]}
                 exclude: {type: array, items: {type: integer}}
+                review_keep: {type: array, items: {type: integer}, description: "`needs_review` ids to leave un-redacted (default: all redacted)"}
                 include_terms:
                   type: array
                   maxItems: 500

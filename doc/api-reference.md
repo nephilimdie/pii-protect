@@ -123,10 +123,11 @@ curl -X POST http://localhost:15500/v1/anonymize/image \
 parameters. The JSON/base64 contract keeps the core free of multipart parser
 dependencies; callers must enforce their own base64 input size before sending.
 
-The optional `pseudora.image_ocr` plugin requires Tesseract and its Italian and
-English language packs. Size and pixel limits are controlled by
-`PII_IMAGE_MAX_BYTES` and `PII_IMAGE_MAX_PIXELS`. Remote URLs, PDFs, faces and
-signatures are not accepted by this contract.
+No image plugin ships with the engine (the former `pseudora.image_ocr` plugin was
+removed; scanned PDFs are handled by the document endpoints with the OCR service).
+Size and pixel limits are controlled by `PII_IMAGE_MAX_BYTES` and
+`PII_IMAGE_MAX_PIXELS`. Remote URLs, PDFs, faces and signatures are not accepted by
+this contract.
 
 ### `POST /v1/anonymize/jobs`
 
