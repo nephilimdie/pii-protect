@@ -100,6 +100,41 @@ def test_ink_without_text_finds_scribble_only() -> None:
     assert ink_without_text(image, [(95, 95, 405, 145), (590, 680, 910, 770)]) == []
 
 
+def photographed_form(marks: bool) -> Image.Image:
+    """A blank form (dark table borders, grey rules) on a dark tabletop, tilted 1.5 deg; with
+    ``marks`` a signature-like scribble and a stamp-like ring sit on the paper."""
+    paper = Image.new("L", (900, 640), 242)
+    draw = ImageDraw.Draw(paper)
+    draw.rectangle((40, 40, 860, 600), outline=20, width=3)  # table border
+    for y in range(120, 560, 70):
+        draw.line([(60, y), (840, y)], fill=150, width=2)  # printed rules
+        draw.line([(60, y + 30), (840, y + 30)], fill=30, width=1)
+    draw.line([(450, 40), (450, 600)], fill=20, width=2)  # column separator
+    if marks:
+        draw.line([(520, 470), (580, 430), (610, 500), (660, 440), (700, 490), (760, 455)], fill=10, width=4)
+        draw.ellipse((120, 430, 260, 570), outline=40, width=5)
+    photo = Image.new("L", (1100, 820), 105)  # dark wooden table
+    photo.paste(paper, (100, 90))
+    return photo.rotate(1.5, resample=Image.Resampling.BICUBIC, fillcolor=105)
+
+
+def test_ink_ignores_tabletop_rules_and_borders_of_a_photographed_form() -> None:
+    assert ink_without_text(photographed_form(marks=False), []) == []
+
+
+def test_ink_still_flags_signature_and_stamp_on_a_photographed_form() -> None:
+    marked = photographed_form(marks=True)
+    regions = ink_without_text(marked, [])
+    assert all((x1 - x0) * (y1 - y0) < 0.05 * 1100 * 820 for x0, y0, x1, y1 in regions), regions
+    marks = np.argwhere(np.abs(np.asarray(marked, np.int16) - np.asarray(photographed_form(marks=False), np.int16)) > 60)
+    inside = sum(any(x0 <= x < x1 and y0 <= y < y1 for x0, y0, x1, y1 in regions) for y, x in marks)
+    assert inside >= 0.9 * len(marks), (inside, len(marks), regions)  # scribble + ring, minus rule crossings
+
+
+def test_merge_boxes_never_unions_past_max_area() -> None:
+    assert merge_boxes([(0, 0, 10, 10), (12, 0, 20, 10)], gap=3, max_area=150) == [(0, 0, 10, 10), (12, 0, 20, 10)]
+
+
 def test_build_lines_and_attempt_scoring() -> None:
     words = [Word(text="Mario", conf=90, bbox=(0, 0, 5, 5), line_id=0, block_id=0),
              Word(text="Rossi", conf=90, bbox=(6, 1, 12, 6), line_id=0, block_id=0)]

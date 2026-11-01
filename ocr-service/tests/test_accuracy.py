@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -91,6 +92,16 @@ def test_signature_is_reported_as_unreadable_or_low_confidence(real_client: Test
         result = ocr(real_client, png(PAGE.image), engine=engine)
         regions = result["ink_without_text_regions"] + result["low_conf_regions"]
         assert any(iou(tuple(r), SIGNATURE_AREA) > 0.05 for r in regions), (engine, regions)  # type: ignore[arg-type]
+
+
+def test_photographed_form_has_small_review_regions_and_reads_its_pii(real_client: TestClient) -> None:
+    # Regression: the dark tabletop around the paper was "ink" -> one page-sized region (all black).
+    data = (Path(__file__).parent / "fixtures" / "form_photo.jpg").read_bytes()
+    result = ocr(real_client, data, engine="rapidocr")  # the engine's default for photos
+    area = result["width"] * result["height"]
+    regions = result["ink_without_text_regions"] + result["low_conf_regions"]
+    assert sum((r[2] - r[0]) * (r[3] - r[1]) for r in regions) < 0.02 * area, regions
+    assert {"CNTLRA90P42H501Y", "laura.conti@example.org"} <= {w["text"] for w in result["words"]}
 
 
 def test_blank_page_has_no_words_or_regions(real_client: TestClient) -> None:

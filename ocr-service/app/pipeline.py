@@ -18,6 +18,7 @@ from app.inputs import Document, PageImage
 from app.schemas import BBox, Line, OcrResponse, Page, Word
 
 ENGINES = ("tesseract", "rapidocr", "auto")
+MAX_REGION_SHARE = 0.25  # merged review regions never exceed a quarter of the page (no page-wide unions)
 
 
 @dataclass(frozen=True)
@@ -107,9 +108,9 @@ class Pipeline:
         work_boxes = [tuple(c / best.factor for c in w.bbox) for w in best.words]
         words = [Word(text=w.text, conf=round(w.conf, 1), bbox=transform.box(b), line_id=w.line, block_id=w.block)  # type: ignore[arg-type]
                  for w, b in zip(best.words, work_boxes)]
-        gap = max(1, round(page.dpi / 25))  # ~1 mm
-        low_conf = merge_boxes((w.bbox for w in words if w.conf < self._s.low_conf_threshold), gap)
-        ink = merge_boxes(transform.box(b) for b in ink_without_text(work, work_boxes))  # type: ignore[arg-type]
+        gap, cap = max(1, round(page.dpi / 25)), page.width * page.height * MAX_REGION_SHARE  # ~1 mm
+        low_conf = merge_boxes((w.bbox for w in words if w.conf < self._s.low_conf_threshold), gap, cap)
+        ink = merge_boxes((transform.box(b) for b in ink_without_text(work, work_boxes)), 0, cap)  # type: ignore[arg-type]
         return Page(index=page.index, width=page.width, height=page.height, dpi=page.dpi, engine=best.engine,
                     words=words, lines=build_lines(words), low_conf_regions=low_conf, ink_without_text_regions=ink,
                     skew=round((transform.angle + 45) % 90 - 45, 2))
