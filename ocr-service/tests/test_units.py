@@ -126,3 +126,37 @@ def test_openapi_error_codes_match_errors_module() -> None:
     assert enum is not None
     documented = {c.strip() for c in enum.group(1).replace("\n", " ").split(",")}
     assert documented == {v for k, v in vars(ErrorCode).items() if k.isupper()}
+
+
+def test_osd_turn_is_used_only_for_low_confidence_pages_and_boxes_map_back() -> None:
+    from app.engines import RawWord
+    from app.inputs import PageImage
+    from app.pipeline import Pipeline
+    from conftest import make_settings
+
+    class Turning:
+        name = "tesseract"
+
+        def __init__(self, upright_conf: float) -> None:
+            self.upright_conf, self.osd_calls = upright_conf, 0
+
+        def orientation(self, gray, deadline):  # type: ignore[no-untyped-def]
+            self.osd_calls += 1
+            return 90, 9.0
+
+        def recognize(self, gray, lang, dpi, deadline):  # type: ignore[no-untyped-def]
+            if gray.width > gray.height:  # the sent page is landscape: only its upright form reads well
+                return [RawWord("garbage", self.upright_conf, (0, 0, 10, 10), 0, 0)]
+            return [RawWord("Mario", 96.0, (10, 20, 60, 40), 0, 0)]
+
+    page = Image.new("L", (300, 200), 255)  # portrait page turned 90 deg CCW -> landscape
+    engine = Turning(upright_conf=30.0)
+    result = Pipeline(make_settings(max_skew_degrees=0), {"tesseract": engine}).ocr_page(
+        PageImage(0, page, 300, 200, 300, 1.0), "tesseract", "ita", time.monotonic() + 30)
+    assert [w.text for w in result.words] == ["Mario"] and engine.osd_calls == 1
+    # upright (200 x 300) box (10, 20, 60, 40) -> sent frame: x' = y, y' = 200 - x
+    assert result.words[0].bbox == (20, 140, 40, 190)
+    confident = Turning(upright_conf=95.0)
+    Pipeline(make_settings(), {"tesseract": confident}).ocr_page(
+        PageImage(0, page, 300, 200, 300, 1.0), "tesseract", "ita", time.monotonic() + 30)
+    assert confident.osd_calls == 0  # a confident page never pays for OSD

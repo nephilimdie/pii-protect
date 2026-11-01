@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     max_passes: int = Field(default=3, ge=1, le=5)
     auto_fallback_conf: float = Field(default=70.0, ge=0, le=100)
     max_skew_degrees: float = Field(default=10.0, ge=0, le=45)
+    osd_min_confidence: float = Field(default=2.0, ge=0, le=100)
 
     @property
     def tessdata_dir(self) -> Path:

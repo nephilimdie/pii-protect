@@ -100,6 +100,10 @@ class Pipeline:
         work, transform = rotate(gray, estimate_skew(gray, self._s.max_skew_degrees),
                                  Transform.identity(page.width, page.height, page.scale))
         best = self._best(work, engine, lang, page.dpi, deadline)
+        if best.mean_conf < self._s.adaptive_conf_threshold:
+            turned = self._upright(gray, page, engine, lang, deadline)
+            if turned is not None and turned[0].score > best.score:
+                best, work, transform = turned
         work_boxes = [tuple(c / best.factor for c in w.bbox) for w in best.words]
         words = [Word(text=w.text, conf=round(w.conf, 1), bbox=transform.box(b), line_id=w.line, block_id=w.block)  # type: ignore[arg-type]
                  for w, b in zip(best.words, work_boxes)]
@@ -108,6 +112,24 @@ class Pipeline:
         ink = merge_boxes(transform.box(b) for b in ink_without_text(work, work_boxes))  # type: ignore[arg-type]
         return Page(index=page.index, width=page.width, height=page.height, dpi=page.dpi, engine=best.engine,
                     words=words, lines=build_lines(words), low_conf_regions=low_conf, ink_without_text_regions=ink)
+
+    def _upright(self, gray: Image.Image, page: PageImage, engine: str, lang: str,
+                 deadline: float) -> tuple[Attempt, Image.Image, Transform] | None:
+        """Why: a sideways/upside-down page has low confidence however it is preprocessed.
+        What: only for low-confidence pages, asks Tesseract OSD for a 90/180/270 turn; if confident,
+        OCRs the page turned upright (plus deskew) as one rotation, so boxes still map back to the
+        caller's frame. Returns None when no turn applies. Test: a page rotated 90 deg reads >= 97%.
+        """
+        detect = getattr(self._engines.get("tesseract"), "orientation", None)
+        if detect is None:
+            return None
+        turned, confidence = detect(gray, deadline)
+        if turned not in (90, 180, 270) or confidence < self._s.osd_min_confidence:
+            return None
+        upright = gray.rotate(-turned, expand=True)  # exact for right angles
+        angle = -turned + estimate_skew(upright, self._s.max_skew_degrees)
+        work, transform = rotate(gray, angle, Transform.identity(page.width, page.height, page.scale))
+        return self._best(work, engine, lang, page.dpi, deadline), work, transform
 
     def run(self, document: Document, engine: str, lang: str, deadline: float) -> OcrResponse:
         """Why/What: OCR all pages in order, one bitmap alive at a time. Test: see class."""

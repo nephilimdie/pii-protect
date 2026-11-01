@@ -102,3 +102,22 @@ def test_real_tesseract_timeout_kills_and_fails_closed(real_engines: dict[str, o
     with TestClient(create_app(make_settings(timeout_seconds=0.2), real_engines)) as c:  # type: ignore[arg-type]
         response = post(c, png(PAGE.image), engine="tesseract")
     assert response.status_code == 504 and response.json()["error"] == "OCR_TIMEOUT"
+
+
+@pytest.mark.parametrize("turn", [90, 180, 270])
+def test_sideways_page_is_turned_upright_by_osd(real_client: TestClient, turn: int) -> None:
+    """No EXIF, no PDF /Rotate: OSD finds the turn, text reads and boxes map back to the sent frame."""
+    turned = PAGE.image.rotate(turn, expand=True)  # Pillow: counter-clockwise
+    result = ocr(real_client, png(turned), engine="tesseract")
+    cer, _ = cer_wer(PAGE.text, text_of(result))
+    assert cer <= 0.03, turn
+    w, h = PAGE.image.size
+
+    def to_turned(x: float, y: float) -> tuple[float, float]:
+        return {90: (y, w - x), 180: (w - x, h - y), 270: (h - y, x)}[turn]
+
+    hits = 0
+    for _, (x0, y0, x1, y1) in PAGE.words:
+        px, py = to_turned((x0 + x1) / 2, (y0 + y1) / 2)
+        hits += any(b[0] <= px <= b[2] and b[1] <= py <= b[3] for b in boxes(result))
+    assert hits / len(PAGE.words) >= 0.95, turn

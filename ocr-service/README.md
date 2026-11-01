@@ -10,7 +10,9 @@ engine's document redaction. Contract: [`openapi.yaml`](openapi.yaml). Not expos
 - PDF rendering: **pypdfium2** (no PyMuPDF/AGPL).
 - `engine=auto` (default): Tesseract + adaptive preprocessing (contrast/denoise, local
   binarisation, 1.5x upscale) while mean confidence < 80, RapidOCR competes below 70.
-- Every page: EXIF orientation, projection-profile deskew (+/-10 deg), boxes mapped back to the
+- Every page: EXIF orientation, Tesseract OSD 90/180/270 turn for low-confidence pages without
+  EXIF/PDF rotation (`osd.traineddata`, Apache-2.0; `OCR_OSD_MIN_CONFIDENCE`, default 2),
+  projection-profile deskew (+/-10 deg), boxes mapped back to the
   page frame as over-covering envelopes, `low_conf_regions` (conf < 60) and
   `ink_without_text_regions` (signatures, stamps, handwriting, pictures).
 
