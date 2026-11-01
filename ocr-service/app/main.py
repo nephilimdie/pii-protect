@@ -1,4 +1,4 @@
-"""FastAPI app: ``POST /v1/ocr``, ``/health``, ``/readiness``. Contract: ocr-service/openapi.yaml."""
+"""FastAPI app: ``POST /v1/ocr``, ``POST /v1/visual-pii``, ``/health``, ``/readiness``. Contract: ocr-service/openapi.yaml."""
 from __future__ import annotations
 
 import asyncio
@@ -20,6 +20,7 @@ from app.engines import Engine
 from app.errors import ErrorCode, OcrError
 from app.inputs import open_document
 from app.pipeline import ENGINES, Pipeline
+from app.visual import Detector, VisualPipeline, parse_detectors
 
 logger = logging.getLogger("ocr.api")
 _LANG_RE = re.compile(r"^[a-z_]{3,8}(\+[a-z_]{3,8}){0,3}$")
@@ -40,6 +41,22 @@ def build_engines(settings: Settings) -> dict[str, Engine]:
 
         engines["rapidocr"] = RapidOcr(settings.rapidocr_model_dir, settings.rapidocr_max_side)
     return engines
+
+
+def build_detectors(settings: Settings) -> dict[str, Detector]:
+    """Why: the face ONNX session is created once per process. What: zxing always; YuNet when
+    its model file is present (readiness reports absence; a request needing it gets 503).
+    Test: with a missing model path the mapping only contains "code".
+    """
+    from app.detectors.codes import Codes
+
+    detectors: dict[str, Detector] = {"code": Codes()}
+    if settings.face_model_path.is_file():
+        from app.detectors.faces import YuNet
+
+        detectors["face"] = YuNet(settings.face_model_path, settings.face_threshold, settings.face_review_score,
+                                  settings.face_review_side)
+    return detectors
 
 
 def _error(status: int, code: str, message: str, headers: Mapping[str, str] | None = None) -> JSONResponse:
@@ -112,19 +129,21 @@ def _options(fields: Mapping[str, str], settings: Settings, languages: frozenset
     return int(dpi_raw), lang, engine, fields.get("pages")
 
 
-def create_app(settings: Settings | None = None, engines: Mapping[str, Engine] | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, engines: Mapping[str, Engine] | None = None,
+               detectors: Mapping[str, Detector] | None = None) -> FastAPI:
     """Why: app factory = dependency injection point (tests pass fake engines and settings).
     What: wires auth, concurrency gate, headers, error handlers and routes.
     Test: ``TestClient(create_app(Settings(internal_api_key="k"), fakes)).get("/health")`` -> 200.
     """
     settings = settings or Settings()
-    state: dict[str, Mapping[str, Engine]] = {}
+    state: dict[str, Mapping[str, object]] = {}
     gate = asyncio.Semaphore(settings.workers)
     limiter = anyio.CapacityLimiter(settings.workers)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         state["engines"] = engines if engines is not None else build_engines(settings)
+        state["detectors"] = detectors if detectors is not None else build_detectors(settings)
         yield
 
     app = FastAPI(title="Pseudora OCR service", version="0.1.0", lifespan=lifespan,
@@ -162,15 +181,17 @@ def create_app(settings: Settings | None = None, engines: Mapping[str, Engine] |
 
     @app.get("/readiness")
     async def readiness() -> JSONResponse:
-        current = state.get("engines", {})
-        checks = {name: await anyio.to_thread.run_sync(engine.ready) for name, engine in current.items()}
-        ok = bool(settings.internal_api_key) and {"tesseract", "rapidocr"} <= set(checks) and all(c.get("ok") for c in checks.values())
+        current = {**state.get("engines", {}), **state.get("detectors", {})}
+        checks = {name: await anyio.to_thread.run_sync(engine.ready) for name, engine in current.items()}  # type: ignore[attr-defined]
+        ok = (bool(settings.internal_api_key) and {"tesseract", "rapidocr", "face", "code"} <= set(checks)
+              and all(c.get("ok") for c in checks.values()))
         body = {"status": "ready" if ok else "not_ready", "engines": checks,
                 "auth_configured": bool(settings.internal_api_key), "workers": settings.workers}
         return JSONResponse(body, status_code=200 if ok else 503)
 
-    @app.post("/v1/ocr")
-    async def ocr(request: Request) -> Response:
+    @asynccontextmanager
+    async def admitted(request: Request) -> AsyncIterator[None]:
+        """Why: /v1/ocr and /v1/visual-pii share one auth check and one worker budget (BUSY 503)."""
         if not settings.internal_api_key:
             raise OcrError(503, ErrorCode.NOT_READY, "The service has no internal API key configured.")
         if not hmac.compare_digest(request.headers.get(_KEY_HEADER, "").encode(), settings.internal_api_key.encode()):
@@ -181,10 +202,17 @@ def create_app(settings: Settings | None = None, engines: Mapping[str, Engine] |
             raise OcrError(503, ErrorCode.BUSY, "All OCR workers are busy; retry later.",
                            {"Retry-After": str(settings.retry_after_seconds)}) from exc
         try:
+            yield
+        finally:
+            gate.release()
+
+    @app.post("/v1/ocr")
+    async def ocr(request: Request) -> Response:
+        async with admitted(request):
             started = time.monotonic()
             deadline = started + settings.timeout_seconds
             data, fields = await _parse_form(request, settings)
-            engines_now = state["engines"]
+            engines_now: Mapping[str, Engine] = state["engines"]  # type: ignore[assignment]
             languages_of = getattr(engines_now.get("tesseract"), "languages", None)
             languages = languages_of() if callable(languages_of) else frozenset({"ita", "eng"})
             dpi, lang, engine, pages = _options(fields, settings, languages)
@@ -197,8 +225,26 @@ def create_app(settings: Settings | None = None, engines: Mapping[str, Engine] |
             payload = await anyio.to_thread.run_sync(work, limiter=limiter)
             logger.info("ocr ok engine=%s ms=%d", engine, (time.monotonic() - started) * 1000)
             return Response(payload, media_type="application/json")
-        finally:
-            gate.release()
+
+    @app.post("/v1/visual-pii")
+    async def visual_pii(request: Request) -> Response:
+        async with admitted(request):
+            started = time.monotonic()
+            deadline = started + settings.timeout_seconds
+            data, fields = await _parse_form(request, settings)
+            wanted = parse_detectors(fields.get("detectors"))
+            page_raw = fields.get("page", "1")
+            if not page_raw.isdigit() or int(page_raw) < 1:
+                raise OcrError(422, ErrorCode.INVALID_PARAMETER, "page must be a 1-based page number.")
+            pipeline = VisualPipeline(settings, state["detectors"], state["engines"])  # type: ignore[arg-type]
+
+            def work() -> bytes:
+                (page,) = list(open_document(data, settings, settings.default_dpi, page_raw).pages())
+                return pipeline.run(page, wanted, deadline).model_dump_json().encode()
+
+            payload = await anyio.to_thread.run_sync(work, limiter=limiter)
+            logger.info("visual-pii ok detectors=%s ms=%d", ",".join(wanted), (time.monotonic() - started) * 1000)
+            return Response(payload, media_type="application/json")
 
     return app
 

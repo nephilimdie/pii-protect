@@ -29,7 +29,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     TMPDIR=/dev/shm \
     OCR_WORKERS=4 \
     OCR_TESSDATA_ROOT=/opt/ocr-models/tessdata \
-    OCR_RAPIDOCR_MODEL_DIR=/opt/ocr-models/rapidocr
+    OCR_RAPIDOCR_MODEL_DIR=/opt/ocr-models/rapidocr \
+    OCR_FACE_MODEL_PATH=/opt/ocr-models/yunet/face_detection_yunet_2023mar.onnx
 USER 10001
 EXPOSE 8090
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \

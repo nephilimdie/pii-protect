@@ -1,4 +1,4 @@
-"""Client for the internal OCR service (ocr-service/, ``POST /v1/ocr``).
+"""Client for the internal OCR service (ocr-service/, ``POST /v1/ocr`` and ``/v1/visual-pii``).
 
 One rendered page per request. Every failure is a content-free DocumentError, so callers
 fail closed (no document is ever returned without OCR). Page bytes, OCR text and the
@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import TypeVar
 
 import httpx
 from PIL import Image
@@ -23,6 +24,7 @@ from app.documents.models import DocumentError
 
 logger = logging.getLogger(__name__)
 BBox = tuple[int, int, int, int]
+T = TypeVar("T")
 _PNG_LEVEL = 1  # fast: the page travels over a local network, encoding time matters more than size
 _CONNECT_BACKOFF = 0.5
 
@@ -46,6 +48,20 @@ class OcrResult:
     line_order: list[int]
     low_conf_regions: list[BBox]
     ink_regions: list[BBox]
+    skew: float = 0.0  # degrees the service straightened the text by (pads boxes on tilted photos)
+
+
+VISUAL_TYPES = {"FACE": "FACE", "QR_CODE": "BARCODE", "BARCODE": "BARCODE", "LICENSE_PLATE": "LICENSE_PLATE"}
+
+
+@dataclass(frozen=True)
+class VisualHit:
+    """A face, QR/barcode or plate found as pixels; ``bbox`` in pixels of the image that was sent."""
+
+    type: str  # FACE | BARCODE (QR codes included) | LICENSE_PLATE
+    bbox: BBox
+    score: float
+    needs_review: bool
 
 
 def _unavailable(code: str = "OCR_UNAVAILABLE", retry_after: int | None = None) -> DocumentError:
@@ -82,40 +98,77 @@ def parse_result(body: object, width: int, height: int) -> OcrResult:
     lines = [int(line["id"]) for line in page.get("lines", []) if isinstance(line, dict)]
     regions = [[_bbox(box, width, height) for box in page.get(key, [])]
                for key in ("low_conf_regions", "ink_without_text_regions")]
-    return OcrResult(width, height, words, lines, *regions)
+    skew = page.get("skew", 0.0)
+    if not isinstance(skew, (int, float)) or not -45 <= skew <= 45:
+        raise ValueError("skew")
+    return OcrResult(width, height, words, lines, *regions, float(skew))
+
+
+def parse_visual(body: object, width: int, height: int) -> list[VisualHit]:
+    """Why: like OCR boxes, visual boxes decide what is blacked out: all-or-nothing validation.
+    What: checks the frame matches the sent image and every box is inside it with a known type.
+    Test: an unknown type, a box outside the image or a size mismatch raises ValueError.
+    """
+    if not isinstance(body, dict) or body.get("width") != width or body.get("height") != height:
+        raise ValueError("size")
+    hits = []
+    for raw in body.get("boxes", []):
+        if not isinstance(raw, dict) or raw.get("type") not in VISUAL_TYPES:
+            raise ValueError("visual box")
+        hits.append(VisualHit(VISUAL_TYPES[raw["type"]], _bbox(raw.get("bbox"), width, height),
+                              float(raw.get("score", 0)), bool(raw.get("needs_review", True))))
+    return hits
 
 
 class OcrClient:
     """Why: the OCR service is a separate, CPU-bound container that answers 503 BUSY when its
     workers are full; the engine must wait politely, bounded by the document deadline.
     What: ``recognize(image, dpi, deadline, engine)`` posts one PNG page with X-Internal-Key
-    (``engine`` overrides the client default for this page, e.g. rapidocr for photos); honours
+    (``engine`` overrides the client default for this page, e.g. rapidocr for photos);
+    ``visual(image, dpi, deadline)`` finds faces/codes/plates (``[]`` when ``visual_detectors``
+    is empty, i.e. PII_VISUAL_PII_ENABLED is off; ``scan=True`` skips plates on scanned PDF pages:
+    their plate text is in the OCR text already, and the plate detector re-OCRs the whole page,
+    3.3 s per A4 page on prod). Both honour
     503 Retry-After (capped) and retries connection errors with backoff, up to ``max_retries``;
     maps everything else to 503/504/422 DocumentErrors. Thread-safe (one pooled httpx client).
     Test: an httpx.MockTransport answering 503 twice then 200 -> one result and two sleeps.
     """
 
     def __init__(self, base_url: str, api_key: str, timeout: float, max_retries: int, max_retry_after: float,
-                 lang: str = "ita+eng", engine: str = "auto", transport: httpx.BaseTransport | None = None,
+                 lang: str = "ita+eng", engine: str = "auto", visual_detectors: str = "",
+                 transport: httpx.BaseTransport | None = None,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
         self._client = httpx.Client(base_url=base_url, transport=transport, timeout=timeout, follow_redirects=False,
                                     trust_env=False)
         self._key, self._timeout, self._retries, self._cap = api_key, timeout, max_retries, max_retry_after
         self._fields = {"lang": lang, "engine": engine}
+        self.visual_detectors = visual_detectors
         self._sleep, self._clock = sleep, clock
 
     def recognize(self, image: Image.Image, dpi: int, deadline: float, engine: str | None = None) -> OcrResult:
+        data = {**self._fields, "dpi": str(dpi), **({"engine": engine} if engine else {})}
+        return self._post("/v1/ocr", image, dpi, data, deadline,
+                          lambda body: parse_result(body, image.width, image.height))
+
+    def visual(self, image: Image.Image, dpi: int, deadline: float, scan: bool = False) -> list[VisualHit]:
+        wanted = ",".join(d for d in self.visual_detectors.split(",") if d and not (scan and d == "plate"))
+        if not wanted:
+            return []
+        return self._post("/v1/visual-pii", image, dpi, {"detectors": wanted}, deadline,
+                          lambda body: parse_visual(body, image.width, image.height))
+
+    def _post(self, path: str, image: Image.Image, dpi: int, data: dict[str, str], deadline: float,
+              parse: Callable[[object], T]) -> T:
         buffer = io.BytesIO()
         image.save(buffer, format="PNG", compress_level=_PNG_LEVEL, dpi=(dpi, dpi))
         files = {"file": ("page.png", buffer.getvalue(), "image/png")}
-        data = {**self._fields, "dpi": str(dpi), **({"engine": engine} if engine else {})}
         for attempt in range(self._retries + 1):
             remaining = deadline - self._clock()
             if remaining <= 0:
                 raise DocumentError(504, "OCR_TIMEOUT", "OCR of the scanned pages exceeded the time limit.")
             wait: float | None = None
             try:
-                response = self._client.post("/v1/ocr", files=files, data=data, headers={"X-Internal-Key": self._key},
+                response = self._client.post(path, files=files, data=data, headers={"X-Internal-Key": self._key},
                                              timeout=min(self._timeout, remaining))
             except httpx.TimeoutException:
                 raise DocumentError(504, "OCR_TIMEOUT", "OCR of the scanned pages exceeded the time limit.") from None
@@ -125,7 +178,7 @@ class OcrClient:
             else:
                 if response.status_code == 200:
                     try:
-                        return parse_result(response.json(), image.width, image.height)
+                        return parse(response.json())
                     except (ValueError, KeyError, TypeError) as exc:
                         logger.warning("ocr response rejected: %s", type(exc).__name__)
                         raise _unavailable("OCR_FAILED") from None
@@ -169,4 +222,5 @@ def get_ocr_client() -> OcrClient | None:
     if not settings.ocr_enabled:
         return None
     return OcrClient(settings.ocr_url, settings.ocr_internal_api_key, settings.ocr_timeout_seconds,
-                     settings.ocr_max_retries, settings.ocr_max_retry_after_seconds, settings.ocr_lang)
+                     settings.ocr_max_retries, settings.ocr_max_retry_after_seconds, settings.ocr_lang,
+                     visual_detectors=settings.visual_pii_detectors if settings.visual_pii_enabled else "")

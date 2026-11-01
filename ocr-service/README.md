@@ -48,6 +48,43 @@ The PP-OCRv4 alphabet lacks some Italian accented letters (`à` -> `a`).
 | `TESSDATA_VARIANT` | `fast` | `best` = 2x slower, no gain (benchmark below) |
 | `LOW_CONF_THRESHOLD` / `ADAPTIVE_CONF_THRESHOLD` / `AUTO_FALLBACK_CONF` | 60 / 80 / 70 | |
 | `MAX_PASSES` / `MAX_SKEW_DEGREES` | 3 / 10 | |
+| `FACE_MODEL_PATH` | `/opt/ocr-models/yunet/face_detection_yunet_2023mar.onnx` | missing = readiness 503, `face` requests 503 |
+| `FACE_THRESHOLD` / `FACE_REVIEW_SCORE` / `FACE_REVIEW_SIDE` | 0.6 / 0.8 / 32 px | recall-oriented; below review score or side -> `needs_review` |
+| `PLATE_REVIEW_CONF` / `VISUAL_MAX_SIDE` | 80 / 4000 px | |
+
+## Visual PII (`POST /v1/visual-pii`)
+
+One image or PDF page per call; `detectors=face,code,plate` (default all). Returns
+`{width, height, boxes: [{type, bbox, score, needs_review}]}` in the same frame as `/v1/ocr`.
+- **FACE**: YuNet ONNX (OpenCV Zoo, MIT) on onnxruntime with our own pre/post-processing and NMS
+  (no OpenCV wheel). Whole image + 640 px tiles (128 px overlap, at most 2560 px) for small faces in
+  large photos. Boxes grown 15 % x / 20 % y (hair, ears). Profile (nose off eye midline), small or
+  low-score faces are `needs_review`.
+- **QR_CODE / BARCODE**: zxing-cpp (rotation, inversion, downscale). Positions only: content never
+  returned or logged. Undecodable symbols zxing can still locate are returned with `needs_review`.
+- **LICENSE_PLATE**: Italian formats (AA 000 AA; moto AA 00000 and pre-1994 provincial -> review)
+  matched on RapidOCR words, box grown to the plate border. Plates OCR cannot read are missed.
+
+Local timings (Apple M-series, docker, 2 CPUs): face 330x492 16 ms, face 3000x2000 tiled 0.3 s,
+face+code on A4@300 dpi 0.37 s, code 1600x1000 15 ms, face+code+plate 1200x800 0.3 s.
+
+## Visual PII benchmark (prod host, 2026-11-01)
+
+Same throwaway setup (`--cpus 4 --memory 4g --network none`), `python bench/visual_bench.py`,
+median of 3 after a warm-up, ms per image (boxes found in brackets):
+
+| scene | face | code | plate | all three |
+|---|---|---|---|---|
+| photo 1200x800 (face, QR, plate) | 174 (1) | 19 (1) | 594 (1) | 781 (3) |
+| photo 4000x3000 (4 small faces, tiled) | 851 (4) | 381 (1 false, review) | 1994 (0) | 2922 (5) |
+| A4 scan @300 DPI (ID photo) | 672 (1) | 213 (0) | 3291 (0) | 4219 (1) |
+
+4 concurrent photos 1200x800 (all detectors): 3.87 images/s. RAM: peak 1.39 GiB (`docker stats`,
+1 s samples; RSS 1.46 GiB), dominated by the RapidOCR sessions the plate detector shares with
+`/v1/ocr`, so it fits the existing `mem_limit: 4g`. The plate detector is a second full RapidOCR
+pass, so the engine skips it on scanned PDF pages (their plate text is already in the OCR text).
+False positive seen: zxing reads a row of identical pictures as a barcode (score 0.5,
+`needs_review`): it causes over-redaction only.
 
 ## Benchmark (prod host, 2026-11-01)
 
@@ -123,7 +160,10 @@ networks:
 | Tesseract 5, Leptonica | Apache-2.0, BSD-2-Clause |
 | tessdata_fast / tessdata_best 4.1.0 (ita, eng) | Apache-2.0 |
 | PP-OCRv4 mobile det/rec ONNX (from rapidocr_onnxruntime 1.4.4 wheel, models only) | Apache-2.0 |
-| test only: pytest, httpx | MIT, BSD-3-Clause |
+| zxing-cpp 3.1.1 | Apache-2.0 |
+| YuNet `face_detection_yunet_2023mar.onnx` (opencv_zoo @48b10fa, weights + model card) | MIT |
+| test only: pytest, httpx, segno, python-barcode | MIT, BSD-3-Clause, BSD-3-Clause, MIT |
+| test fixture `tests/fixtures/mona_lisa_330.jpg` | public domain (see tests/fixtures/README.md) |
 
 Base image `python:3.12-slim-bookworm` (Debian; system libraries such as glibc are LGPL and
 dynamically linked, as in every Debian image).

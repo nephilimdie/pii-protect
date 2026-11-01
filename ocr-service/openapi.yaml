@@ -78,6 +78,56 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
         "504": {$ref: "#/components/responses/Error"}
+  /v1/visual-pii:
+    post:
+      operationId: visualPii
+      summary: Find faces, QR codes/barcodes and Italian licence plates on one image or PDF page.
+      description: |
+        Same auth, limits, worker budget (`BUSY`), RAM-only and no-store guarantees as `/v1/ocr`.
+        Fail-closed: a requested detector that is not loaded is a 503 `NOT_READY`, never a silent skip.
+        Decoded QR/barcode content is never returned or logged: positions only. Every box is meant to
+        be redacted; `needs_review` only marks boxes a human should double-check.
+        Faces: YuNet (recall-oriented, whole image + overlapping tiles for small faces); boxes are
+        grown to cover hair/ears. Plates: Italian formats found in RapidOCR words, grown to the plate border.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary, description: Same inputs as `/v1/ocr`.}
+                detectors:
+                  type: string
+                  default: face,code,plate
+                  description: Comma list, subset of `face`, `code`, `plate`.
+                page:
+                  type: integer
+                  minimum: 1
+                  default: 1
+                  description: 1-based page (PDF page or image frame). PDFs render at the default dpi (300, lowered by the pixel budget).
+      responses:
+        "200":
+          description: Detections on the analysed frame.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/VisualResponse"}
+        "401": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503":
+          description: "`BUSY` (honour `Retry-After`) or `NOT_READY` (a requested detector is missing)."
+          headers:
+            Retry-After: {schema: {type: integer}, description: Seconds (BUSY only).}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "504": {$ref: "#/components/responses/Error"}
   /health:
     get:
       operationId: health
@@ -152,6 +202,27 @@ components:
           type: array
           items: {$ref: "#/components/schemas/BBox"}
           description: Ink not covered by any word (signatures, stamps, handwriting, pictures). Treat as possibly-PII.
+        skew:
+          type: number
+          default: 0
+          description: Residual tilt (degrees, CCW, -45..45) the page was straightened by. Word boxes are envelopes; callers pad boxes on tilted pages.
+    VisualBox:
+      type: object
+      required: [type, bbox, score, needs_review]
+      properties:
+        type: {type: string, enum: [FACE, QR_CODE, BARCODE, LICENSE_PLATE]}
+        bbox: {$ref: "#/components/schemas/BBox"}
+        score: {type: number, minimum: 0, maximum: 1}
+        needs_review:
+          type: boolean
+          description: Low score, small (< 32 px) or profile face, undecodable/linear code, non-current plate format or low OCR confidence. Redact either way.
+    VisualResponse:
+      type: object
+      required: [width, height, boxes]
+      properties:
+        width: {type: integer, description: Analysed frame (EXIF-upright original pixels, or the rendered PDF page).}
+        height: {type: integer}
+        boxes: {type: array, items: {$ref: "#/components/schemas/VisualBox"}}
     OcrResponse:
       type: object
       required: [pages]

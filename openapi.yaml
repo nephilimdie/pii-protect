@@ -1428,6 +1428,26 @@ paths:
                           properties:
                             id: {type: integer}
                             reason: {type: string, enum: [low_confidence, unrecognized_ink]}
+                  visual_entities:
+                    type: array
+                    description: |
+                      Scanned pages and images only, with `PII_VISUAL_PII_ENABLED=true` (else empty): faces,
+                      QR codes/barcodes and licence plates found as pixels (ocr-service `/v1/visual-pii`),
+                      boxes as fractions of the page like `needs_review`. They are **always redacted**
+                      (never in `review_keep`); `needs_review: true` flags a weak or small hit (low score, a face
+                      under 32 px or in profile, a motorcycle/pre-1994 plate or a low-confidence read) worth a human look. Their
+                      types also appear in `pii_types_found` and `X-Pii-Types`. A visual-PII failure fails
+                      closed like OCR (503, no document).
+                    items:
+                      allOf:
+                        - {$ref: "#/components/schemas/PageBox"}
+                        - type: object
+                          required: [id, type, score, needs_review]
+                          properties:
+                            id: {type: integer}
+                            type: {type: string, enum: [FACE, BARCODE, LICENSE_PLATE]}
+                            score: {type: number}
+                            needs_review: {type: boolean}
                   policy: {$ref: "#/components/schemas/PolicyMetadata"}
                   warnings: {$ref: "#/components/schemas/DocumentWarnings"}
                   sanitized: {$ref: "#/components/schemas/DocumentSanitized"}
@@ -1484,6 +1504,11 @@ paths:
           dropped (`X-Pii-Sanitized`). Redact only (`422 PSEUDONYMIZE_NOT_SUPPORTED_FOR_IMAGE`).
           Strongly angled or perspective-distorted photos (beyond ~10° or curved pages) may be
           partly unread: such text lands in `needs_review` (redacted) or is missed; review the preview.
+          With `PII_VISUAL_PII_ENABLED=true`, faces, QR codes/barcodes and licence plates on images and
+          scanned PDF pages are painted too, always (`visual_entities` in the preview; FACE, BARCODE,
+          LICENSE_PLATE in `X-Pii-Types`); a photo with no text but a face is redacted, not rejected.
+          Plates are detected visually on images only; on scanned PDF pages their text is in the OCR
+          text and goes through text detection (TARGA) like any other entity.
 
         With `entities` (from `/preview`, edited by the user) detection is
         skipped and exactly those spans are redacted.

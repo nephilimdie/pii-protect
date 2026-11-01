@@ -280,13 +280,14 @@ def preview_payload(doc, joined: JoinedText, entities: list, policy: dict) -> di
     scanned = getattr(doc, "scanned", {})
     return {
         "format": doc.format, "pages": doc.pages, "text": joined.text,
-        "entity_count": len(entities), "pii_types_found": sorted({e.pii_type for e in entities}),
+        "entity_count": len(entities), "pii_types_found": found_types(doc, entities),
         "entities": [{"id": i, "start": e.start, "end": e.end, "type": e.pii_type, "text": e.text,
                       "confidence": round(e.score, 4), "page": doc.page_of(joined.segment_at(e.start)),
                       "boxes": boxes(joined.split(e.start, e.end)) if boxes else []}
                      for i, e in enumerate(entities)],
         "ocr_pages": [index + 1 for index in sorted(scanned)],
         "needs_review": doc.review_boxes() if scanned else [],
+        "visual_entities": doc.visual_entities() if scanned else [],
         "policy": {"id": policy["policy_id"], "version": policy["policy_version"], "hash": policy["policy_hash"]},
         "warnings": doc.warnings, "sanitized": list(doc.SANITIZED),
     }
@@ -316,12 +317,18 @@ async def render_document(op: str, doc, joined: JoinedText, entities: list, poli
     return document_headers(response, doc, entities)
 
 
+def found_types(doc, entities: list) -> list[str]:
+    """Text entity types plus visual ones (FACE, BARCODE, LICENSE_PLATE) on scanned pages/images."""
+    visual = doc.visual_types() if getattr(doc, "scanned", None) else set()
+    return sorted({e.pii_type for e in entities} | visual)
+
+
 def document_headers(response: Response, doc, entities: list) -> Response:
     response.headers.update({
         "Cache-Control": "no-store",
         "X-Pii-Document-Format": doc.format,
         "X-Pii-Entity-Count": str(len(entities)),
-        "X-Pii-Types": ",".join(sorted({e.pii_type for e in entities})),
+        "X-Pii-Types": ",".join(found_types(doc, entities)),
         "X-Pii-Warnings": ",".join(doc.warnings),
         "X-Pii-Sanitized": ",".join(doc.SANITIZED),
     })
