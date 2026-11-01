@@ -71,6 +71,7 @@ class EntityMerger:
                     pii_type=last.pii_type,
                     text=text[last.start:entity.end] if text else f"{last.text} {entity.text}",
                     score=max(last.score, entity.score),
+                    source=last.source if last.source == entity.source else "",
                 )
                 continue
             merged.append(entity)

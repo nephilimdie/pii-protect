@@ -35,7 +35,7 @@ from app.identity.dependencies import require_service
 from app.identity.models import ApiKey
 from app.identity.tenant import get_tenant_id
 from app.routers import documents as docs
-from app.routers._anonymize_logic import detect_protected_entities, get_anonymizer
+from app.routers._anonymize_logic import detect_protected_entities, get_anonymizer, with_protection_level
 
 router = APIRouter(prefix="/documents/jobs", tags=["Document jobs"])
 logger = logging.getLogger(__name__)
@@ -197,6 +197,7 @@ async def create_document_job(
             domain = upload.fields.get("domain") or None
             context_type = upload.fields.get("context_type") or (None if domain else "generic")
             policy = await docs.PolicyService(db, tenant_id=tenant_id).resolve(context_type=context_type, domain=domain)
+            policy = with_protection_level(policy, upload.fields.get("protection_level"))
         finally:
             slot.release()
     except Exception as exc:

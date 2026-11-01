@@ -5,6 +5,7 @@ from app.detection.checksums import VALIDATORS
 from app.detection.contracts.detector_contract import DetectorContract
 from app.detection.entities import PiiEntity
 from app.detection.models import RegexPattern
+from app.detection.recognizers import BALANCED, detect_contextual
 
 
 _NAME_WORD = r"[A-ZÀ-ÖØ-Ý][a-zà-öø-ÿ]+"
@@ -82,7 +83,11 @@ class ItalianRegexDetector(DetectorContract):
                         source="regex",
                     ))
         entities.extend(_detect_structured_entities(text))
-        return entities
+        # A contextual span refines a same-span generic match ("nato il <DATE>" -> DATE_BORN); both are
+        # deterministic with equal scores, so without this the merger keeps whichever came first.
+        contextual = detect_contextual(text, (layer_config or {}).get("protection_level", BALANCED))
+        refined = {(e.start, e.end) for e in contextual}
+        return [e for e in entities if (e.start, e.end) not in refined] + contextual
 
 
 def _detect_structured_entities(text: str) -> list[PiiEntity]:

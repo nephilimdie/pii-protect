@@ -10,6 +10,7 @@ from app.detection.entities import PiiEntity, MappingEntry
 from app.detection.entity_merger import EntityMerger
 from app.detection.token_generator import TokenGenerator
 from app.anonymization.anonymization_result import AnonymizationResult
+from app.detection.recognizers import BALANCED, MAXIMUM, MAXIMUM_ML_MIN_SCORE, ML_LAYERS, precision_filter
 
 def _is_word_char(char: str) -> bool:
     return char.isalnum() or char == "_" or unicodedata.category(char).startswith("M")
@@ -175,6 +176,14 @@ class PiiAnonymizer:
         # Tenant-effective patterns/context; None = use registry's built-in detectors as-is
         self._regex_patterns = regex_patterns
         self._presidio_context = presidio_context
+        self._protection_level = BALANCED
+
+    def set_protection_level(self, level: str) -> None:
+        """Why: "maximum" trades precision for recall per request without rebuilding detectors.
+        What: stores the level used by the recognizers, ML thresholds and the precision filter.
+        Test: set_protection_level("maximum") then detect_only keeps a 0.75 single-token ML PERSON.
+        """
+        self._protection_level = level
 
     def restrict_layers(self, layers: list[str] | None) -> None:
         """Select each item's layers from the tenant baseline, not the previous item."""
@@ -199,6 +208,11 @@ class PiiAnonymizer:
             futures = {}
             for d in detectors:
                 cfg = self._layer_configs.get(d.layer_name)
+                if isinstance(d, ItalianRegexDetector):
+                    cfg = {**(cfg or {}), "protection_level": self._protection_level}
+                elif self._protection_level == MAXIMUM and d.layer_name in ML_LAYERS:
+                    # maximum: recall-first ML cut-off, never stricter than the tenant's own setting
+                    cfg = {**(cfg or {}), "min_score": min((cfg or {}).get("min_score", 1.0), MAXIMUM_ML_MIN_SCORE)}
                 if isinstance(d, ItalianRegexDetector) and self._regex_patterns is not None:
                     continue  # replaced by tenant-effective patterns below
                 if isinstance(d, PresidioDetector):
@@ -212,7 +226,8 @@ class PiiAnonymizer:
             ):
                 patterns = [SimpleNamespace(**p) for p in self._regex_patterns]
                 tenant_regex = ItalianRegexDetector(patterns)
-                futures[pool.submit(tenant_regex.detect, text, language)] = tenant_regex
+                cfg = {"protection_level": self._protection_level}
+                futures[pool.submit(tenant_regex.detect, text, language, cfg)] = tenant_regex
 
             for future in as_completed(futures):
                 all_entities.extend(future.result())
@@ -250,7 +265,8 @@ class PiiAnonymizer:
         merged = self._merger.merge(_snap_all(text, self._run_detectors(text, language)), text)
         # Reclassify entities based on surrounding context (e.g. PERSON → ACCOUNT after "username:")
         reclassified = [r for e in merged if (r := self._reclassify_entity(e, text)) is not None]
-        valid = [e for e in reclassified if _is_valid_entity(e, self._denylist)]
+        precise = precision_filter(reclassified, self._protection_level)
+        valid = [e for e in precise if _is_valid_entity(e, self._denylist)]
         # Re-merge after snapping in case boundaries now overlap
         return DetectionResult(entities=self._merger.merge(_snap_all(text, valid), text))
 

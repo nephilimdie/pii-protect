@@ -52,7 +52,7 @@ curl -X POST http://localhost:15500/v1/anonymize \
 | `language` | string | — | NER language hint (default: `it`) |
 | `mode` | `tag`\|`surrogate` | — | Overrides the context type default |
 | `policy` | object | — | `{"protect":[...], "keep":[...], "surrogate":[...]}` |
-| `detection_mode` | `permissive`\|`strict` | — | Detection sensitivity (default: `permissive`) |
+| `protection_level` | `balanced`\|`maximum` | — | Detection sensitivity (default `balanced`; `maximum` lowers ML cut-offs for recall). Also accepted by batch, `/v1/documents/*` and `/v1/documents/jobs` (form field) |
 | `include_entity_values` | boolean | — | Return raw entity values only for authorized admin inspection (`false` by default) |
 | `dry_run` | boolean | — | Detect and score without persisting mappings (`false` by default) |
 
