@@ -9,11 +9,14 @@ from dataclasses import dataclass
 from PIL import Image, ImageDraw
 
 from app.documents.models import SegmentEdit
-from app.documents.ocr_client import BBox, OcrResult
+from app.documents.ocr_client import BBox, OcrResult, VisualHit
 
 MIN_PAD_PX = 3
 LINE_PAD = 0.15  # of the line height, on every side
 REVIEW_REASONS = ("low_confidence", "unrecognized_ink")
+TILT_MIN_DEG = 0.5  # below this a page counts as straight
+TILT_ERROR_DEG = 1.0  # assumed error of the service's skew estimate
+TILT_END_PAD = 0.3  # of the line height, left/right: a first/last glyph clipped by a tilted word box
 
 
 @dataclass(frozen=True)
@@ -29,7 +32,8 @@ class ScannedPage:
     """Why: detection works on text, redaction on pixels; both must agree character by character.
     What: page text built from OCR lines (words joined by spaces, lines by "\\n", blocks by a
     blank line) with each word's char span and box, plus the fail-closed review regions
-    (low-confidence and ink-without-text), all in the pixels of the OCR'd image.
+    (low-confidence and ink-without-text) and visual hits (faces, codes, plates), all in the
+    pixels of the OCR'd image, plus the page ``skew`` (degrees) used to pad tilted boxes.
     Test: words "Mario" "Rossi" on one line -> text "Mario Rossi"; boxes(0, 11) is one box
     spanning both words; boxes(6, 8) is the box of "Rossi" only.
     """
@@ -39,9 +43,11 @@ class ScannedPage:
     text: str
     spans: tuple[_WordSpan, ...]
     review: tuple[tuple[str, BBox], ...]
+    visual: tuple[VisualHit, ...] = ()
+    skew: float = 0.0
 
     @classmethod
-    def from_ocr(cls, result: OcrResult) -> ScannedPage:
+    def from_ocr(cls, result: OcrResult, visual: list[VisualHit] | None = None) -> ScannedPage:
         by_line: dict[int, list] = {}
         for word in result.words:
             if word.text.strip():
@@ -68,7 +74,7 @@ class ScannedPage:
             block = words[-1].block_id
         review = tuple([(REVIEW_REASONS[0], box) for box in result.low_conf_regions]
                        + [(REVIEW_REASONS[1], box) for box in result.ink_regions])
-        return cls(result.width, result.height, "".join(parts), tuple(spans), review)
+        return cls(result.width, result.height, "".join(parts), tuple(spans), review, tuple(visual or ()), result.skew)
 
     def boxes(self, start: int, end: int) -> list[BBox]:
         """One box per line segment covering every word that overlaps [start, end) (whole words)."""
@@ -86,15 +92,24 @@ class ScannedPage:
                 round(box[2] / self.width, 5), round(box[3] / self.height, 5)]
 
 
-def to_device(box: BBox, fx: float, fy: float, width: int, height: int, line: bool) -> BBox:
-    """Why: OCR ran at its own DPI; the output page is rendered at the document DPI.
+def to_device(box: BBox, fx: float, fy: float, width: int, height: int, line: bool, skew: float = 0.0) -> BBox:
+    """Why: OCR ran at its own DPI; the output page is rendered at the document DPI. On tilted
+    photos the straightened word boxes can clip the first/last glyph (seen on prod: a sliver of
+    a phone number's last digit), and the skew estimate itself has ~1 degree of error.
     What: scales an OCR-pixel box to output pixels and pads it (lines: 15% of the line height,
-    at least MIN_PAD_PX; regions: MIN_PAD_PX), clipped to the image.
-    Test: (10, 10, 20, 30) at fx=fy=0.5 -> height 10 -> pad 3 -> (2, 2, 13, 18).
+    at least MIN_PAD_PX; regions: MIN_PAD_PX), clipped to the image. Lines on a page tilted by
+    >= TILT_MIN_DEG also get TILT_END_PAD of the line height left/right and half the box width
+    times sin(TILT_ERROR_DEG) above/below.
+    Test: (10, 10, 20, 30) at fx=fy=0.5 -> height 10 -> pad 3 -> (2, 2, 13, 18); with skew=3 a
+    (0, 100, 1000, 140) line gains 12 px left/right and 9 px above/below.
     """
     x0, y0, x1, y1 = math.floor(box[0] * fx), math.floor(box[1] * fy), math.ceil(box[2] * fx), math.ceil(box[3] * fy)
     pad = max(MIN_PAD_PX, math.ceil(LINE_PAD * (y1 - y0))) if line else MIN_PAD_PX
-    return max(0, x0 - pad), max(0, y0 - pad), min(width, x1 + pad), min(height, y1 + pad)
+    px = py = pad
+    if line and abs(skew) >= TILT_MIN_DEG:
+        px += math.ceil(TILT_END_PAD * (y1 - y0))
+        py += math.ceil((x1 - x0) / 2 * math.sin(math.radians(TILT_ERROR_DEG)))
+    return max(0, x0 - px), max(0, y0 - py), min(width, x1 + px), min(height, y1 + py)
 
 
 class ScannedPages:
@@ -125,6 +140,18 @@ class ScannedPages:
                          for reason, box in page.review)
         return [{"id": n, **box} for n, box in enumerate(boxes)]
 
+    def visual_entities(self) -> list[dict]:
+        """Faces, codes and plates (always painted; ``needs_review`` = worth a human look)."""
+        out = []
+        for index in sorted(self.scanned):
+            page = self.scanned[index]
+            out.extend({"type": hit.type, "page": index + 1, "bbox": page.normalized(hit.bbox),
+                        "score": round(hit.score, 3), "needs_review": hit.needs_review} for hit in page.visual)
+        return [{"id": n, **hit} for n, hit in enumerate(out)]
+
+    def visual_types(self) -> set[str]:
+        return {hit.type for page in self.scanned.values() for hit in page.visual}
+
     def review_by_page(self, keep: frozenset[int]) -> dict[int, list[BBox]]:
         out: dict[int, list[BBox]] = defaultdict(list)
         n = 0
@@ -138,15 +165,16 @@ class ScannedPages:
 
 def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], review: list[BBox]) -> None:
     """Why: the only thing that hides PII in a scan is opaque pixels over the OCR boxes.
-    What: paints solid black over every edited span's line boxes and every review region,
-    scaled from the OCR'd image to ``image`` and padded (to_device). Mutates ``image`` (RGB).
+    What: paints solid black over every edited span's line boxes, every review region and every
+    visual hit (faces, codes, plates: never optional), scaled from the OCR'd image to ``image``
+    and padded (to_device, tilt-aware for lines). Mutates ``image`` (RGB).
     Test: an edit over "Mario Rossi" -> mean pixel value in the word box < 20.
     """
     fx, fy = image.width / page.width, image.height / page.height
     draw = ImageDraw.Draw(image)
     boxes = [(box, True) for edit in edits for box in page.boxes(edit.start, edit.end)]
-    boxes += [(box, False) for box in review]
+    boxes += [(box, False) for box in [*review, *(hit.bbox for hit in page.visual)]]
     for box, line in boxes:
-        x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line)
+        x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line, page.skew)
         if x1 > x0 and y1 > y0:
             draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))

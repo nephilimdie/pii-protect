@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     ocr_job_max_pages: int = Field(default=100, ge=1, le=2_000, validation_alias=AliasChoices("OCR_JOB_MAX_PAGES", "PII_OCR_JOB_MAX_PAGES"))
     ocr_lang: str = Field(default="ita+eng", pattern=r"^[a-z_]{3,8}(\+[a-z_]{3,8}){0,3}$", validation_alias=AliasChoices("OCR_LANG", "PII_OCR_LANG"))
     ocr_image_engine: str = Field(default="rapidocr", pattern=r"^(rapidocr|tesseract|auto)$", validation_alias=AliasChoices("OCR_IMAGE_ENGINE", "PII_OCR_IMAGE_ENGINE"))
+    # Faces, QR/barcodes and plates on images and scanned PDF pages (ocr-service /v1/visual-pii), always redacted.
+    visual_pii_enabled: bool = Field(default=False, validation_alias=AliasChoices("VISUAL_PII_ENABLED", "PII_VISUAL_PII_ENABLED"))
+    visual_pii_detectors: str = Field(default="face,code,plate", pattern=r"^(face|code|plate)(,(face|code|plate)){0,2}$", validation_alias=AliasChoices("VISUAL_PII_DETECTORS", "PII_VISUAL_PII_DETECTORS"))
     grpc_enabled: bool = Field(default=False, validation_alias=AliasChoices("GRPC_ENABLED", "PII_GRPC_ENABLED"))
     grpc_host: str = Field(default="127.0.0.1", validation_alias=AliasChoices("GRPC_HOST", "PII_GRPC_HOST"))
     grpc_port: int = Field(default=50051, ge=1, le=65535, validation_alias=AliasChoices("GRPC_PORT", "PII_GRPC_PORT"))

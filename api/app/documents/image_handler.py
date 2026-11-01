@@ -138,24 +138,26 @@ class ImageDocument(ScannedPages):
         """Why: the image has no text until OCR reads it. What: OCRs the clean frame (greyscale,
         downscaled to the per-page pixel budget; boxes map back by ratio) with PII_OCR_IMAGE_ENGINE
         (default rapidocr: `auto` keeps Tesseract on noisy/tilted photos whenever its confidence looks
-        fine, while it misreads IBANs and e-mails) and fills the segment.
-        Raises 422 OCR_NO_TEXT_FOUND when nothing was read; any OCR failure propagates (fail closed).
+        fine, while it misreads IBANs and e-mails) and fills the segment; the colour frame of the
+        same size goes to visual PII (faces, codes, plates) when enabled.
+        Raises 422 OCR_NO_TEXT_FOUND when neither text nor visual PII was found; any OCR failure propagates (fail closed).
         Test: a fake OcrClient returning "Mario Rossi" -> segments == ["Mario Rossi"].
         """
         if should_stop and should_stop():
             raise DetectionCancelled()
-        work = self._decode().convert("L")
-        factor = min(1.0, (self._limits.max_pixels / (work.width * work.height)) ** 0.5)
+        color = self._decode()
+        factor = min(1.0, (self._limits.max_pixels / (color.width * color.height)) ** 0.5)
         if factor < 1.0:
-            work = work.resize((max(1, int(work.width * factor)), max(1, int(work.height * factor))),
-                               Image.Resampling.LANCZOS)
+            color = color.resize((max(1, int(color.width * factor)), max(1, int(color.height * factor))),
+                                 Image.Resampling.LANCZOS)
         dpi = min(max(round(self._limits.ocr_dpi * factor), _OCR_DPI_RANGE[0]), _OCR_DPI_RANGE[1])
-        page = ScannedPage.from_ocr(client.recognize(work, dpi, deadline, self._limits.ocr_image_engine))
+        result = client.recognize(color.convert("L"), dpi, deadline, self._limits.ocr_image_engine)
+        page = ScannedPage.from_ocr(result, client.visual(color, dpi, deadline))  # same frame: boxes align
         self.scanned[0], self.segments[0], self.ocr_pending = page, page.text, []
         self.warnings = sorted({*self.warnings, "image_ocr_applied"})
         if progress:
             progress(1)
-        if not page.text.strip():
+        if not page.text.strip() and not page.visual:
             raise DocumentError(422, "OCR_NO_TEXT_FOUND", "No text could be recognized in this image.")
 
     def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset()) -> bytes:
