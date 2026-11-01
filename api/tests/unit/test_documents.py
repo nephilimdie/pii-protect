@@ -65,6 +65,9 @@ class FakeAnonymizer:
     def restrict_layers(self, layers):
         pass
 
+    def set_protection_level(self, level):
+        self.protection_level = level
+
     def detect_only(self, text, context_id, context_type, language="it"):
         self.calls += 1
         if self.fail:
@@ -265,6 +268,15 @@ def test_txt_redact_removes_pii_and_keeps_text(env):
     assert env.policy_calls == [{"context_type": None, "domain": "hr_payroll"}]
     assert env.usage[0]["status"] == "ok" and env.usage[0]["entities_count"] == 3
     assert env.audit[0]["action"] == "document_redact" and "document_hash" not in env.audit[0]
+
+
+def test_protection_level_reaches_detection_and_unknown_is_422(env):
+    assert _post(env, "redact", TXT, filename="note.txt").status_code == 200
+    assert env.anonymizer.protection_level == "balanced"
+    assert _post(env, "redact", TXT, filename="note.txt", protection_level="maximum").status_code == 200
+    assert env.anonymizer.protection_level == "maximum"
+    r = _post(env, "redact", TXT, filename="note.txt", protection_level="max")
+    assert r.status_code == 422 and r.json()["error"] == "INVALID_PROTECTION_LEVEL"
 
 
 def test_txt_pseudonymize_returns_zip_with_mapping(env):
