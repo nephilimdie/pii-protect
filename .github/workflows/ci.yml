@@ -64,6 +64,31 @@ jobs:
       - name: Run ruff
         run: ruff check api/app/surrogates/ api/app/detection/entities.py
 
+  italian-benchmark:
+    name: Italian PII benchmark (harness + reproducible scores)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: pip install pytest==8.3.3
+
+      - name: Unit tests (generator determinism, scorer, report)
+        run: python -m pytest benchmark/italian/tests -q
+
+      - name: Re-score committed predictions and re-render report; fail on any drift
+        run: |
+          python benchmark/italian/score.py --predictions benchmark/italian/results/predictions --out benchmark/italian/results/summary.json
+          python benchmark/italian/report.py --results benchmark/italian/results
+          git diff --exit-code -- benchmark/italian
+
   e2e:
     name: E2E tests (Docker)
     runs-on: ubuntu-latest
