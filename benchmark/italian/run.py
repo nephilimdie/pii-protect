@@ -171,8 +171,9 @@ def main() -> None:
     ap.add_argument("--subset", type=int, default=0, help="first N docs per sub-genre (0 = full dataset)")
     ap.add_argument("--port", type=int, default=15691)
     ap.add_argument("--skip-run", action="store_true", help="only re-score existing predictions")
+    ap.add_argument("--out", type=Path, help="results directory (default results/ or results-subset/)")
     args = ap.parse_args()
-    results = HERE / ("results" if not args.subset else "results-subset")
+    results = args.out or HERE / ("results" if not args.subset else "results-subset")
     out = results / "predictions"
     out.mkdir(parents=True, exist_ok=True)
     dataset = HERE / "dataset" / "it_pii_v1.jsonl"
