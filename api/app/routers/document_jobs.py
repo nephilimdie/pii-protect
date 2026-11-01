@@ -85,6 +85,7 @@ class RenderRequest(BaseModel):
     exclude: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)
     include_terms: list[IncludeTerm] = Field(default_factory=list, max_length=500)
     entities: list[UserEntity] | None = Field(default=None, max_length=MAX_USER_ENTITIES)
+    review_keep: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)  # needs_review ids left visible
 
 
 async def _finish_analysis(api_key: ApiKey, tenant_id: str | None, job_id: str, policy: dict, chars: int,
@@ -101,28 +102,52 @@ async def _finish_analysis(api_key: ApiKey, tenant_id: str | None, job_id: str, 
         logger.warning("document job usage/audit record failed")
 
 
+def _set_ocr_progress(job: DocumentJob):
+    def progress(done: int) -> None:
+        job.ocr_pages_done = done
+    return progress
+
+
+async def _ocr(job: DocumentJob, doc, deadline: float) -> str:
+    """OCR the scanned pages (progress in ocr_pages_done), then fix the text and its limits."""
+    await asyncio.to_thread(docs.run_ocr, doc, deadline, _set_ocr_progress(job), job.cancelled.is_set)
+    if job.cancelled.is_set():
+        raise DetectionCancelled()
+    joined = JoinedText(doc.segments)
+    docs.check_text_length(len(joined.text), settings.document_job_max_text_chars)
+    job.joined, job.chars_total = joined, len(joined.text)
+    return joined.text
+
+
 async def _analyze(store: DocumentJobStore, job: DocumentJob, anonymizer: PiiAnonymizer, text: str,
                    policy: dict, api_key: ApiKey, tenant_id: str | None) -> None:
-    """Why: detection of a long document takes minutes; it runs detached from any request.
-    What: waits for an analysis slot (`queued`), detects in parallel windows with progress
-    (`analyzing`), stops before the next window once the job is cancelled/expired, and ends
-    `ready` with the entities or as a content-free `failed` tombstone.
-    Test: see tests/unit/test_document_jobs.py (lifecycle, cancel, failure).
+    """Why: OCR + detection of a long document take minutes; they run detached from any request.
+    What: waits for an analysis slot (`queued`), OCRs scanned PDF pages, detects in parallel
+    windows with progress (`analyzing`), stops before the next page/window once the job is
+    cancelled/expired, and ends `ready` with the entities or as a content-free `failed` tombstone.
+    Test: see tests/unit/test_document_jobs.py (lifecycle, cancel, failure) and test_documents_ocr.py.
     """
     started, error_code = time.perf_counter(), None
     entities: list = []
+    deadline = time.monotonic() + settings.document_job_ttl_seconds
     try:
         async with store.analysis_slot():
             if job.cancelled.is_set():
                 return
             job.status = JobStatus.ANALYZING
+            doc = job.doc
+            if doc is not None and docs.ocr_pending(doc):
+                text = await _ocr(job, doc, deadline)
             entities = await detect_protected_entities(
                 anonymizer, policy, text, str(uuid.uuid4()), job.context, job.language,
-                window=docs.detection_window(time.monotonic() + settings.document_job_ttl_seconds),
+                window=docs.detection_window(deadline),
                 executor=docs.window_executor(), progress=job.progress, should_stop=job.cancelled.is_set)
     except DetectionCancelled:
         logger.info("document job cancelled during analysis")
         return
+    except DocumentError as exc:  # OCR failure (fail closed) or over-long OCR text
+        error_code = exc.code
+        store.fail(job, exc.code, exc.message)
     except HTTPException as exc:  # policy refusal, e.g. 422 PII_BLOCKED
         detail = exc.detail if isinstance(exc.detail, dict) else {}
         error_code = str(detail.get("error", "PII_PROCESSING_FAILED"))
@@ -166,7 +191,9 @@ async def create_document_job(
             doc = await asyncio.to_thread(load_document, upload.payload, docs._limits())
             joined = JoinedText(doc.segments)
             docs.check_text_length(len(joined.text), settings.document_job_max_text_chars)
-            await docs.UsageService(db).ensure_within_limits(api_key, len(joined.text))
+            scanned = len(docs.ocr_pending(doc))
+            docs.check_ocr_pages(doc, settings.ocr_job_max_pages)
+            await docs.UsageService(db).ensure_within_limits(api_key, len(joined.text) + scanned * docs.CHARS_PER_PAGE)
             domain = upload.fields.get("domain") or None
             context_type = upload.fields.get("context_type") or (None if domain else "generic")
             policy = await docs.PolicyService(db, tenant_id=tenant_id).resolve(context_type=context_type, domain=domain)
@@ -182,7 +209,7 @@ async def create_document_job(
         logger.warning("document job upload failed closed: %s", type(exc).__name__)
         raise docs._error(503, "PII_PROCESSING_FAILED", "The document could not be safely processed.") from None
     job.doc, job.joined, job.policy, job.format = doc, joined, policy, doc.format
-    job.pages_total, job.chars_total = doc.pages or 0, len(joined.text)
+    job.pages_total, job.chars_total, job.ocr_pages_total = doc.pages or 0, len(joined.text), scanned
     job.bytes = len(upload.payload) + 2 * len(joined.text)  # payload (PDF source) + segments + joined text
     job.language = upload.fields.get("language") or getattr(request.app.state, "default_language", "it")
     job.context = domain or context_type or "generic"
@@ -247,6 +274,9 @@ async def render_document_job(
         else:
             entities = corrected_entities(joined.text, detected, body.exclude,
                                           [(t.text, t.type) for t in body.include_terms])
+        review_count = len(doc.review_boxes()) if getattr(doc, "scanned", None) else 0
+        if any(index < 0 or index >= review_count for index in body.review_keep):
+            raise DocumentError(422, "INVALID_RENDER_REQUEST", "`review_keep` contains an unknown needs_review id.")
     except DocumentError as exc:
         raise docs._error(exc.status, exc.code, exc.message, exc.headers, exc.extra) from None
     job.status = JobStatus.RENDERING
@@ -260,7 +290,7 @@ async def render_document_job(
     try:
         response = await docs.render_document(body.mode, doc, joined, entities, policy,
                                               time.monotonic() + settings.document_timeout_seconds,
-                                              lambda: store.delete(job), delivered)
+                                              lambda: store.delete(job), delivered, frozenset(body.review_keep))
     except Exception as exc:
         store.delete(job)
         logger.warning("document job render failed closed: %s", type(exc).__name__)

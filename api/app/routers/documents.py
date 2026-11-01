@@ -26,6 +26,7 @@ from app.database import get_db
 from app.documents.admission import AdmissionSlot, DocumentAdmission
 from app.documents.chunking import detection_executor
 from app.documents.models import MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
+from app.documents.ocr_client import get_ocr_client
 from app.documents.service import (
     load_document,
     parse_user_entities,
@@ -73,6 +74,8 @@ def _limits() -> DocumentLimits:
         docx_max_uncompressed_bytes=settings.document_docx_max_uncompressed_bytes,
         docx_max_ratio=settings.document_docx_max_ratio,
         docx_max_entries=settings.document_docx_max_entries,
+        ocr_enabled=settings.ocr_enabled,
+        ocr_dpi=settings.ocr_dpi,
     )
 
 
@@ -117,11 +120,36 @@ def check_text_length(chars: int, max_chars: int | None = None) -> None:
                                    "estimated_max_pages": max_chars // CHARS_PER_PAGE})
 
 
+def ocr_pending(doc) -> list[int]:
+    return list(getattr(doc, "ocr_pending", []))
+
+
+def check_ocr_pages(doc, max_pages: int) -> None:
+    """Why: OCR costs seconds per page; refuse over-long scans before spending any of it.
+    What: 422 OCR_TOO_MANY_PAGES (with max_pages, ocr_pages) when the document has more
+    scanned pages than `max_pages` (sync: PII_OCR_MAX_PAGES, jobs: PII_OCR_JOB_MAX_PAGES).
+    Test: limit 1, a 2-page scan -> 422 and the OCR service is never called.
+    """
+    pending = len(ocr_pending(doc))
+    if pending > max_pages:
+        raise DocumentError(422, "OCR_TOO_MANY_PAGES",
+                            f"The PDF has {pending} scanned pages; at most {max_pages} can be OCR'd. Split it.",
+                            extra={"max_pages": max_pages, "ocr_pages": pending})
+
+
+def run_ocr(doc, deadline: float, progress=None, should_stop=None) -> None:
+    """Blocking (call in a thread): OCR the document's scanned pages with the process client."""
+    client = get_ocr_client()
+    if client is None:  # load_document only defers pages when OCR is enabled
+        raise DocumentError(503, "OCR_UNAVAILABLE", "OCR is not configured; no document was returned.")
+    doc.run_ocr(client, deadline, settings.ocr_concurrency, progress, should_stop)
+
+
 class _StreamAborted(Exception):
     """Content-free error raised to the ASGI server so it drops the connection mid-body."""
 
 
-def _stream_pdf(doc, edits, deadline: float, release, done) -> StreamingResponse:
+def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozenset[int] = frozenset()) -> StreamingResponse:
     """Why: a 200-page redaction must not be assembled in memory, yet a failure after the headers
     are sent can no longer change the status code.
     What: renders and sends one page at a time; on any failure the body stops before the PDF
@@ -130,7 +158,7 @@ def _stream_pdf(doc, edits, deadline: float, release, done) -> StreamingResponse
     Test: make page 2 of 3 fail; the client sees a transport error and the received bytes do
     not end with `%%EOF`.
     """
-    pages = doc.render_stream(edits, deadline)
+    pages = doc.render_stream(edits, deadline, keep_review)
     step_lock = threading.Lock()  # close() must never race a next() still running in a thread
 
     def step():
@@ -198,6 +226,9 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     state["format"], state["pages"] = doc.format, doc.pages
     if op == Operation.PSEUDONYMIZE:
         check_pseudonymizable(doc.format)
+    if ocr_pending(doc):
+        check_ocr_pages(doc, settings.ocr_max_pages)
+        await asyncio.to_thread(run_ocr, doc, state["deadline"])
     joined = JoinedText(doc.segments)
     check_text_length(len(joined.text))
     state["chars"] = len(joined.text)
@@ -235,29 +266,35 @@ def window_executor():
 
 def preview_payload(doc, joined: JoinedText, entities: list, policy: dict) -> dict:
     """Why: /preview and GET /jobs/{id}/entities must return the same payload the UI reviews.
-    What: format, pages, text, entities (with `id` = list index, used by job render `exclude`), policy.
+    What: format, pages, text, entities (with `id` = list index, used by job render `exclude`), policy;
+    for scanned PDF pages also each entity's `boxes`, the `needs_review` regions and `ocr_pages`.
     Test: two entities -> ids 0 and 1, each with its page (PDF) or null (DOCX/TXT).
     """
+    boxes = getattr(doc, "entity_boxes", None)
+    scanned = getattr(doc, "scanned", {})
     return {
         "format": doc.format, "pages": doc.pages, "text": joined.text,
         "entity_count": len(entities), "pii_types_found": sorted({e.pii_type for e in entities}),
         "entities": [{"id": i, "start": e.start, "end": e.end, "type": e.pii_type, "text": e.text,
-                      "confidence": round(e.score, 4), "page": doc.page_of(joined.segment_at(e.start))}
+                      "confidence": round(e.score, 4), "page": doc.page_of(joined.segment_at(e.start)),
+                      "boxes": boxes(joined.split(e.start, e.end)) if boxes else []}
                      for i, e in enumerate(entities)],
+        "ocr_pages": [index + 1 for index in sorted(scanned)],
+        "needs_review": doc.review_boxes() if scanned else [],
         "policy": {"id": policy["policy_id"], "version": policy["policy_version"], "hash": policy["policy_hash"]},
         "warnings": doc.warnings, "sanitized": list(doc.SANITIZED),
     }
 
 
 async def render_document(op: str, doc, joined: JoinedText, entities: list, policy: dict, deadline: float,
-                          release, done) -> Response:
+                          release, done, keep_review: frozenset[int] = frozenset()) -> Response:
     """Why: sync redact/pseudonymize and job render must produce byte-identical files.
     What: streamed PDF redaction (`release`/`done` run when the body ends) or an in-memory
     DOCX/TXT redaction / pseudonymization ZIP, with the X-Pii-* headers.
     Test: covered by the redact/pseudonymize endpoint tests and the job render tests.
     """
     if op == Operation.REDACT and doc.format == DocumentFormat.PDF:
-        response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done)
+        response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done, keep_review)
     elif op == Operation.REDACT:
         content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities))
         response = Response(content, media_type=MEDIA_TYPES[doc.format],

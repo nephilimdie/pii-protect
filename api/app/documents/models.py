@@ -63,6 +63,8 @@ class DocumentLimits:
     docx_max_uncompressed_bytes: int = 100_000_000
     docx_max_ratio: int = 100
     docx_max_entries: int = 1_000
+    ocr_enabled: bool = False  # scanned PDF pages are OCR'd (PdfDocument.run_ocr) instead of rejected
+    ocr_dpi: int = 300
 
 
 class LoadedDocument(Protocol):
