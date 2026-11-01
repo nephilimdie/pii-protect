@@ -88,7 +88,8 @@ def parse_result(body: object, width: int, height: int) -> OcrResult:
 class OcrClient:
     """Why: the OCR service is a separate, CPU-bound container that answers 503 BUSY when its
     workers are full; the engine must wait politely, bounded by the document deadline.
-    What: ``recognize(image, dpi, deadline)`` posts one PNG page with X-Internal-Key; honours
+    What: ``recognize(image, dpi, deadline, engine)`` posts one PNG page with X-Internal-Key
+    (``engine`` overrides the client default for this page, e.g. rapidocr for photos); honours
     503 Retry-After (capped) and retries connection errors with backoff, up to ``max_retries``;
     maps everything else to 503/504/422 DocumentErrors. Thread-safe (one pooled httpx client).
     Test: an httpx.MockTransport answering 503 twice then 200 -> one result and two sleeps.
@@ -103,11 +104,11 @@ class OcrClient:
         self._fields = {"lang": lang, "engine": engine}
         self._sleep, self._clock = sleep, clock
 
-    def recognize(self, image: Image.Image, dpi: int, deadline: float) -> OcrResult:
+    def recognize(self, image: Image.Image, dpi: int, deadline: float, engine: str | None = None) -> OcrResult:
         buffer = io.BytesIO()
         image.save(buffer, format="PNG", compress_level=_PNG_LEVEL, dpi=(dpi, dpi))
         files = {"file": ("page.png", buffer.getvalue(), "image/png")}
-        data = {**self._fields, "dpi": str(dpi)}
+        data = {**self._fields, "dpi": str(dpi), **({"engine": engine} if engine else {})}
         for attempt in range(self._retries + 1):
             remaining = deadline - self._clock()
             if remaining <= 0:

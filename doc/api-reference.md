@@ -124,7 +124,12 @@ parameters. The JSON/base64 contract keeps the core free of multipart parser
 dependencies; callers must enforce their own base64 input size before sending.
 
 No image plugin ships with the engine (the former `pseudora.image_ocr` plugin was
-removed; scanned PDFs are handled by the document endpoints with the OCR service).
+removed; scanned PDFs **and photos/screenshots (JPEG, PNG, WebP)** are handled by the
+zero-retention document endpoints `/v1/documents/{preview,redact}` and document jobs with
+the internal OCR service: EXIF orientation applied, every metadata block (EXIF incl. GPS,
+XMP, ICC, comments) dropped, entities and fail-closed `needs_review` regions painted black,
+output in the input format, redact only; HEIC/HEIF is refused with
+`415 IMAGE_FORMAT_UNSUPPORTED` — see `openapi.yaml`).
 Size and pixel limits are controlled by `PII_IMAGE_MAX_BYTES` and
 `PII_IMAGE_MAX_PIXELS`. Remote URLs, PDFs, faces and signatures are not accepted by
 this contract.

@@ -82,9 +82,12 @@ components:
                 type: string
                 format: binary
                 description: |
-                  PDF, DOCX or plain text (UTF-8, UTF-16 with BOM, or cp1252). The type is
-                  detected from the content, not the filename. Max `PII_DOCUMENT_UPLOAD_MAX_BYTES`
-                  (default 20 MB); PDF max `PII_DOCUMENT_UPLOAD_MAX_PAGES` (default 200).
+                  PDF, DOCX, plain text (UTF-8, UTF-16 with BOM, or cp1252) or a JPEG/PNG/WebP
+                  image (photo or screenshot; preview/redact only, needs `PII_OCR_ENABLED=true`).
+                  The type is detected from the content, not the filename. Max
+                  `PII_DOCUMENT_UPLOAD_MAX_BYTES` (default 20 MB); PDF max `PII_DOCUMENT_UPLOAD_MAX_PAGES`
+                  (default 200); image max `PII_DOCUMENT_IMAGE_MAX_PIXELS` decoded pixels (default 40 MP),
+                  single frame. HEIC/HEIF, AVIF, GIF, TIFF, BMP, JPEG 2000/XL -> 415 IMAGE_FORMAT_UNSUPPORTED.
               domain:
                 type: string
                 description: Domain policy preset (e.g. hr_payroll, tax_accounting, real_estate_insurance, generic_professional).
@@ -107,17 +110,20 @@ components:
     DocumentError:
       description: |
         Document request rejected; no document is returned. Codes: 400 INVALID_MULTIPART;
-        413 DOCUMENT_TOO_LARGE, DOCUMENT_PAGE_LIMIT_EXCEEDED;
+        413 DOCUMENT_TOO_LARGE, DOCUMENT_PAGE_LIMIT_EXCEEDED, IMAGE_PIXEL_LIMIT_EXCEEDED (extra integer
+        fields `max_pixels`, `pixels`);
         422 DOCUMENT_TOO_LONG: the extracted text exceeds `PII_DOCUMENT_MAX_TEXT_CHARS` (default
         500000). Checked right after text extraction, before detection, rendering or usage
         accounting, so it answers in about a second and nothing is charged. Extra integer body
         fields: `max_chars` (the limit), `chars` (extracted characters), `estimated_max_pages`
         (`max_chars // 2200`, assuming ~2,200 characters per dense A4 text page);
-        415 MULTIPART_REQUIRED, UNSUPPORTED_DOCUMENT_TYPE; 422 FILE_REQUIRED, EMPTY_DOCUMENT,
+        415 MULTIPART_REQUIRED, UNSUPPORTED_DOCUMENT_TYPE, IMAGE_FORMAT_UNSUPPORTED (HEIC/HEIF is not
+        decoded: libheif is LGPL and HEVC is patent-encumbered; convert to JPEG/PNG);
+        422 FILE_REQUIRED, EMPTY_DOCUMENT, IMAGE_OCR_NOT_ENABLED, IMAGE_ANIMATED_UNSUPPORTED,
         INVALID_DOCUMENT, LEGACY_OR_ENCRYPTED_OFFICE_FILE, PDF_NO_TEXT_LAYER, PDF_PAGE_TOO_LARGE,
         OCR_TOO_MANY_PAGES, OCR_NO_TEXT_FOUND, OCR_PAGE_REJECTED (422), OCR_UNAVAILABLE / OCR_BUSY /
         OCR_FAILED (503, fail-closed: no document), OCR_TIMEOUT (504),
-        PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF, INVALID_ENTITIES, PII_BLOCKED;
+        PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF, PSEUDONYMIZE_NOT_SUPPORTED_FOR_IMAGE, INVALID_ENTITIES, PII_BLOCKED;
         422 DOCX package inspection (central directory checked before anything is inflated or parsed):
         DOCX_TOO_MANY_PARTS (`PII_DOCUMENT_DOCX_MAX_ENTRIES`, default 1000),
         DOCX_UNCOMPRESSED_TOO_LARGE (total inflated size, `PII_DOCUMENT_DOCX_MAX_UNCOMPRESSED_BYTES`,
@@ -156,7 +162,7 @@ components:
 
   headers:
     DocumentFormat:
-      description: Detected format (pdf, docx, txt)
+      description: Detected format (pdf, docx, txt, png, jpeg, webp)
       schema: {type: string}
     EntityCount:
       description: Number of redacted/pseudonymized entities
@@ -165,13 +171,13 @@ components:
       description: Comma-separated entity types processed
       schema: {type: string}
     DocumentWarnings:
-      description: Comma-separated warnings (e.g. pdf_images_not_inspected, embedded_images_or_objects_not_inspected)
+      description: Comma-separated warnings (e.g. pdf_images_not_inspected, embedded_images_or_objects_not_inspected, image_ocr_applied, image_metadata_removed)
       schema: {type: string}
     DocumentSanitized:
       description: Comma-separated list of structures removed from the output (e.g. core_properties, comments, tracked_changes, text_layer)
       schema: {type: string}
     DocumentPages:
-      description: PDF page count (present on every successful PDF response, including streamed redactions)
+      description: PDF page count (present on every successful PDF response, including streamed redactions); 1 for images
       schema: {type: integer}
     RetryAfter:
       description: Seconds to wait before retrying a request rejected with 503 ENGINE_BUSY
@@ -195,7 +201,9 @@ components:
       description: |
         Parts that were not inspected. `pdf_images_not_inspected`: images on text pages are
         kept as-is; `pdf_annotations_and_form_fields_removed`: annotations/form fields are
-        dropped from the output; `embedded_images_or_objects_not_inspected` (DOCX).
+        dropped from the output; `embedded_images_or_objects_not_inspected` (DOCX);
+        `pdf_ocr_applied` / `image_ocr_applied`: text comes from OCR; `image_metadata_removed`: the
+        input image carried EXIF/GPS, XMP, ICC, comments or text chunks (never copied to the output).
     DocumentSanitized:
       type: array
       items: {type: string}
@@ -1255,7 +1263,8 @@ paths:
     post:
       summary: Anonymize an image with an optional OCR plugin
       description: |
-        Accepts a base64-encoded PNG or JPEG. The endpoint fails closed with
+        Legacy plugin endpoint; for zero-retention photo/screenshot redaction use
+        `/v1/documents/redact` or document jobs (JPEG/PNG/WebP). Accepts a base64-encoded PNG or JPEG. The endpoint fails closed with
         `image_plugin_not_installed` unless an approved image OCR plugin is
         explicitly installed and autoloaded. Region metadata never contains
         the recognized raw value.
@@ -1383,7 +1392,7 @@ paths:
                 type: object
                 required: [format, pages, text, entity_count, pii_types_found, entities, policy, warnings, sanitized]
                 properties:
-                  format: {type: string, enum: [pdf, docx, txt]}
+                  format: {type: string, enum: [pdf, docx, txt, png, jpeg, webp]}
                   pages: {type: [integer, "null"], description: PDF page count; null for DOCX/TXT}
                   text: {type: string, description: Extracted document text that entity offsets refer to}
                   entity_count: {type: integer}
@@ -1399,16 +1408,17 @@ paths:
                         type: {type: string, example: PERSON}
                         text: {type: string, example: Mario Rossi}
                         confidence: {type: number}
-                        page: {type: [integer, "null"], description: 1-based PDF page; null for DOCX/TXT}
+                        page: {type: [integer, "null"], description: 1-based PDF page (1 for images); null for DOCX/TXT}
                         boxes:
                           type: array
-                          description: "Scanned (OCR) PDF pages only, else empty: one rectangle per text-line segment the entity covers."
+                          description: "Scanned (OCR) PDF pages and images only, else empty: one rectangle per text-line segment the entity covers."
                           items: {$ref: "#/components/schemas/PageBox"}
-                  ocr_pages: {type: array, items: {type: integer}, description: 1-based PDF pages whose text comes from OCR}
+                  ocr_pages: {type: array, items: {type: integer}, description: "1-based PDF pages whose text comes from OCR ([1] for images)"}
                   needs_review:
                     type: array
                     description: |
-                      Scanned pages only. Regions OCR could not read reliably; they are **redacted by
+                      Scanned pages and images only (same shape: images are page 1, boxes are fractions of the
+                      upright image). Regions OCR could not read reliably; they are **redacted by
                       default** (fail-closed). A job render may list ids in `review_keep` to leave them visible.
                     items:
                       allOf:
@@ -1432,10 +1442,10 @@ paths:
 
   /v1/documents/redact:
     post:
-      summary: Irreversibly redact a PDF, DOCX or TXT document
+      summary: Irreversibly redact a PDF, DOCX, TXT document or a JPEG/PNG/WebP image
       description: |
         Returns the redacted file itself (`Content-Disposition: attachment;
-        filename="redacted.<pdf|docx|txt>"`).
+        filename="redacted.<pdf|docx|txt|png|jpeg|webp>"`).
 
         - **PDF**: each page is rendered at `PII_DOCUMENT_PDF_DPI` (default 200;
           lowered per page so a page never exceeds `PII_DOCUMENT_PDF_MAX_PAGE_PIXELS`,
@@ -1461,6 +1471,19 @@ paths:
           changes, external link targets, image alt text and thumbnails are
           removed (`X-Pii-Sanitized`).
         - **TXT**: entities replaced by `█████`; output is UTF-8.
+        - **Images** (JPEG, PNG, WebP; photos and screenshots; requires `PII_OCR_ENABLED=true`, else
+          `422 IMAGE_OCR_NOT_ENABLED`): the image is turned upright from its EXIF orientation,
+          converted to sRGB and flattened onto white (transparent pixels are never OCR'd nor output),
+          OCR'd by the internal OCR service with `PII_OCR_IMAGE_ENGINE` (default `rapidocr`, which
+          reads noisy/tilted photos and coloured UI text better than Tesseract; deskew up to 10°),
+          downscaled for OCR to `PII_DOCUMENT_PDF_MAX_PAGE_PIXELS` only (the output keeps the full
+          resolution), and the detected entities plus every `needs_review` region are painted
+          opaque black exactly as on scanned PDF pages (fail-closed; OCR down -> 503, no image).
+          The output has the input's format (PNG lossless; JPEG/WebP re-encoded at quality 92) and
+          **no metadata at all**: EXIF incl. GPS, XMP, ICC profile, comments and PNG text chunks are
+          dropped (`X-Pii-Sanitized`). Redact only (`422 PSEUDONYMIZE_NOT_SUPPORTED_FOR_IMAGE`).
+          Strongly angled or perspective-distorted photos (beyond ~10° or curved pages) may be
+          partly unread: such text lands in `needs_review` (redacted) or is missed; review the preview.
 
         With `entities` (from `/preview`, edited by the user) detection is
         skipped and exactly those spans are redacted.
@@ -1500,6 +1523,9 @@ paths:
             application/pdf: {schema: {type: string, format: binary}}
             application/vnd.openxmlformats-officedocument.wordprocessingml.document: {schema: {type: string, format: binary}}
             text/plain: {schema: {type: string}}
+            image/png: {schema: {type: string, format: binary}}
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
         "400": {$ref: "#/components/responses/DocumentError"}
         "401": {description: Missing or invalid API key}
         "413": {$ref: "#/components/responses/DocumentError"}
@@ -1526,7 +1552,8 @@ paths:
 
         The mapping exists only in this response: the server keeps no copy, so
         `/v1/deanonymize` cannot reverse it. PDF is not supported in this
-        version (`422 PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF`).
+        version (`422 PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF`). Images are redact-only
+        (`422 PSEUDONYMIZE_NOT_SUPPORTED_FOR_IMAGE`).
       operationId: pseudonymizeDocument
       tags: [Documents]
       requestBody: {$ref: "#/components/requestBodies/DocumentUpload"}
@@ -1590,7 +1617,7 @@ paths:
                 properties:
                   job_id: {type: string, format: uuid}
                   status: {type: string, enum: [queued, analyzing]}
-                  format: {type: string, enum: [pdf, docx, txt]}
+                  format: {type: string, enum: [pdf, docx, txt, png, jpeg, webp]}
                   pages_total: {type: integer, description: "PDF pages (0 for DOCX/TXT)"}
         "400": {$ref: "#/components/responses/DocumentError"}
         "401": {description: Missing or invalid API key}
@@ -1672,7 +1699,7 @@ paths:
         list entirely and cannot be combined with the other two. The job is deleted right after
         the file has been sent (PDF: after the last chunk), or on any failure (a PDF stream that
         fails mid-body is aborted and the job is gone). Invalid bodies (`422
-        INVALID_RENDER_REQUEST`, `PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF`, `INVALID_ENTITIES`) keep
+        INVALID_RENDER_REQUEST`, `PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF`/`_FOR_IMAGE`, `INVALID_ENTITIES`) keep
         the job so the client can retry.
       operationId: renderDocumentJob
       tags: [Documents]
@@ -1709,6 +1736,9 @@ paths:
             application/pdf: {schema: {type: string, format: binary}}
             application/vnd.openxmlformats-officedocument.wordprocessingml.document: {schema: {type: string, format: binary}}
             text/plain: {schema: {type: string}}
+            image/png: {schema: {type: string, format: binary}}
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
         "404": {$ref: "#/components/responses/DocumentJobError"}
         "409": {$ref: "#/components/responses/DocumentJobError"}
         "422": {$ref: "#/components/responses/DocumentError"}

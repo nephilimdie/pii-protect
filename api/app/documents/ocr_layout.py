@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from dataclasses import dataclass
 
+from PIL import Image, ImageDraw
+
+from app.documents.models import SegmentEdit
 from app.documents.ocr_client import BBox, OcrResult
 
 MIN_PAD_PX = 3
@@ -91,3 +95,58 @@ def to_device(box: BBox, fx: float, fy: float, width: int, height: int, line: bo
     x0, y0, x1, y1 = math.floor(box[0] * fx), math.floor(box[1] * fy), math.ceil(box[2] * fx), math.ceil(box[3] * fy)
     pad = max(MIN_PAD_PX, math.ceil(LINE_PAD * (y1 - y0))) if line else MIN_PAD_PX
     return max(0, x0 - pad), max(0, y0 - pad), min(width, x1 + pad), min(height, y1 + pad)
+
+
+class ScannedPages:
+    """Why: scanned PDF pages and images share one review contract (boxes as page fractions,
+    numbered needs_review regions, fail-closed painting); one implementation keeps them equal.
+    What: mixin over ``self.scanned`` ({0-based page: ScannedPage}): entity_boxes(), review_boxes()
+    and review_by_page(keep) (the regions still to paint after the user's review_keep).
+    Test: test_documents_ocr.py / test_documents_image.py preview payloads (ids, pages, bboxes).
+    """
+
+    scanned: dict[int, ScannedPage]
+
+    def entity_boxes(self, pieces: list[tuple[int, int, int]]) -> list[dict]:
+        """Boxes of an entity on scanned pages: [{page (1-based), bbox: normalized [x0,y0,x1,y1]}]."""
+        out = []
+        for segment, start, end in pieces:
+            page = self.scanned.get(segment)
+            if page is not None:
+                out.extend({"page": segment + 1, "bbox": page.normalized(box)} for box in page.boxes(start, end))
+        return out
+
+    def review_boxes(self) -> list[dict]:
+        """Fail-closed regions (always redacted unless kept by id): low-confidence text, unread ink."""
+        boxes = []
+        for index in sorted(self.scanned):
+            page = self.scanned[index]
+            boxes.extend({"page": index + 1, "reason": reason, "bbox": page.normalized(box)}
+                         for reason, box in page.review)
+        return [{"id": n, **box} for n, box in enumerate(boxes)]
+
+    def review_by_page(self, keep: frozenset[int]) -> dict[int, list[BBox]]:
+        out: dict[int, list[BBox]] = defaultdict(list)
+        n = 0
+        for index in sorted(self.scanned):
+            for _, box in self.scanned[index].review:
+                if n not in keep:
+                    out[index].append(box)
+                n += 1
+        return out
+
+
+def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], review: list[BBox]) -> None:
+    """Why: the only thing that hides PII in a scan is opaque pixels over the OCR boxes.
+    What: paints solid black over every edited span's line boxes and every review region,
+    scaled from the OCR'd image to ``image`` and padded (to_device). Mutates ``image`` (RGB).
+    Test: an edit over "Mario Rossi" -> mean pixel value in the word box < 20.
+    """
+    fx, fy = image.width / page.width, image.height / page.height
+    draw = ImageDraw.Draw(image)
+    boxes = [(box, True) for edit in edits for box in page.boxes(edit.start, edit.end)]
+    boxes += [(box, False) for box in review]
+    for box, line in boxes:
+        x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line)
+        if x1 > x0 and y1 > y0:
+            draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))

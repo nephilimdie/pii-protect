@@ -25,7 +25,7 @@ from app.config import settings
 from app.database import get_db
 from app.documents.admission import AdmissionSlot, DocumentAdmission
 from app.documents.chunking import detection_executor
-from app.documents.models import MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
+from app.documents.models import IMAGE_FORMATS, MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
 from app.documents.ocr_client import get_ocr_client
 from app.documents.service import (
     load_document,
@@ -53,7 +53,8 @@ class Operation:
 
 
 _FORM_FIELDS = {
-    "file": {"type": "string", "format": "binary", "description": "PDF, DOCX or UTF-8/cp1252 text file."},
+    "file": {"type": "string", "format": "binary", "description": "PDF, DOCX, UTF-8/cp1252 text file, or a JPEG/PNG/WebP "
+                                                                   "image (redact/preview only; needs OCR)."},
     "domain": {"type": "string", "description": "Domain policy preset, e.g. hr_payroll, tax_accounting."},
     "context_type": {"type": "string", "description": "Context type (used when `domain` is absent; default generic)."},
     "language": {"type": "string", "description": "Detection language (default: engine default, usually it)."},
@@ -76,6 +77,8 @@ def _limits() -> DocumentLimits:
         docx_max_entries=settings.document_docx_max_entries,
         ocr_enabled=settings.ocr_enabled,
         ocr_dpi=settings.ocr_dpi,
+        image_max_pixels=settings.document_image_max_pixels,
+        ocr_image_engine=settings.ocr_image_engine,
     )
 
 
@@ -101,6 +104,9 @@ def check_pseudonymizable(document_format: str) -> None:
     if document_format == DocumentFormat.PDF:
         raise DocumentError(422, "PSEUDONYMIZE_NOT_SUPPORTED_FOR_PDF",
                             "PDF supports redact only; use DOCX or TXT for pseudonymization.")
+    if document_format in IMAGE_FORMATS:
+        raise DocumentError(422, "PSEUDONYMIZE_NOT_SUPPORTED_FOR_IMAGE",
+                            "Images support redact only: text drawn in pixels cannot be replaced by tokens.")
 
 
 def check_text_length(chars: int, max_chars: int | None = None) -> None:
@@ -290,13 +296,15 @@ async def render_document(op: str, doc, joined: JoinedText, entities: list, poli
                           release, done, keep_review: frozenset[int] = frozenset()) -> Response:
     """Why: sync redact/pseudonymize and job render must produce byte-identical files.
     What: streamed PDF redaction (`release`/`done` run when the body ends) or an in-memory
-    DOCX/TXT redaction / pseudonymization ZIP, with the X-Pii-* headers.
+    DOCX/TXT/image redaction (images keep the `keep_review` regions visible) / pseudonymization
+    ZIP, with the X-Pii-* headers.
     Test: covered by the redact/pseudonymize endpoint tests and the job render tests.
     """
     if op == Operation.REDACT and doc.format == DocumentFormat.PDF:
         response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done, keep_review)
     elif op == Operation.REDACT:
-        content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities))
+        review = (keep_review,) if doc.format in IMAGE_FORMATS else ()  # images: needs_review the user kept
+        content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), *review)
         response = Response(content, media_type=MEDIA_TYPES[doc.format],
                             headers={"Content-Disposition": f'attachment; filename="redacted.{doc.format}"'})
     else:
