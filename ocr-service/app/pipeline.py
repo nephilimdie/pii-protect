@@ -111,7 +111,8 @@ class Pipeline:
         low_conf = merge_boxes((w.bbox for w in words if w.conf < self._s.low_conf_threshold), gap)
         ink = merge_boxes(transform.box(b) for b in ink_without_text(work, work_boxes))  # type: ignore[arg-type]
         return Page(index=page.index, width=page.width, height=page.height, dpi=page.dpi, engine=best.engine,
-                    words=words, lines=build_lines(words), low_conf_regions=low_conf, ink_without_text_regions=ink)
+                    words=words, lines=build_lines(words), low_conf_regions=low_conf, ink_without_text_regions=ink,
+                    skew=round((transform.angle + 45) % 90 - 45, 2))
 
     def _upright(self, gray: Image.Image, page: PageImage, engine: str, lang: str,
                  deadline: float) -> tuple[Attempt, Image.Image, Transform] | None:
