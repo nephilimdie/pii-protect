@@ -15,6 +15,8 @@ from app.detection.entities import PiiEntity
 BALANCED = "balanced"
 MAXIMUM = "maximum"
 PROTECTION_LEVELS = (BALANCED, MAXIMUM)
+ML_LAYERS = frozenset({"presidio", "privacy_filter", "ai4privacy"})
+MAXIMUM_ML_MIN_SCORE = 0.5  # balanced defaults: presidio 0.65, privacy_filter/ai4privacy 0.70
 SOURCE = "regex"  # deterministic: the merger lets these beat overlapping ML spans
 
 MONTHS = ("gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
@@ -47,13 +49,14 @@ def parse_date(value: str) -> date | None:
     What: parses d/m/y (2- or 4-digit year, OCR digits allowed), ISO y-m-d and "d mese yyyy".
     Test: parse_date("3/7/00") == date(2000, 7, 3); parse_date("1951-03-17").year == 1951.
     """
-    s = value.strip().lower().translate(_OCR_DIGITS)
+    words = value.strip().lower()
+    s = words.translate(_OCR_DIGITS)  # numeric forms only: "marzo" must keep its "o"
     try:
         if m := re.fullmatch(r"((?:19|20)\d\d)-(\d{1,2})-(\d{1,2})", s):
             y, mo, d = int(m[1]), int(m[2]), int(m[3])
         elif m := re.fullmatch(r"(\d{1,2})\s?[./\-]\s?(\d{1,2})\s?[./\-]\s?(\d{2}|\d{4})", s):
             d, mo, y = int(m[1]), int(m[2]), int(m[3])
-        elif m := re.fullmatch(r"(\d{1,2})\s+([a-z]+)\.?\s+'?(\d{2}|\d{4})", s):
+        elif m := re.fullmatch(r"(\d{1,2})\s+([a-z]+)\.?\s+'?(\d{2}|\d{4})", words):
             mo = next((i + 1 for i, name in enumerate(MONTHS) if name.startswith(m[2][:3])), 0)
             d, y = int(m[1]), int(m[3])
         else:

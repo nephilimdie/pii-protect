@@ -38,7 +38,7 @@ from app.documents.upload import read_document_upload
 from app.identity.dependencies import require_service
 from app.identity.models import ApiKey
 from app.identity.tenant import get_tenant_id
-from app.routers._anonymize_logic import detect_protected_entities, get_anonymizer
+from app.routers._anonymize_logic import detect_protected_entities, get_anonymizer, with_protection_level
 from app.surrogates.policy_service import PolicyService
 from app.usage.service import UsageService
 
@@ -58,6 +58,8 @@ _FORM_FIELDS = {
     "domain": {"type": "string", "description": "Domain policy preset, e.g. hr_payroll, tax_accounting."},
     "context_type": {"type": "string", "description": "Context type (used when `domain` is absent; default generic)."},
     "language": {"type": "string", "description": "Detection language (default: engine default, usually it)."},
+    "protection_level": {"type": "string", "enum": ["balanced", "maximum"], "default": "balanced",
+                         "description": "balanced (default) or maximum: lower thresholds, recall-first rules."},
     "entities": {"type": "string", "description": "redact/pseudonymize only: JSON array of {start,end,type} "
                                                    "from /preview, edited by the user. Replaces detection."},
 }
@@ -243,6 +245,7 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     domain = fields.get("domain") or None
     context_type = fields.get("context_type") or (None if domain else "generic")
     policy = await PolicyService(db, tenant_id=tenant_id).resolve(context_type=context_type, domain=domain)
+    policy = with_protection_level(policy, fields.get("protection_level"))
     state["policy"] = policy
     if op != Operation.PREVIEW and "entities" in fields:
         entities = parse_user_entities(fields["entities"], joined.text)

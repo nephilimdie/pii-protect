@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 MAX_TEXT_CHARS = 500_000  # ~400 pages; hard limit enforced before ML layers
@@ -14,7 +16,8 @@ class AnonymizeRequest(BaseModel):
     language: str | None = None
     mode: str | None = None          # tag | surrogate — overrides context_type/policy default
     policy: dict | None = None       # {"protect": [...], "keep": [...]} — inline override
-    detection_mode: str = "permissive"  # permissive | strict
+    # balanced: precision-tuned default; maximum: lower ML thresholds + recall-first rules
+    protection_level: Literal["balanced", "maximum"] = "balanced"
     include_entity_values: bool = False
     dry_run: bool = False
 
@@ -78,6 +81,7 @@ class BatchAnonymizeRequest(BaseModel):
     language: str | None = None
     mode: str | None = None
     policy: dict | None = None
+    protection_level: Literal["balanced", "maximum"] = "balanced"
     dry_run: bool = True
 
 

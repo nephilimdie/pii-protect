@@ -258,14 +258,8 @@ components:
                 type: string
               description: PII types to leave in the text unchanged (skipped entirely, not stored).
               example: ["TARGA"]
-        detection_mode:
-          type: string
-          enum: [permissive, strict]
-          default: permissive
-          description: |
-            Controls sensitivity of the detection pipeline.
-            - `permissive` — favour recall (more detections, may include borderline cases).
-            - `strict` — favour precision (fewer false positives).
+        protection_level:
+          $ref: '#/components/schemas/ProtectionLevel'
         include_entity_values:
           type: boolean
           default: false
@@ -430,6 +424,15 @@ components:
           type: boolean
           nullable: true
 
+    ProtectionLevel:
+      type: string
+      enum: [balanced, maximum]
+      default: balanced
+      description: |
+        Detection sensitivity (an unknown value is `422 INVALID_PROTECTION_LEVEL`).
+        - `balanced` — precision-tuned default (ML look-alike filter, standard ML cut-offs).
+        - `maximum` — recall-first: ML cut-off lowered to 0.5 and low-confidence single-token
+          names kept. Expect more false positives; measured figures in benchmark/italian/README.md.
     BatchAnonymizeRequest:
       type: object
       required: [items]
@@ -451,6 +454,8 @@ components:
         policy:
           type: object
           nullable: true
+        protection_level:
+          $ref: '#/components/schemas/ProtectionLevel'
         dry_run:
           type: boolean
           default: true
@@ -1224,7 +1229,7 @@ paths:
             <tr><td><code>language</code></td><td>string</td><td>—</td><td>Language hint for the NER layer. Defaults to <code>it</code>.</td></tr>
             <tr><td><code>mode</code></td><td><code>tag</code> | <code>surrogate</code></td><td>—</td><td>Overrides the mode defined on <code>context_type</code>. <code>tag</code> produces opaque placeholders; <code>surrogate</code> produces realistic fake values (coherent across the same <code>context_id</code>).</td></tr>
             <tr><td><code>policy</code></td><td>object</td><td>—</td><td>Inline policy override: <code>{"protect": [...], "keep": [...]}</code>. Overrides the domain policy linked to <code>context_type</code>.</td></tr>
-            <tr><td><code>detection_mode</code></td><td><code>permissive</code> | <code>strict</code></td><td>—</td><td>Detection sensitivity. Default: <code>permissive</code>.</td></tr>
+            <tr><td><code>protection_level</code></td><td><code>balanced</code> | <code>maximum</code></td><td>—</td><td>Detection sensitivity. <code>maximum</code> lowers ML cut-offs for recall. Default: <code>balanced</code>.</td></tr>
             <tr><td><code>include_entity_values</code></td><td>boolean</td><td>—</td><td>Return raw entity values only for authorized admin inspection. Default: <code>false</code>.</td></tr>
             <tr><td><code>dry_run</code></td><td>boolean</td><td>—</td><td>Detect and score without persisting mappings. Default: <code>false</code>.</td></tr>
           </tbody>

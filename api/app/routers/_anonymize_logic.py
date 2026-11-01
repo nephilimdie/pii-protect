@@ -37,6 +37,7 @@ from app.routers._anonymize_models import (
 )
 from app.routers.entity_filter import filter_detected_entities
 from app.routers.replacements import apply_replacements
+from app.detection.recognizers import BALANCED, PROTECTION_LEVELS
 
 
 def get_registry(request: Request) -> DetectorRegistry:
@@ -69,6 +70,20 @@ async def run_detection(
     return await asyncio.get_running_loop().run_in_executor(None, run)
 
 
+def with_protection_level(policy: dict, level: str | None) -> dict:
+    """Why: text, batch, document and job endpoints take the level from different inputs (JSON
+    field, multipart form field) but must validate it identically and carry it to detection.
+    What: returns a copy of the resolved policy with `protection_level` (default balanced);
+    an unknown value is a 422 INVALID_PROTECTION_LEVEL.
+    Test: with_protection_level({}, None)["protection_level"] == "balanced"; "max" raises 422.
+    """
+    level = level or BALANCED
+    if level not in PROTECTION_LEVELS:
+        raise HTTPException(status_code=422, detail={
+            "error": "INVALID_PROTECTION_LEVEL", "message": f"protection_level must be one of {list(PROTECTION_LEVELS)}."})
+    return {**policy, "protection_level": level}
+
+
 async def detect_protected_entities(
     anonymizer: PiiAnonymizer,
     policy: dict,
@@ -84,6 +99,7 @@ async def detect_protected_entities(
     Test: policy with block_types={"EMAIL"} and an EMAIL entity raises 422; keep_types filters entities out.
     """
     anonymizer.restrict_layers(policy.get("detection_layers"))
+    anonymizer.set_protection_level(policy.get("protection_level", BALANCED))
     entities = await run_detection(
         anonymizer=anonymizer,
         text=text,
@@ -210,6 +226,7 @@ async def _process_anonymization(
             inline_mode=body.mode,
             domain=body.domain,
         )
+        policy = with_protection_level(policy, body.protection_level)
         surrogate_types = policy["surrogate_types"]
         remove_types = policy["remove_types"]
         resolved_mode = policy["mode"]

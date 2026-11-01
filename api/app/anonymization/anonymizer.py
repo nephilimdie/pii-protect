@@ -10,7 +10,7 @@ from app.detection.entities import PiiEntity, MappingEntry
 from app.detection.entity_merger import EntityMerger
 from app.detection.token_generator import TokenGenerator
 from app.anonymization.anonymization_result import AnonymizationResult
-from app.detection.recognizers import BALANCED, precision_filter
+from app.detection.recognizers import BALANCED, MAXIMUM, MAXIMUM_ML_MIN_SCORE, ML_LAYERS, precision_filter
 
 def _is_word_char(char: str) -> bool:
     return char.isalnum() or char == "_" or unicodedata.category(char).startswith("M")
@@ -210,6 +210,9 @@ class PiiAnonymizer:
                 cfg = self._layer_configs.get(d.layer_name)
                 if isinstance(d, ItalianRegexDetector):
                     cfg = {**(cfg or {}), "protection_level": self._protection_level}
+                elif self._protection_level == MAXIMUM and d.layer_name in ML_LAYERS:
+                    # maximum: recall-first ML cut-off, never stricter than the tenant's own setting
+                    cfg = {**(cfg or {}), "min_score": min((cfg or {}).get("min_score", 1.0), MAXIMUM_ML_MIN_SCORE)}
                 if isinstance(d, ItalianRegexDetector) and self._regex_patterns is not None:
                     continue  # replaced by tenant-effective patterns below
                 if isinstance(d, PresidioDetector):

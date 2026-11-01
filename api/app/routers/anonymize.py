@@ -72,6 +72,7 @@ async def anonymize_batch(
                 "language": item.language or body.language,
                 "mode": item.mode or body.mode,
                 "policy": item.policy or body.policy,
+                "protection_level": body.protection_level,
                 "dry_run": body.dry_run if item.dry_run is None else item.dry_run,
             })
             response = await _process_anonymization(item_body, request, api_key, db, anonymizer, tenant_id, key_provider)

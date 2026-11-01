@@ -71,7 +71,7 @@ def _username(text: str) -> list[PiiEntity]:
         if value.lower() in _NOT_USERNAMES or not (explicit or re.search(r"[\d._]", value)):
             continue
         found.append(entity(text, m.start("v"), m.end("v"), "USERNAME"))
-    found += [entity(text, m.start(), m.end(), "USERNAME") for m in _HANDLE.finditer(text)]
+    found += [entity(text, m.start(1), m.end(1), "USERNAME") for m in _HANDLE.finditer(text)]
     return found
 
 

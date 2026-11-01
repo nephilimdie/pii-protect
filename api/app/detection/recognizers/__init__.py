@@ -10,14 +10,14 @@ from __future__ import annotations
 
 from app.detection.entities import PiiEntity
 from app.detection.recognizers.birth import detect_birth
-from app.detection.recognizers.common import BALANCED, MAXIMUM, PROTECTION_LEVELS
+from app.detection.recognizers.common import BALANCED, MAXIMUM, MAXIMUM_ML_MIN_SCORE, ML_LAYERS, PROTECTION_LEVELS
 from app.detection.recognizers.identifiers import detect_identifiers
 from app.detection.recognizers.key_value import detect_key_values
 from app.detection.recognizers.obfuscated import detect_obfuscated
 from app.detection.recognizers.persons import detect_persons
 from app.detection.recognizers.precision import precision_filter
 
-__all__ = ["BALANCED", "MAXIMUM", "PROTECTION_LEVELS", "detect_contextual", "precision_filter"]
+__all__ = ["BALANCED", "MAXIMUM", "MAXIMUM_ML_MIN_SCORE", "ML_LAYERS", "PROTECTION_LEVELS", "detect_contextual", "precision_filter"]
 
 _RECOGNIZERS = (detect_birth, detect_identifiers, detect_key_values, detect_obfuscated, detect_persons)
 
