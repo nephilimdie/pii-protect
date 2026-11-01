@@ -71,9 +71,9 @@ def main() -> None:
         row["pages_per_s"] = round(len(mixed) / (time.perf_counter() - started), 2)
         rows.append(row)
         print(json.dumps(row), flush=True)
-    usage_self = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-    usage_children = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024
-    print(json.dumps({"peak_rss_api_process_mib": round(usage_self), "peak_rss_one_tesseract_mib": round(usage_children)}))
+    # RUSAGE_CHILDREN is useless here: Linux keeps the parent's pre-exec high-water mark. Per-process
+    # RAM under load is measured by bench/mem_probe.py against the running service instead.
+    print(json.dumps({"peak_rss_bench_process_mib": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)}))
     print("\n| config | clean s/page | noisy s/page | rotated s/page | pages/s (%d workers) | CER clean/noisy/rotated %% | WER clean/noisy/rotated %% |" % args.workers)
     print("|---|---|---|---|---|---|---|")
     for r in rows:

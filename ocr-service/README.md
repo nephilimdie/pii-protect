@@ -43,9 +43,30 @@ The PP-OCRv4 alphabet lacks some Italian accented letters (`à` -> `a`).
 | `MAX_FILE_BYTES` / `MAX_PAGES` | 20 MB / 20 | |
 | `MAX_PAGE_PIXELS` / `MAX_INPUT_PIXELS` | 20 MP / 100 MP | A4 @300 DPI = 8.7 MP |
 | `DEFAULT_DPI` / `MIN_DPI` / `MAX_DPI` | 300 / 100 / 600 | |
-| `TESSDATA_VARIANT` | `fast` | `best` = slower, see benchmark |
+| `TESSDATA_VARIANT` | `fast` | `best` = 2x slower, no gain (benchmark below) |
 | `LOW_CONF_THRESHOLD` / `ADAPTIVE_CONF_THRESHOLD` / `AUTO_FALLBACK_CONF` | 60 / 80 / 70 | |
 | `MAX_PASSES` / `MAX_SKEW_DEGREES` | 3 / 10 | |
+
+## Benchmark (prod host, 2026-11-01)
+
+Throwaway container on the prod host (12 vCPU, load ~0.4), `--cpus 4 --memory 4g --network none`,
+`OCR_WORKERS=4`, synthetic Italian A4 @300 DPI (2480x3508) with a signature scribble; noisy =
+blur + noise, rotated = 3 deg. Median of 3 runs, full pipeline (deskew, adaptive passes, regions).
+`python bench/bench.py --workers 4` and `bench/mem_probe.py`.
+
+| config | clean s/page | noisy s/page | rotated s/page | pages/s (4 CPU, 4 workers) | CER % clean/noisy/rot | WER % clean/noisy/rot |
+|---|---|---|---|---|---|---|
+| tesseract fast | 2.64 | 2.61 | 3.87 | 0.99 | 0.49 / 0.49 / 0.87 | 1.85 / 1.85 / 1.85 |
+| tesseract best | 5.56 | 5.02 | 6.10 | 0.63 | 0.62 / 0.62 / 0.99 | 1.85 / 1.85 / 1.85 |
+| rapidocr (PP-OCRv4 mobile) | 4.64 | 5.12 | 5.12 | 0.53 | 1.73 / 1.48 / 1.98 | 9.26 / 9.26 / 8.33 |
+| **auto** (fast, default) | 2.66 | 2.44 | 3.35 | **1.14** | 0.49 / 0.49 / 0.87 | 1.85 / 1.85 / 1.85 |
+
+RAM (container, `docker stats`): idle 87 MiB; peak under 4 concurrent pages: tesseract 572 MiB,
+rapidocr 1.68 GiB, auto 1.87 GiB (ONNX sessions stay loaded: 1.55 GiB afterwards). One tesseract
+process peaks at 91 MiB (VmHWM). So ~140 MiB per Tesseract worker, ~400 MiB per RapidOCR worker
+plus ~1.2 GiB shared ONNX/arena; `mem_limit: 4g` leaves ~2x headroom at 4 workers.
+`tessdata_best` doubles latency for no accuracy gain on these pages -> `fast` stays the default.
+Capacity: ~1 page/s per 4 CPUs, i.e. a 20-page scan ~18-20 s of wall time when the service is idle.
 
 ## Run / test
 
