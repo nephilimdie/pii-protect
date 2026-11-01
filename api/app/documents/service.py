@@ -24,13 +24,18 @@ MAX_USER_ENTITIES = 20_000
 
 def load_document(payload: bytes, limits: DocumentLimits) -> LoadedDocument:
     """Why: the client's filename and Content-Type are untrusted; magic bytes decide the parser.
-    What: returns a PDF, DOCX or TXT LoadedDocument, or raises DocumentError (413/415/422).
+    What: returns a JPEG/PNG/WebP image, PDF, DOCX or TXT LoadedDocument, or raises DocumentError
+    (413/415/422). Image magic at offset 0 is checked first (a lenient "%PDF-" scan must not win).
     Test: b"%PDF-..." -> PdfDocument; legacy .doc magic -> 422 LEGACY_OR_ENCRYPTED_OFFICE_FILE.
     """
     if not payload:
         raise DocumentError(422, "EMPTY_DOCUMENT", "The uploaded file is empty.")
     if len(payload) > limits.max_bytes:
         raise DocumentError(413, "DOCUMENT_TOO_LARGE", f"The file exceeds {limits.max_bytes} bytes.")
+    from app.documents.image_handler import ImageDocument, sniff_image
+    image_format = sniff_image(payload)
+    if image_format is not None:
+        return ImageDocument(payload, image_format, limits)
     if b"%PDF-" in payload[:1024]:
         from app.documents.pdf_handler import PdfDocument
         return PdfDocument(payload, limits)

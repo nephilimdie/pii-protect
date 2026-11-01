@@ -13,12 +13,12 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops
 
 from app.documents.chunking import DetectionCancelled
 from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 from app.documents.ocr_client import OcrClient
-from app.documents.ocr_layout import ScannedPage, to_device
+from app.documents.ocr_layout import ScannedPage, ScannedPages, paint
 from app.documents.pdf_writer import ImagePdfWriter, PageImage
 
 # PDFium is not thread-safe: every call into it goes through this lock. It is taken
@@ -100,7 +100,7 @@ def _encode(image) -> PageImage:
     return PageImage(buffer.getvalue(), image.width, image.height, "DeviceRGB", "DCTDecode")
 
 
-class PdfDocument:
+class PdfDocument(ScannedPages):
     """Why: a "black boxes on the original" PDF must not keep any hidden text layer, and a
     200-page job must not hold 200 rendered pages in memory.
     What: extracts one text segment per page (index-exact with PDFium char boxes) and validates
@@ -237,26 +237,8 @@ class PdfDocument:
                 page.close()
         return image, dpi
 
-    def entity_boxes(self, pieces: list[tuple[int, int, int]]) -> list[dict]:
-        """Boxes of an entity on scanned pages: [{page (1-based), bbox: normalized [x0,y0,x1,y1]}]."""
-        out = []
-        for segment, start, end in pieces:
-            page = self.scanned.get(segment)
-            if page is not None:
-                out.extend({"page": segment + 1, "bbox": page.normalized(box)} for box in page.boxes(start, end))
-        return out
-
-    def review_boxes(self) -> list[dict]:
-        """Fail-closed regions (always redacted unless kept by id): low-confidence text, unread ink."""
-        boxes = []
-        for index in sorted(self.scanned):
-            page = self.scanned[index]
-            boxes.extend({"page": index + 1, "reason": reason, "bbox": page.normalized(box)}
-                         for reason, box in page.review)
-        return [{"id": n, **box} for n, box in enumerate(boxes)]
-
-    def render(self, edits: list[SegmentEdit]) -> bytes:
-        return b"".join(self.render_stream(edits))
+    def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset()) -> bytes:
+        return b"".join(self.render_stream(edits, None, keep_review))
 
     def render_stream(self, edits: list[SegmentEdit], deadline: float | None = None,
                       keep_review: frozenset[int] = frozenset()) -> Iterator[bytes]:
@@ -268,7 +250,7 @@ class PdfDocument:
         by_page: dict[int, list[SegmentEdit]] = defaultdict(list)
         for edit in edits:
             by_page[edit.segment].append(edit)
-        review = self._review_by_page(keep_review)
+        review = self.review_by_page(keep_review)
         writer = ImagePdfWriter()
         yield writer.start()
         with PDFIUM_LOCK:
@@ -311,16 +293,6 @@ class PdfDocument:
             with PDFIUM_LOCK:
                 bitmap.close()
 
-    def _review_by_page(self, keep: frozenset[int]) -> dict[int, list]:
-        out: dict[int, list] = defaultdict(list)
-        n = 0
-        for index in sorted(self.scanned):
-            for _, box in self.scanned[index].review:
-                if n not in keep:
-                    out[index].append(box)
-                n += 1
-        return out
-
     def _render_scanned(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit],
                         review: list) -> PageImage:
         """Scanned page: render as displayed (the frame OCR saw), paint entity and review boxes,
@@ -335,15 +307,7 @@ class PdfDocument:
                     bitmap.close()
             finally:
                 page.close()
-        scanned = self.scanned[index]
-        fx, fy = image.width / scanned.width, image.height / scanned.height
-        draw = ImageDraw.Draw(image)
-        boxes = [(box, True) for edit in edits for box in scanned.boxes(edit.start, edit.end)]
-        boxes += [(box, False) for box in review]
-        for box, line in boxes:
-            x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line)
-            if x1 > x0 and y1 > y0:
-                draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=_BLACK[:3])
+        paint(image, self.scanned[index], edits, review)
         if plan.rotation in _UNROTATE:
             image = image.transpose(_UNROTATE[plan.rotation])
         return _encode(image)

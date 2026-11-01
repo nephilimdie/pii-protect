@@ -17,9 +17,16 @@ class DocumentFormat:
     PDF = "pdf"
     DOCX = "docx"
     TXT = "txt"
+    PNG = "png"
+    JPEG = "jpeg"
+    WEBP = "webp"
 
 
+IMAGE_FORMATS = frozenset({DocumentFormat.PNG, DocumentFormat.JPEG, DocumentFormat.WEBP})
 MEDIA_TYPES = {
+    DocumentFormat.PNG: "image/png",
+    DocumentFormat.JPEG: "image/jpeg",
+    DocumentFormat.WEBP: "image/webp",
     DocumentFormat.PDF: "application/pdf",
     DocumentFormat.DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     DocumentFormat.TXT: "text/plain; charset=utf-8",
@@ -65,6 +72,8 @@ class DocumentLimits:
     docx_max_entries: int = 1_000
     ocr_enabled: bool = False  # scanned PDF pages are OCR'd (PdfDocument.run_ocr) instead of rejected
     ocr_dpi: int = 300
+    image_max_pixels: int = 40_000_000  # decoded photo/screenshot size accepted (OCR runs on <= max_pixels)
+    ocr_image_engine: str = "rapidocr"  # photos/screenshots: detector-based engine reads noisy/tilted text better
 
 
 class LoadedDocument(Protocol):
