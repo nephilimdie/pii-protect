@@ -44,7 +44,9 @@ ABLATIONS = {"regex": ["regex"], "presidio": ["presidio"], "privacy_filter": ["p
              "ai4privacy": ["ai4privacy"], "regex_presidio": ["regex", "presidio"],
              "no_regex": ["presidio", "privacy_filter", "ai4privacy"]}
 SYSTEMS = (["pseudora_matched"] + [f"pseudora_{d}" for d in DOMAINS] + [f"ablation_{a}" for a in ABLATIONS]
+           + [f"pseudora_{GENERIC}_maximum", "pseudora_matched_maximum"]
            + ["presidio_vanilla_it", "rizzo_default", "rizzo_pii_only"])
+MAXIMUM = "_maximum"  # system-name suffix: same preset at protection_level=maximum
 
 
 def sh(*cmd: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -134,16 +136,18 @@ def run_engine(args: argparse.Namespace, docs: list[dict], todo: list[str], out:
                 "default_mode": "tag", "detection_layers": layers})
             assert status in (200, 201), (status, res)
         for system in todo:
-            if system == "pseudora_matched":
-                pick = lambda t: {"domain": MATCHED["subgenre"].get(t["subgenre"]) or MATCHED["genre"].get(t["genre"], GENERIC)}  # noqa: E731
+            level = {"protection_level": "maximum"} if system.endswith(MAXIMUM) else {}
+            note = ", protection_level maximum" if level else ""
+            if system.removesuffix(MAXIMUM) == "pseudora_matched":
+                pick = lambda t: {"domain": MATCHED["subgenre"].get(t["subgenre"]) or MATCHED["genre"].get(t["genre"], GENERIC), **level}  # noqa: E731
                 by_text = {d["text"]: pick(d) for d in docs}
                 run_system(docs, lambda text: eng.anonymize(text, by_text[text]), out / f"{system}.json", system,
-                           "pseudora", engine_meta(eng, "Pseudora full pipeline, preset matched to genre", MATCHED))
+                           "pseudora", engine_meta(eng, f"Pseudora full pipeline, preset matched to genre{note}", {"matched": MATCHED, **level}))
             elif system.startswith("pseudora_"):
-                dom = system.removeprefix("pseudora_")
-                target = {"context_type": "default"} if dom == "default" else {"domain": dom}
+                dom = system.removeprefix("pseudora_").removesuffix(MAXIMUM)
+                target = {**({"context_type": "default"} if dom == "default" else {"domain": dom}), **level}
                 run_system(docs, lambda text: eng.anonymize(text, target), out / f"{system}.json", system, "pseudora",
-                           engine_meta(eng, f"Pseudora full pipeline, preset {dom}", target))
+                           engine_meta(eng, f"Pseudora full pipeline, preset {dom}{note}", target))
             else:
                 name = system.removeprefix("ablation_")
                 target = {"context_type": f"bench_{name}"}
