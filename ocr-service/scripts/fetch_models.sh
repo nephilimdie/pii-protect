@@ -2,7 +2,7 @@
 # Why: OCR models must be baked into the image (the container has no egress) and be
 # byte-identical between CI, local runs and prod. Every artefact is pinned by sha256.
 # What: downloads tessdata_fast + tessdata_best (ita, eng; tag 4.1.0, Apache-2.0) into
-# $1/tessdata/{fast,best} and extracts the PP-OCRv4 mobile det/rec ONNX models
+# $1/tessdata/{fast,best} (plus osd, page orientation detection) and extracts the PP-OCRv4 mobile det/rec ONNX models
 # (Apache-2.0) from the pinned rapidocr_onnxruntime wheel into $1/rapidocr.
 # Test: `sh scripts/fetch_models.sh /tmp/ocr-models` then `ls /tmp/ocr-models/*/*`; a
 # tampered file makes `sha256sum -c` fail and the script exit non-zero.
@@ -30,6 +30,8 @@ fast ita b8f89e1e785118dac4d51ae042c029a64edb5c3ee42ef73027a6d412748d8827
 fast eng 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
 best ita 8df9c89176fb93f56bf4b2d4ede04c01c1f31d4b7697fbd76cc336df700f3f38
 best eng 8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba
+fast osd 9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff
+best osd 9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff
 LIST
 
 WHEEL="$DEST/rapidocr/rapidocr.whl"
