@@ -118,3 +118,15 @@ def test_run_system_writes_offsets_only(tmp_path):
     assert set(data["docs"]) == {d["id"] for d in docs}
     assert all(r["spans"] == [["PERSON", 0, 1]] for r in data["docs"].values())
     assert docs[0]["text"][:20] not in out.read_text()
+
+
+def test_should_render_every_system_in_tables_and_well_formed_svg_charts():
+    import xml.etree.ElementTree as ET
+
+    import report
+    summary = json.loads((HERE / "results" / "summary.json").read_text())
+    md = report.tables(summary)
+    assert all(f"`{name}`" in md for name in summary["systems"])
+    for chart in (report.chart_f1, report.chart_tradeoff, report.chart_types):
+        root = ET.fromstring(chart(summary["systems"]))
+        assert root.tag.endswith("svg") and root.find("{http://www.w3.org/2000/svg}title") is not None
