@@ -227,19 +227,64 @@ def components(mask: np.ndarray) -> list[tuple[BBox, int]]:
     return [((b[0], b[1], b[2], b[3]), b[4]) for b in boxes.values()]
 
 
+def _sweep(array: np.ndarray, size: int, axis: int, reduce: Callable[..., np.ndarray]) -> np.ndarray:
+    """Why: separable 1-D min/max/all/any windows without OpenCV/scipy (licence/size).
+    What: ``reduce`` over a centred window of ``size`` along ``axis`` (edge-replicated).
+    Test: ``_sweep(np.array([[0, 9, 0]]), 3, 1, np.max)`` -> ``[[9, 9, 9]]``.
+    """
+    half = size // 2
+    padding = [(0, 0), (0, 0)]
+    padding[axis] = (half, size - 1 - half)
+    window = np.lib.stride_tricks.sliding_window_view(np.pad(array, padding, mode="edge"), size, axis=axis)
+    return reduce(window, axis=-1)
+
+
+def _closing(array: np.ndarray, size: int) -> np.ndarray:
+    """Why/What: grey closing (max then min, ``size`` square): fills dark details narrower than
+    ``size`` and keeps wider dark areas (a tabletop, a shadow) as background.
+    Test: a 3 px dark stroke on 240 closes to 240; a dark half-image stays dark.
+    """
+    grown = _sweep(_sweep(array, size, 0, np.max), size, 1, np.max)
+    return _sweep(_sweep(grown, size, 0, np.min), size, 1, np.min)
+
+
+def _straight_lines(ink: np.ndarray, length: int, min_extent: int, max_thickness: int) -> np.ndarray:
+    """Why: printed form rules, table borders and paper-edge slivers are not handwriting.
+    What: pixels on horizontal/vertical runs of at least ``length`` (1-D binary opening), grown
+    by 1 px for anti-aliasing, kept only where they form long (>= ``min_extent``) thin
+    (<= ``max_thickness`` px on average) components: a stamp ring's tangents or a thick bar stay ink.
+    Test: a 1-px rule 300 px long is fully returned; a 5-px ring of radius 70 and a 20-px bar are not.
+    """
+    lines = np.zeros_like(ink)
+    for axis in (0, 1):  # vertical, then horizontal runs (separately, so a grid is many thin lines)
+        runs = _sweep(_sweep(ink, length, axis, np.all), length, axis, np.any)
+        runs = np.asarray(Image.fromarray(runs.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(3))) > 0
+        for (x0, y0, x1, y1), pixels in components(runs):
+            extent = x1 - x0 if axis else y1 - y0
+            if extent >= min_extent and pixels <= extent * max_thickness:
+                lines[y0:y1, x0:x1] |= runs[y0:y1, x0:x1]
+    return lines
+
+
 def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBoxF]:
     """Why: signatures, stamps, handwriting and pictures carry PII the OCR could not read; the
     engine must be told so it can fail closed (redact or refuse) instead of trusting the text.
-    What: ink mask (Otsu on a ~1200 px probe) minus padded word boxes; remaining strokes are
-    merged (dilation) into regions; returns boxes in ``gray`` pixel coordinates.
-    Test: a page with text plus a scribble returns one box over the scribble; text-only -> [].
+    What: on a ~1200 px probe, ink = pixels clearly darker (< 0.65x) than their local
+    background (closing over >= 31 px), so a photo's dark tabletop or a shadow is
+    background, not ink; long straight rules/borders are dropped; padded word boxes are
+    removed; remaining strokes are merged (dilation) into regions in ``gray`` pixels.
+    Test: text plus a scribble -> one box over the scribble; a form photographed on a dark
+    table -> no page-sized region; text-only -> [].
     """
     small, factor = _probe(gray, _INK_PROBE_SIDE)
     array = np.asarray(small, dtype=np.uint8)
-    threshold = otsu_threshold(array)
     if int(array.max()) - int(array.min()) < 40:  # blank or uniform page (any real ink is darker)
         return []
-    ink = array <= min(threshold, 200)
+    side = max(array.shape)
+    background = _closing(array, max(31, side // 40) | 1).astype(np.float32)
+    ink = (array <= 200) & (array < background * 0.65)
+    # Runs of side/40 catch 1-px rules up to ~1.9 deg of residual tilt; rules span >= 1/8 of the side.
+    ink &= ~_straight_lines(ink, max(20, side // 40), side // 8, max(4, side // 150))
     pad = 3
     for x0, y0, x1, y1 in text_boxes:
         ink[max(0, int(y0 / factor) - pad): int(math.ceil(y1 / factor)) + pad,
@@ -247,7 +292,6 @@ def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBo
     if not ink.any():
         return []
     merged = np.asarray(Image.fromarray((ink * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(7))) > 0
-    side = max(array.shape)
     min_extent = max(6, side // 150)  # ~2 mm on A4: ignores dust and isolated speckles
     regions: list[BBoxF] = []
     for (x0, y0, x1, y1), _ in components(merged):
@@ -257,10 +301,12 @@ def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBo
     return regions
 
 
-def merge_boxes(boxes: Iterable[BBox], gap: int = 0) -> list[BBox]:
-    """Why: adjacent low-confidence words should be one region, not dozens of slivers.
-    What: repeatedly unions boxes that overlap or are within ``gap`` pixels.
-    Test: (0,0,10,10) and (12,0,20,10) with gap 3 -> [(0,0,20,10)].
+def merge_boxes(boxes: Iterable[BBox], gap: int = 0, max_area: float = math.inf) -> list[BBox]:
+    """Why: adjacent low-confidence words should be one region, not dozens of slivers; but
+    disjoint regions must never chain into one page-sized box (it blacks out the whole page).
+    What: repeatedly unions boxes that overlap or are within ``gap`` pixels, unless the union
+    would exceed ``max_area``. Test: (0,0,10,10) and (12,0,20,10) with gap 3 -> [(0,0,20,10)];
+    with max_area=150 they stay apart.
     """
     pending = sorted(boxes)
     merged: list[list[int]] = []
@@ -270,7 +316,9 @@ def merge_boxes(boxes: Iterable[BBox], gap: int = 0) -> list[BBox]:
         merged = []
         for box in pending:
             for target in merged:
-                if box[0] <= target[2] + gap and target[0] <= box[2] + gap and box[1] <= target[3] + gap and target[1] <= box[3] + gap:
+                union = (max(target[2], box[2]) - min(target[0], box[0])) * (max(target[3], box[3]) - min(target[1], box[1]))
+                if (box[0] <= target[2] + gap and target[0] <= box[2] + gap and box[1] <= target[3] + gap
+                        and target[1] <= box[3] + gap and union <= max_area):
                     target[0], target[1] = min(target[0], box[0]), min(target[1], box[1])
                     target[2], target[3] = max(target[2], box[2]), max(target[3], box[3])
                     changed = True

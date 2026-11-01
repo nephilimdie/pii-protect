@@ -201,7 +201,7 @@ components:
         ink_without_text_regions:
           type: array
           items: {$ref: "#/components/schemas/BBox"}
-          description: Ink not covered by any word (signatures, stamps, handwriting, pictures). Treat as possibly-PII.
+          description: Ink not covered by any word (signatures, stamps, handwriting, pictures). Treat as possibly-PII. Ink is local contrast against the paper (a dark table or shadow around a photographed page is not ink); long thin printed rules and table borders are ignored; merged regions never exceed a quarter of the page.
         skew:
           type: number
           default: 0

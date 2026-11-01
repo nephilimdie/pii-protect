@@ -7,3 +7,4 @@
 Why a painting: face-detector tests need a face, and the rule is no photos of real living people.
 A 500-year-old public-domain painting gives a real-looking face with an unambiguous licence.
 Codes (segno, python-barcode) and plates (rendered text) are generated in the tests.
+| `form_photo.jpg` | Pseudora's own synthetic sample (`public/samples/modulo-esempio.jpg` in the cloud repo): a filled form with invented data, photographed-style on a dark table, tilted ~1.5 deg, synthetic GPS EXIF | Own work |
