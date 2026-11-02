@@ -27,7 +27,7 @@ def variants() -> list[tuple[str, Image.Image, tuple[float, float, float, float]
     """(name, image, true face box) built from the public-domain portrait."""
     mona = Image.open(FIX / "mona_lisa_330.jpg").convert("RGB")
     out = [("upright", mona, FACE)]
-    for angle in (15, -15, 25, -25, 35, -35, 45):
+    for angle in (15, -15, 25, -25, 35, -35, 45, -50, 60, -60, 75):
         turned = mona.rotate(angle, expand=True, fillcolor=(200, 200, 195), resample=Image.Resampling.BICUBIC)
         cx, cy, tx, ty = mona.width / 2, mona.height / 2, turned.width / 2, turned.height / 2
         a = math.radians(angle)
@@ -38,7 +38,7 @@ def variants() -> list[tuple[str, Image.Image, tuple[float, float, float, float]
     for squeeze in (0.6, 0.45):  # yaw-like: the face narrows as the head turns
         narrow = mona.resize((round(mona.width * squeeze), mona.height))
         out.append((f"yaw-like x{squeeze}", narrow, (FACE[0] * squeeze, FACE[1], FACE[2] * squeeze, FACE[3])))
-    for canvas_side, face_px in ((900, 28), (1200, 24), (1600, 30), (3000, 26), (800, 40)):
+    for canvas_side, face_px in ((900, 28), (1200, 24), (1600, 30), (3000, 26), (800, 40), (900, 16), (700, 14), (1000, 18), (1280, 15), (2000, 14)):
         f = face_px / (FACE[2] - FACE[0])
         small = mona.resize((max(1, round(mona.width * f)), max(1, round(mona.height * f))))
         scene = Image.new("RGB", (canvas_side, round(canvas_side * 0.66)), (225, 228, 230))
@@ -46,6 +46,12 @@ def variants() -> list[tuple[str, Image.Image, tuple[float, float, float, float]
         scene.paste(small, (x, y))
         out.append((f"small {face_px}px in {canvas_side}", scene,
                     (x + FACE[0] * f, y + FACE[1] * f, x + FACE[2] * f, y + FACE[3] * f)))
+    from PIL import ImageEnhance, ImageFilter
+    dim = ImageEnhance.Contrast(mona.filter(ImageFilter.GaussianBlur(2))).enhance(0.4)
+    out.append(("blurred low-contrast", dim, FACE))
+    scene = Image.new("RGB", (900, 600), (120, 120, 120))
+    scene.paste(dim.rotate(30, expand=True, fillcolor=(120, 120, 120)).resize((140, 160)), (500, 200))
+    out.append(("small tilted dim", scene, (500 + 0.3 * 140, 200 + 0.15 * 160, 500 + 0.75 * 140, 200 + 0.55 * 160)))
     return out
 
 

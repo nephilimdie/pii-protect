@@ -57,6 +57,10 @@ paths:
                   type: string
                   pattern: '^\s*\d{1,5}\s*(-\s*\d{1,5}\s*)?$'
                   description: 1-based inclusive page or range (`3`, `2-5`). Default all pages; more than the page limit is rejected, never truncated.
+                marks:
+                  type: string
+                  pattern: '^(signature|stamp)(,(signature|stamp))?$'
+                  description: Also report handwritten signatures and stamps (`signature,stamp`) in `marks`. Uses the same decoded page and OCR words (~0.2 s per A4 page). Send colour pages for coloured-stamp detection.
       responses:
         "200":
           description: Every requested page, in order.
@@ -206,11 +210,22 @@ components:
           type: number
           default: 0
           description: Residual tilt (degrees, CCW, -45..45) the page was straightened by. Word boxes are envelopes; callers pad boxes on tilted pages.
+        marks:
+          type: array
+          default: []
+          items: {$ref: "#/components/schemas/VisualBox"}
+          description: >
+            SIGNATURE and STAMP boxes (only when the request sets `marks`), already padded generously.
+            Heuristic (no model): handwriting-like ink left after removing confident OCR words (curvy,
+            connected, thin, sparse; confident when next to a label such as "Firma", "In fede",
+            "Il dichiarante", otherwise needs_review) and coloured (red/blue/violet) or B/W ring-shaped
+            ink, coloured rectangular frames, or compact coloured ink near "Timbro" (needs_review).
+            Callers must always paint them; the same ink usually also appears in ink_without_text_regions.
     VisualBox:
       type: object
       required: [type, bbox, score, needs_review]
       properties:
-        type: {type: string, enum: [FACE, QR_CODE, BARCODE, LICENSE_PLATE]}
+        type: {type: string, enum: [FACE, QR_CODE, BARCODE, LICENSE_PLATE, SIGNATURE, STAMP]}
         bbox: {$ref: "#/components/schemas/BBox"}
         score: {type: number, minimum: 0, maximum: 1}
         needs_review:
