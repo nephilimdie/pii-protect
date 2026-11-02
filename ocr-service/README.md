@@ -167,3 +167,44 @@ networks:
 
 Base image `python:3.12-slim-bookworm` (Debian; system libraries such as glibc are LGPL and
 dynamically linked, as in every Debian image).
+
+## Signatures and stamps (`marks`), face recall (phase 4)
+
+`POST /v1/ocr` with `marks=signature,stamp` also returns `pages[].marks` (SIGNATURE / STAMP boxes,
+padded). No model is used: no signature/stamp detector with a permissive licence for both code and
+weights was found (the public ones are YOLO/Ultralytics, AGPL, or have no weight licence). It is a
+heuristic (`app/detectors/marks.py`, numpy + Pillow) over the same ink mask as
+`ink_without_text_regions` and the page's own OCR words:
+
+- SIGNATURE: ink left after removing confident words, grouped by a ~2.5 mm dilation; 3-60 mm tall,
+  8-180 mm wide, sparse, thin strokes, curvy (gradient-orientation entropy >= 0.75). Confident when
+  next to a label (Firma, Firmato, F.to, In fede, Il dichiarante, Signature); unlabelled ink must
+  also be one connected, wide stroke group and is `needs_review`.
+- STAMP: a ring (round/oval, 12-70 mm, outer band covering >= 80% of the angles, sparse inside)
+  in any ink, or a coloured (red/blue/violet) axis-aligned frame: confident. A compact, sparse
+  coloured group that is not printed text, or one near "Timbro": `needs_review`.
+- Hits are only added, never replaced, so a signature across a stamp keeps both boxes.
+
+Procedural fixtures (`tests/synth_marks.py`: Bezier signatures with pressure variation, Pillow
+stamps with worn ink, forms with text, a table and a logo). `bench/marks_eval.py`, tuned on seeds
+0-7 and reported on held-out seeds:
+
+| set | SIGNATURE recall / precision | STAMP recall / precision |
+|---|---|---|
+| 120 pages @200 dpi (seeds 100-119) | 98% / 100% | 100% / 98.8% |
+| 60 pages @300 dpi (seeds 200-209) | 100% / 100% | 100% / 100% |
+| prod host, 24 pages @300 dpi | 100% / 100% | 100% / 100% |
+
+There were no false positives on text-only letters or on forms with tables and logos. Limits:
+fixtures are synthetic; circular stamp text is not read; a stamp that merges with nearby printed
+text, and B/W rectangular stamps, stay as unread-ink `needs_review` regions (painted by default).
+
+Faces: two extra passes on the image turned +/-30 deg, plus tiling at >= 1280 px for any image
+above 640 px; the score floor is 0.5, and anything below 0.8 is flagged for review.
+`bench/faces_eval.py` (Mona Lisa variants: tilts up to 75 deg, faces 14-40 px, a squeezed
+yaw-like view, low contrast): recall went from 23/26 to 25/26, with 0 false positives on 6
+documents either way.
+
+Prod host (4 CPU), A4 at 300 dpi, mean of 3 pages: OCR 3.27 s; with marks 3.88 s (+0.61 s).
+Faces: 965 ms before, 1010 ms now. On the engine side, one colour PNG (1.40 s) replaces two
+greyscale encodes (0.51 s each), about +0.4 s. In total that is about +1.0 s per scanned page.
