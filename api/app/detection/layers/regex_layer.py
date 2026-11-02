@@ -20,7 +20,7 @@ _ADDRESS = re.compile(
         rf"\b(?:via|viale|piazza|corso|largo|strada)\s+"
         rf"{_NAME_WORD}(?:[\s'-]+[A-Za-zÀ-ÖØ-öø-ÿ]+){{0,5}}\s+"
         rf"\d{{1,5}}[A-Za-z]?"
-        rf"(?:,\s*\d{{5}}\s+{_NAME_WORD}(?:[\s'-]+[A-Za-zÀ-ÖØ-öø-ÿ]+){{0,3}})?"
+        rf"(?:,\s*\d{{5}}\s+{_NAME_WORD}(?:[ \t'-]+[A-Za-zÀ-ÖØ-öø-ÿ]+){{0,3}})?"  # city: same line only
     ),
     re.IGNORECASE,
 )
