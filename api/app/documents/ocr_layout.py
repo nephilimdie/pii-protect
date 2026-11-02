@@ -218,22 +218,32 @@ def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], revie
     What: paints solid black over every edited span's line boxes, every review region and every
     visual hit (faces, codes, plates, signatures, stamps: never optional), scaled from the
     OCR'd image to ``image`` and padded (to_device, tilt-aware for lines). With ``face_style``
-    pixelate/blur, FACE boxes are obscured irreversibly instead (see obscure); anything black
-    that overlaps a face stays black on top. Mutates ``image`` (RGB).
+    pixelate/blur, FACE boxes are obscured irreversibly instead (see obscure), from the original
+    pixels and on top of review regions; text PII, codes, plates and marks stay black on top.
+    Mutates ``image`` (RGB).
     Test: an edit over "Mario Rossi" -> mean pixel value in the word box < 20.
     """
     fx, fy = image.width / page.width, image.height / page.height
     draw = ImageDraw.Draw(image)
+
+    def fill(boxes: list[BBox], line: bool) -> None:
+        for box in boxes:
+            x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line, page.skew)
+            if x1 > x0 and y1 > y0:
+                draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))
+
     styled = face_style != FaceStyle.BLACK
-    boxes = [(box, True) for edit in edits for box in page.boxes(edit.start, edit.end)]
-    boxes += [(box, False) for box in [*review, *(hit.bbox for hit in page.visual if not (styled and hit.type == "FACE"))]]
-    if styled:
-        for hit in page.visual:
-            if hit.type == "FACE":
-                x0, y0, x1, y1 = to_device(hit.bbox, fx, fy, image.width, image.height, False)
-                if x1 > x0 and y1 > y0:
-                    obscure(image, (x0, y0, x1, y1), face_style)
-    for box, line in boxes:
-        x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line, page.skew)
-        if x1 > x0 and y1 > y0:
-            draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))
+    faces = [to_device(h.bbox, fx, fy, image.width, image.height, False) for h in page.visual if styled and h.type == "FACE"]
+    # obscured from the ORIGINAL pixels, then pasted over the review regions (on photos the unread-ink
+    # region usually overlaps the face): nothing readable survives inside a face box either way
+    obscured = []
+    for box in faces:
+        if box[2] > box[0] and box[3] > box[1]:
+            tile = image.crop(box)
+            obscure(tile, (0, 0, tile.width, tile.height), face_style)
+            obscured.append((tile, box))
+    fill(review, False)
+    for tile, box in obscured:
+        image.paste(tile, box[:2])
+    fill([hit.bbox for hit in page.visual if not (styled and hit.type == "FACE")], False)  # codes, plates, marks
+    fill([box for edit in edits for box in page.boxes(edit.start, edit.end)], True)  # text PII: always on top

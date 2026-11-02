@@ -312,3 +312,19 @@ def test_scanned_pdf_face_style_pixelate(env, monkeypatch):  # noqa: F811
     scan_tests._assert_scan_redacted(image)
     face = image.convert("RGB").crop(SCAN_FACE)
     assert len(face.getcolors(100_000)) <= 400  # 64 cells (+ JPEG/scale edges), not a black box either
+
+
+def test_face_style_shows_through_an_overlapping_review_region():
+    from app.documents.ocr_client import OcrResult
+
+    image = _face_image()
+    result = OcrResult(400, 300, [], [], [], [(90, 40, 320, 270)])  # unread ink over the whole "face"
+    page = ScannedPage.from_ocr(result, [VisualHit("FACE", (100, 50, 300, 250), 0.9, False)])
+    out = image.copy()
+    paint(out, page, [], [box for _, box in page.review], "pixelate")
+    assert image_tests._mean(out, (110, 60, 290, 240)) > 30  # obscured, not black
+    assert _edge_energy(out.crop((110, 60, 290, 240))) < 0.1 * _edge_energy(image.crop((110, 60, 290, 240)))
+    assert image_tests._mean(out, (90, 40, 96, 270)) < 5  # the rest of the review region stays black
+    black = image.copy()
+    paint(black, page, [], [box for _, box in page.review])
+    assert image_tests._mean(black, (90, 40, 320, 270)) < 5
