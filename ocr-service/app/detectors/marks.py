@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 from app.detectors import Hit, grow, iou
-from app.imageops import _sweep, components, ink_probe
+from app.imageops import _INK_PROBE_SIDE, _probe, _sweep, components, ink_probe
 
 MARKS = ("signature", "stamp")
 # Label words only (not "sottoscritto"/"titolare": they are common in body text next to logos).
@@ -25,6 +25,7 @@ STAMP_LABEL = re.compile(r"^(timbr[oi]|sigill[oi]|stamp|seal)\b", re.IGNORECASE)
 _LABEL_DX_MM, _LABEL_DY_MM = 110.0, 35.0  # a label annotates ink up to this far (right of / below / above it)
 _SIG_GROW, _STAMP_GROW, _GROW_MM = (0.15, 0.3), (0.08, 0.08), 2.0  # generous: strokes fade at the edges
 _MAX_SHARE = 0.25  # a mark never covers more than a quarter of the page
+_PAPER = 160  # signatures and stamps sit on paper: the non-ink pixels around them are bright
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,12 @@ def find_marks(rgb: Image.Image, gray: Image.Image, words: Sequence[MarkWord], d
         return []
     height, width = ink.shape
     mm = max(0.5, dpi / 25.4 / factor)  # probe pixels per millimetre
+    grey = np.asarray(_probe(gray, _INK_PROBE_SIDE)[0], dtype=np.uint8)
+
+    def on_paper(x0: int, y0: int, x1: int, y1: int, mask: np.ndarray) -> bool:
+        """Photos and paintings are mid-tone around their "strokes"; paper is bright."""
+        around = grey[y0:y1, x0:x1][~mask]
+        return around.size > 0 and float(np.median(around)) >= _PAPER
     probe = [MarkWord(w.text, w.conf, tuple(c / factor for c in w.bbox)) for w in words]  # type: ignore[misc]
     sig_labels = [w for w in probe if SIGNATURE_LABEL.match(w.text.strip(":;.,()[]"))]
     stamp_labels = [w for w in probe if STAMP_LABEL.match(w.text.strip(":;.,()[]"))]
@@ -187,6 +194,8 @@ def find_marks(rgb: Image.Image, gray: Image.Image, words: Sequence[MarkWord], d
         if max(x1 - x0, y1 - y0) < 6 * mm:
             continue
         box = (x0, y0, x1, y1)
+        if not on_paper(x0, y0, x1, y1, ink[y0:y1, x0:x1]):
+            continue
         shape = measure(strokes[y0:y1, x0:x1], ink[y0:y1, x0:x1], mm)
         if "stamp" in wanted and is_round_stamp(shape):
             found.append(Hit("STAMP", box, 0.9, False))
@@ -207,6 +216,8 @@ def find_marks(rgb: Image.Image, gray: Image.Image, words: Sequence[MarkWord], d
             if any(h.type == "STAMP" and iou(h.bbox, box) > 0.3 for h in found):
                 continue
             region = colour[y0:y1, x0:x1]
+            if not on_paper(x0, y0, x1, y1, region | ink[y0:y1, x0:x1]):
+                continue
             shape = measure(region, region, mm)
             printed = float(np.count_nonzero(region & text[y0:y1, x0:x1])) / max(1, int(np.count_nonzero(region)))
             framed = shape.frame >= 0.8 and shape.inner <= 0.5

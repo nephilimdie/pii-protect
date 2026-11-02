@@ -117,7 +117,28 @@ class YuNet:
                     tile = Image.new("RGB", (_SIDE, _SIDE))
                     tile.paste(work.crop((left, top, min(work.width, left + _SIDE), min(work.height, top + _SIDE))))
                     hits += self._decode(self._run(tile), tile_scale, left / tile_scale, top / tile_scale)
-        return [Hit(h.type, grow(h.bbox, _GROW_X, _GROW_Y, width, height), h.score, h.needs_review) for h in nms(hits)]
+        return [Hit(h.type, grow(h.bbox, _GROW_X, _GROW_Y, width, height), h.score, h.needs_review) for h in _merge(nms(hits))]
+
+
+def _merge(hits: list[Hit], share: float = 0.5) -> list[Hit]:
+    """Why: a turned pass reports the same face as a larger envelope that IoU-NMS keeps (one box
+    mostly inside the other). What: boxes whose intersection covers >= ``share`` of the smaller
+    one become their union (over-covers, never under-covers), keeping the best score/review flag.
+    Test: (0,0,10,10) 0.9 and (2,2,20,20) 0.6 -> one hit (0,0,20,20) score 0.9.
+    """
+    out: list[Hit] = []
+    for hit in hits:  # nms() output: best score first
+        for i, kept in enumerate(out):
+            a, b = kept.bbox, hit.bbox
+            w, h = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+            smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+            if w > 0 and h > 0 and w * h >= share * smaller:
+                out[i] = Hit(kept.type, (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])),
+                             kept.score, kept.needs_review)
+                break
+        else:
+            out.append(hit)
+    return out
 
 
 def _starts(length: int) -> list[int]:

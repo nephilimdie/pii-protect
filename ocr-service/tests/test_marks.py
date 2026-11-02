@@ -86,3 +86,12 @@ def test_small_face_in_mid_size_image_found(real_vclient: TestClient) -> None:
     scene.paste(mona().resize((40, 60)), (540, 270))  # face ~16 px wide
     boxes = json.loads(visual(real_vclient, png(scene), detectors="face").text)["boxes"]
     assert len(boxes) == 1 and boxes[0]["bbox"][0] <= 552 and boxes[0]["bbox"][2] >= 563, boxes
+
+
+def test_face_duplicates_merge_into_their_union() -> None:
+    from app.detectors import Hit
+    from app.detectors.faces import _merge
+
+    (hit,) = _merge([Hit("FACE", (0, 0, 10, 10), 0.9, False), Hit("FACE", (2, 2, 20, 20), 0.6, True)])
+    assert hit.bbox == (0, 0, 20, 20) and hit.score == 0.9 and not hit.needs_review
+    assert len(_merge([Hit("FACE", (0, 0, 10, 10), 0.9, False), Hit("FACE", (30, 30, 40, 40), 0.6, True)])) == 2
