@@ -123,7 +123,7 @@ def legend(x: float, y: float) -> list[str]:
     return out
 
 
-def chart_f1(S: dict) -> str:
+def chart_f1(S: dict, corpus: str = "it_pii_v1, 750") -> str:
     """Why: the headline comparison, with uncertainty visible rather than implied.
     What: one horizontal bar per system (lenient F1) + 95% CI whisker + direct value label."""
     order = sorted(S, key=lambda n: -S[n]["overall"]["lenient_f1"])
@@ -131,7 +131,7 @@ def chart_f1(S: dict) -> str:
     h = top + row * len(order) + 40
     x = lambda v: L + v * W  # noqa: E731
     b = [f'<text x="16" y="24" font-size="15" font-weight="600" fill="{INK}">Lenient F1 by system (95% bootstrap CI)</text>',
-         f'<text x="16" y="42" font-size="12" fill="{INK2}">Italian PII benchmark it_pii_v1, 750 synthetic documents. Higher is better.</text>']
+         f'<text x="16" y="42" font-size="12" fill="{INK2}">Italian PII benchmark {corpus} synthetic documents. Higher is better.</text>']
     b += legend(L, h - 14)
     for v in (0, .2, .4, .6, .8, 1):
         b += [f'<line x1="{x(v)}" y1="{top - 6}" x2="{x(v)}" y2="{top + row * len(order)}" stroke="{GRID}" stroke-width="1"/>',
@@ -215,7 +215,8 @@ def main() -> None:
     (args.results / "tables.md").write_text(md)
     charts = args.results / "charts"
     charts.mkdir(exist_ok=True)
-    for name, fn in (("f1_ci", chart_f1), ("leak_vs_fp", chart_tradeoff), ("recall_by_type", chart_types)):
+    corpus = f"{Path(summary['dataset']).stem}, {summary['documents']}"
+    for name, fn in (("f1_ci", lambda S: chart_f1(S, corpus)), ("leak_vs_fp", chart_tradeoff), ("recall_by_type", chart_types)):
         (charts / f"{name}.svg").write_text(fn(summary["systems"]))
     if args.results.resolve() == (HERE / "results").resolve() and README.exists():
         text = README.read_text()
