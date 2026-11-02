@@ -6,7 +6,7 @@ amounts ("191.799"), and PERSON on headings/greetings ("PROCURA ALLE LITI", "Cor
 contract vocabulary ("Contributi", "Canone", "Superminimo") at confident scores.
 What: drops ML-sourced (source != "regex") entities whose text cannot be that type. Deterministic
 spans are never touched. "maximum" keeps the score-free shape rules but skips the low-confidence
-and all-lowercase single-token PERSON rules, trading precision for recall.
+single-token PERSON rule, trading precision for recall.
 Test: PERSON "Cordiali saluti" (ml) -> dropped; ADDRESS "431/1998" (ml) -> dropped;
 IP_ADDRESS "191.799" (ml) -> dropped; PERSON "Mario Rossi" (ml) -> kept.
 """
@@ -37,9 +37,7 @@ def _person_ok(e: PiiEntity, level: str) -> bool:
         return False  # UPPERCASE heading with a function/legal word ("PROCURA ALLE LITI")
     if len(re.sub(r"[^A-Za-zÀ-ÿ]", "", e.text)) < 3:
         return False  # "R.G", initials only
-    # balanced: one token that is low-confidence or all-lowercase ("lorda") is a common word, not a name
-    return not (level == BALANCED and len(tokens) == 1
-                and (e.score < _SINGLE_PERSON_MIN_SCORE or not re.search(r"[A-ZÀ-Ý]", e.text)))
+    return not (level == BALANCED and len(tokens) == 1 and e.score < _SINGLE_PERSON_MIN_SCORE)
 
 
 def _ip_ok(e: PiiEntity, _level: str) -> bool:
