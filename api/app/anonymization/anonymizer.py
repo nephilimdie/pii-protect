@@ -162,6 +162,7 @@ class PiiAnonymizer:
         presidio_context: dict[str, list[str]] | None = None,
         enabled_layers: set[str] | None = None,
         layer_configs: dict[str, dict] | None = None,
+        layer_levels: dict[str, frozenset[str]] | None = None,
     ) -> None:
         self._registry = registry
         self._merger = EntityMerger()
@@ -169,6 +170,8 @@ class PiiAnonymizer:
         self._tenant_enabled_layers = None if enabled_layers is None else frozenset(enabled_layers)
         self._enabled_layers = self._tenant_enabled_layers
         self._layer_configs = layer_configs or {}
+        self._layer_levels = layer_levels or {}
+        self._explicit_layers: frozenset[str] = frozenset()
         if reclassification_rules is not None:
             self._reclassify_rules = _compile_rules(reclassification_rules)
         else:
@@ -189,9 +192,20 @@ class PiiAnonymizer:
         """Select each item's layers from the tenant baseline, not the previous item."""
         if layers is None:
             self._enabled_layers = self._tenant_enabled_layers
+            self._explicit_layers = frozenset()
             return
         selected = set(layers)
+        self._explicit_layers = frozenset(selected)
         self._enabled_layers = selected if self._tenant_enabled_layers is None else self._tenant_enabled_layers & selected
+
+    def _runs_at_level(self, layer: str) -> bool:
+        """Why: rizzo is recall-first and costly, so by default it runs only at "maximum".
+        What: True when the layer has no level gate, the current level is in its levels, or the policy
+        (context type detection_layers) names the layer explicitly.
+        Test: layer_levels={"rizzo": {"maximum"}}: balanced -> False; maximum -> True; restrict_layers(["rizzo"]) -> True.
+        """
+        levels = self._layer_levels.get(layer)
+        return levels is None or self._protection_level in levels or layer in self._explicit_layers
 
     def _run_detectors(self, text: str, language: str) -> list[PiiEntity]:
         """Run all detectors, applying per-tenant regex patterns, presidio context, and layer configs."""
@@ -200,7 +214,8 @@ class PiiAnonymizer:
 
         detectors = [
             detector for detector in self._registry.get_ordered()
-            if self._enabled_layers is None or detector.layer_name in self._enabled_layers
+            if (self._enabled_layers is None or detector.layer_name in self._enabled_layers)
+            and self._runs_at_level(detector.layer_name)
         ]
         all_entities: list[PiiEntity] = []
 

@@ -10,7 +10,7 @@ from app.identity.dependencies import require_admin
 from app.identity.models import ApiKey
 
 router = APIRouter()
-KNOWN_DETECTION_LAYERS = {"regex", "presidio", "privacy_filter", "ai4privacy"}
+KNOWN_DETECTION_LAYERS = {"regex", "presidio", "privacy_filter", "ai4privacy", "rizzo"}
 
 
 class ContextTypeResponse(BaseModel):

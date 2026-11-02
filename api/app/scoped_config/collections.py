@@ -22,14 +22,7 @@ BASE_QUERIES = {
     "denylist": "SELECT id, pii_type, value, match_type, description, enabled, created_at, updated_at FROM entity_denylist ORDER BY pii_type, value",
     "context-words": "SELECT id, entity_type, word, description, enabled, created_at FROM presidio_context ORDER BY entity_type, word",
     "reclassification": "SELECT id, from_type, to_type, context_pattern, entity_pattern, context_window, description, enabled, created_at FROM reclassification_rules ORDER BY from_type, created_at",
-    "detection-layers": (
-        "SELECT * FROM (VALUES "
-        "('regex', 'Regex', 'Deterministic database and built-in regular-expression detection', true),"
-        "('presidio', 'Presidio/spaCy', 'NER and recognizer-based detection through Presidio and spaCy', true),"
-        "('privacy_filter', 'Privacy Filter', 'ONNX privacy-filter model for broad PII detection', true),"
-        "('ai4privacy', 'AI4Privacy', 'Transformer layer with wider PII category coverage', true)"
-        ") AS detection_layers(code, display_name, description, enabled)"
-    ),
+    "detection-layers": None,  # built from settings by detection_layers_query()
     "pii-types": "SELECT code, category, display_name, default_action, faker_strategy, reversible, enabled, description FROM pii_type_registry ORDER BY category, code",
     "domain-policies": "SELECT domain, display_name, default_mode, version, protect_types, keep_types, surrogate_types, remove_types, block_types, confidence_thresholds, allowlist, visible_to_clients, description, enabled, updated_at FROM domain_policies WHERE tenant_id IS NULL ORDER BY domain",
     "context-types": "SELECT code, display_name, domain, default_mode, detection_layers, description, visible_to_clients, enabled, version, created_at FROM context_types WHERE tenant_id IS NULL ORDER BY code",
@@ -39,6 +32,23 @@ BASE_QUERIES = {
 def ensure_collection(collection: str) -> None:
     if collection not in COLLECTIONS:
         raise HTTPException(status_code=404, detail="unknown_collection")
+
+
+def detection_layers_query() -> str:
+    """Why: the scoped-config view of the layers must match what the engine actually loads and gates.
+    What: SELECT over VALUES rows (code, display_name, description, enabled, protection_levels) from LAYER_META + settings.
+    Test: "rizzo" and "'maximum'" appear in detection_layers_query() with default settings.
+    """
+    from app.config import settings
+    from app.detection.layer_config import LAYER_META
+
+    def q(v: str) -> str:
+        return "'" + v.replace("'", "''") + "'"
+    rows = ",".join(
+        f"({q(code)}, {q(name)}, {q(desc)}, {'true' if settings.layer_enabled(code) else 'false'}, "
+        f"ARRAY[{','.join(q(lv) for lv in settings.layer_levels(code))}]::text[])"
+        for code, (name, desc) in LAYER_META.items())
+    return f"SELECT * FROM (VALUES {rows}) AS detection_layers(code, display_name, description, enabled, protection_levels)"
 
 
 def item_key(collection: str, row: dict[str, Any]) -> str:

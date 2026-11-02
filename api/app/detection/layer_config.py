@@ -17,6 +17,18 @@ AI4PRIVACY_TYPES = [
     "DATE_OF_BIRTH", "MASKED_NUMBER", "ACCOUNT_NUMBER",
 ]
 
+from app.detection.layers.rizzo_layer import TYPES as RIZZO_TYPES
+
+# code -> (display name, description): one source for startup rows, readiness and the scoped-config collection
+LAYER_META: dict[str, tuple[str, str]] = {
+    "regex": ("Regex", "Deterministic database and built-in regular-expression detection"),
+    "presidio": ("Presidio/spaCy", "NER and recognizer-based detection through Presidio and spaCy"),
+    "privacy_filter": ("Privacy Filter", "ONNX privacy-filter model for broad PII detection"),
+    "ai4privacy": ("AI4Privacy", "Transformer layer with wider PII category coverage"),
+    "rizzo": ("Rizzo-PII", "Italian mmBERT PII model (Rizzo AI Academy, MIT); best recall on ALL-CAPS names, "
+                           "forms and tables; ~1.2 GB RAM, slower"),
+}
+
 DEFAULTS: dict[str, dict] = {
     "presidio": {
         "min_score":        0.65,
@@ -33,6 +45,10 @@ DEFAULTS: dict[str, dict] = {
         "min_chars":     0,
         "enabled_types": AI4PRIVACY_TYPES,
     },
+    "rizzo": {
+        "min_score":     0.50,
+        "enabled_types": RIZZO_TYPES,
+    },
 }
 
 ALL_LAYERS = list(DEFAULTS.keys())
@@ -42,6 +58,7 @@ SCHEMA: dict[str, list[str]] = {
     "presidio":       ["min_score", "location_enabled", "enabled_types"],
     "privacy_filter": ["min_score", "min_chars", "enabled_types"],
     "ai4privacy":     ["min_score", "min_chars", "enabled_types"],
+    "rizzo":          ["min_score", "enabled_types"],
 }
 
 # All known type codes per layer (for UI multiselect options)
@@ -49,6 +66,7 @@ ALL_TYPES: dict[str, list[str]] = {
     "presidio":       PRESIDIO_TYPES_WITH_LOCATION,
     "privacy_filter": PRIVACY_FILTER_TYPES,
     "ai4privacy":     AI4PRIVACY_TYPES,
+    "rizzo":          RIZZO_TYPES,
 }
 
 

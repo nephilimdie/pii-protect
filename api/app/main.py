@@ -47,6 +47,8 @@ from app.detection.layers.presidio_layer import PresidioDetector
 from app.settings_repository import SettingsRepository
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
 from app.detection.layers.ai4privacy_layer import Ai4PrivacyDetector
+from app.detection.layers.rizzo_layer import RizzoDetector
+from app.detection.layer_config import LAYER_META
 from app.detection.layers.regex_layer import ItalianRegexDetector
 from app.detection.detector_provider import DetectorProvider
 from app.detection.regex_pattern_repository import RegexPatternRepository
@@ -67,20 +69,15 @@ logger = logging.getLogger(__name__)
 
 
 def _detection_layers_raw() -> list[dict]:
-    meta = {
-        "regex": ("Regex", "Deterministic database and built-in regular-expression detection"),
-        "presidio": ("Presidio/spaCy", "NER and recognizer-based detection through Presidio and spaCy"),
-        "privacy_filter": ("Privacy Filter", "ONNX privacy-filter model for broad PII detection"),
-        "ai4privacy": ("AI4Privacy", "Transformer layer with wider PII category coverage"),
-    }
     return [
         {
             "code": code,
             "display_name": label,
             "description": description,
             "enabled": settings.layer_enabled(code),
+            "protection_levels": settings.layer_levels(code),
         }
-        for code, (label, description) in meta.items()
+        for code, (label, description) in LAYER_META.items()
     ]
 
 
@@ -220,6 +217,12 @@ async def lifespan(app: FastAPI):
         Ai4PrivacyDetector.preload(settings.ai4privacy_model, settings.ai4privacy_revision)
     else:
         logger.info("Skipping Ai4Privacy detector preload because layer is disabled")
+
+    if settings.layer_enabled("rizzo"):
+        logger.info("Preloading Rizzo-PII detector")
+        RizzoDetector.preload(settings.rizzo_model_dir, settings.rizzo_revision)
+    else:
+        logger.info("Skipping Rizzo-PII detector preload because layer is disabled")
 
     logger.info("Connecting to database…")
     async with AsyncSessionLocal() as db:

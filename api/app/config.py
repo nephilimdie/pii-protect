@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     privacy_filter_revision: str = "7ffa9a043d54d1be65afb281eddf0ffbe629385b"
     ai4privacy_model: str = "Isotonic/distilbert_finetuned_ai4privacy_v2"
     ai4privacy_revision: str = "11795a7549030bb5a21832b09e712b19d39045a7"
+    # Rizzo-PII 0.3B (MIT), HF rizzoaiacademy/rizzo-pii-0.3B branch v1.5.0, baked into the image by api/Dockerfile
+    rizzo_model_dir: str = "/opt/models/rizzo-pii-0.3B-v1.5.0"
+    rizzo_revision: str = "a1c3c83827eca22e9675e30c1111c4641caf5901"
     model_cache_dir: str = Field(
         default="/root/.cache/huggingface",
         min_length=1,
@@ -117,6 +120,8 @@ class Settings(BaseSettings):
         "presidio":       {"enabled": True},
         "privacy_filter": {"enabled": True},
         "ai4privacy":     {"enabled": True},
+        # loaded at startup; runs only at these protection levels unless a policy names it explicitly
+        "rizzo":          {"enabled": True, "protection_levels": ["maximum"]},
         "regex":          {"enabled": True},
     }
 
@@ -145,6 +150,15 @@ class Settings(BaseSettings):
         Test: Settings(detection_layers={"presidio": {"enabled": False}}).layer_enabled("presidio") is False.
         """
         return bool(self.detection_layers.get(name, {}).get("enabled", True))
+
+    def layer_levels(self, name: str) -> list[str]:
+        """Why: an expensive or recall-first layer (rizzo) may be meant for "maximum" only.
+        What: protection levels at which the layer runs by default; env may give a list or "a,b".
+        Test: Settings(detection_layers={"rizzo": {"protection_levels": "balanced,maximum"}}).layer_levels("rizzo")
+        == ["balanced", "maximum"]; unknown layers -> both levels.
+        """
+        levels = self.detection_layers.get(name, {}).get("protection_levels", ["balanced", "maximum"])
+        return [x.strip() for x in levels.split(",")] if isinstance(levels, str) else list(levels)
 
 
 settings = Settings()

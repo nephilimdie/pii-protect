@@ -15,7 +15,7 @@ from app.detection.entities import PiiEntity
 BALANCED = "balanced"
 MAXIMUM = "maximum"
 PROTECTION_LEVELS = (BALANCED, MAXIMUM)
-ML_LAYERS = frozenset({"presidio", "privacy_filter", "ai4privacy"})
+ML_LAYERS = frozenset({"presidio", "privacy_filter", "ai4privacy", "rizzo"})
 MAXIMUM_ML_MIN_SCORE = 0.5  # balanced defaults: presidio 0.65, privacy_filter/ai4privacy 0.70
 SOURCE = "regex"  # deterministic: the merger lets these beat overlapping ML spans
 
