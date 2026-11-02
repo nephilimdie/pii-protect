@@ -157,7 +157,7 @@ def run_engine(args: argparse.Namespace, docs: list[dict], todo: list[str], out:
 
 
 def container(args: argparse.Namespace, out: Path, mounts: list[str], script: str) -> None:
-    cmd = ["docker", "run", "--rm", "-v", f"{HERE}:/bench:ro", "-v", f"{out}:/out", *mounts,
+    cmd = ["docker", "run", "--rm", "-v", f"{HERE}:/bench:ro", "-v", f"{args.dataset.resolve().parent}:/data:ro", "-v", f"{out}:/out", *mounts,
            "-e", "PYTHONPATH=/tmp/deps:/bench/systems", "-e", f"RIZZO_COMMIT={RIZZO_COMMIT}", "-e", f"RIZZO_REV={RIZZO_REV}",
            "--entrypoint", "sh", args.image, "-c", script]
     proc = subprocess.run(cmd, text=True)
@@ -171,16 +171,18 @@ def main() -> None:
     ap.add_argument("--cache-volume", required=True, help="HF cache volume with the pinned engine models")
     ap.add_argument("--rizzo-src", type=Path, help=f"checkout of Rizzo-AI-Academy/rizzo-pii at {RIZZO_COMMIT[:10]}")
     ap.add_argument("--rizzo-model-volume", help=f"volume with rizzoaiacademy/rizzo-pii-0.3B@{RIZZO_REV[:10]} in /rizzo-pii-0.3B-v1.5.0")
+    ap.add_argument("--dataset", type=Path, default=HERE / "dataset" / "it_pii_v1.jsonl", help="gold JSONL (e.g. the held-out corpus)")
     ap.add_argument("--systems", default="all")
     ap.add_argument("--subset", type=int, default=0, help="first N docs per sub-genre (0 = full dataset)")
     ap.add_argument("--port", type=int, default=15691)
     ap.add_argument("--skip-run", action="store_true", help="only re-score existing predictions")
     ap.add_argument("--out", type=Path, help="results directory (default results/ or results-subset/)")
     args = ap.parse_args()
-    results = args.out or HERE / ("results" if not args.subset else "results-subset")
+    results = (args.out or HERE / ("results" if not args.subset else "results-subset")).resolve()
     out = results / "predictions"
     out.mkdir(parents=True, exist_ok=True)
-    dataset = HERE / "dataset" / "it_pii_v1.jsonl"
+    dataset = args.dataset
+    data = f"/data/{dataset.name}"
     docs = load_docs(dataset, args.subset)
     todo = SYSTEMS if args.systems == "all" else args.systems.split(",")
     unknown = sorted(set(todo) - set(SYSTEMS))
@@ -192,7 +194,7 @@ def main() -> None:
             run_engine(args, docs, engine_systems, out)
         sub = f" {args.subset}" if args.subset else ""
         if "presidio_vanilla_it" in todo:
-            container(args, out, [], f"python /bench/systems/presidio_vanilla.py /bench/dataset/it_pii_v1.jsonl /out/presidio_vanilla_it.json{sub}")
+            container(args, out, [], f"python /bench/systems/presidio_vanilla.py {data} /out/presidio_vanilla_it.json{sub}")
         rizzo = [s.removeprefix("rizzo_") for s in todo if s.startswith("rizzo_")]
         if rizzo:
             if not (args.rizzo_src and args.rizzo_model_volume):
@@ -200,8 +202,8 @@ def main() -> None:
             container(args, out, ["-v", f"{args.rizzo_src.resolve()}:/rizzo:ro", "-v", f"{args.rizzo_model_volume}:/models:ro",
                                   "-e", "PII_MODEL_DIR=/models/rizzo-pii-0.3B-v1.5.0", "-e", "HF_HUB_OFFLINE=1"],
                       f"pip install -q --no-deps --target /tmp/deps {RIZZO_DEPS} blinker itsdangerous werkzeug jinja2 markupsafe click >/dev/null"
-                      f" && cd /tmp && python /bench/systems/rizzo_pii.py /bench/dataset/it_pii_v1.jsonl /out {','.join(rizzo)}{sub}")
-    subprocess.run([sys.executable, str(HERE / "score.py"), "--predictions", str(out),
+                      f" && cd /tmp && python /bench/systems/rizzo_pii.py {data} /out {','.join(rizzo)}{sub}")
+    subprocess.run([sys.executable, str(HERE / "score.py"), "--dataset", str(dataset), "--predictions", str(out),
                     "--out", str(results / "summary.json")] + (["--subset", str(args.subset)] if args.subset else []), check=True)
     subprocess.run([sys.executable, str(HERE / "report.py"), "--results", str(results)], check=True)
 
