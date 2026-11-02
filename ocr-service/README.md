@@ -200,7 +200,7 @@ fixtures are synthetic; circular stamp text is not read; a stamp that merges wit
 text, and B/W rectangular stamps, stay as unread-ink `needs_review` regions (painted by default).
 
 Faces: two extra passes on the image turned +/-30 deg, plus tiling at >= 1280 px for any image
-above 640 px; nested duplicates from the turned passes merge into their union. The score floor stays 0.6 (0.5 added a false positive on a painting and no recall), and anything below 0.8 is flagged for review. Signature/stamp candidates must sit on bright paper (median of the non-ink pixels around them >= 160), so photos and paintings are not taken for handwriting.
+above 640 px; nested duplicates from the turned passes merge into their union. The score floor stays 0.6 (0.5 added a false positive on a painting and no recall), and anything below 0.8 is flagged for review. Signature/stamp candidates must sit on paper: at least 85% of the non-ink pixels around them must be bright (grey >= 170) and neutral (saturation <= 50). Real stamps measure >= 0.97; a tilted painting measured 0.64. This keeps photos and paintings from being taken for handwriting or stamps.
 `bench/faces_eval.py` (Mona Lisa variants: tilts up to 75 deg, faces 14-40 px, a squeezed
 yaw-like view, low contrast): recall went from 23/26 to 25/26, with 0 false positives on 6
 documents either way.

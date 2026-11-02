@@ -95,3 +95,10 @@ def test_face_duplicates_merge_into_their_union() -> None:
     (hit,) = _merge([Hit("FACE", (0, 0, 10, 10), 0.9, False), Hit("FACE", (2, 2, 20, 20), 0.6, True)])
     assert hit.bbox == (0, 0, 20, 20) and hit.score == 0.9 and not hit.needs_review
     assert len(_merge([Hit("FACE", (0, 0, 10, 10), 0.9, False), Hit("FACE", (30, 30, 40, 40), 0.6, True)])) == 2
+
+
+@pytest.mark.parametrize("angle", [0, 50])
+def test_no_marks_on_a_picture_in_a_photo(real_client: TestClient, angle: int) -> None:
+    scene = Image.new("RGB", (1400, 900), (238, 236, 230))
+    scene.paste(mona().resize((260, 388)).rotate(angle, expand=True, fillcolor=(238, 236, 230)), (900, 300))
+    assert marks_of(real_client, scene) == []

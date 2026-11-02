@@ -25,7 +25,7 @@ STAMP_LABEL = re.compile(r"^(timbr[oi]|sigill[oi]|stamp|seal)\b", re.IGNORECASE)
 _LABEL_DX_MM, _LABEL_DY_MM = 110.0, 35.0  # a label annotates ink up to this far (right of / below / above it)
 _SIG_GROW, _STAMP_GROW, _GROW_MM = (0.15, 0.3), (0.08, 0.08), 2.0  # generous: strokes fade at the edges
 _MAX_SHARE = 0.25  # a mark never covers more than a quarter of the page
-_PAPER = 160  # signatures and stamps sit on paper: the non-ink pixels around them are bright
+_PAPER, _PAPER_SAT, _PAPER_SHARE = 170, 50, 0.85  # signatures/stamps sit on paper: most pixels around are bright, neutral
 
 
 @dataclass(frozen=True)
@@ -175,11 +175,14 @@ def find_marks(rgb: Image.Image, gray: Image.Image, words: Sequence[MarkWord], d
     height, width = ink.shape
     mm = max(0.5, dpi / 25.4 / factor)  # probe pixels per millimetre
     grey = np.asarray(_probe(gray, _INK_PROBE_SIDE)[0], dtype=np.uint8)
+    hsv = np.asarray(rgb.resize((width, height), Image.Resampling.BOX).convert("HSV")) if rgb.mode == "RGB" else None
+    paper = (grey >= _PAPER) & (hsv[..., 1] <= _PAPER_SAT if hsv is not None else True)
 
     def on_paper(x0: int, y0: int, x1: int, y1: int, mask: np.ndarray) -> bool:
-        """Photos and paintings are mid-tone around their "strokes"; paper is bright."""
-        around = grey[y0:y1, x0:x1][~mask]
-        return around.size > 0 and float(np.median(around)) >= _PAPER
+        """Photos and paintings are mid-tone or tinted (skin) around their "strokes"; paper is bright
+        and neutral (a share, not a median: a tilted picture's light corners must not pass)."""
+        around = paper[y0:y1, x0:x1][~mask]
+        return around.size > 0 and float(np.count_nonzero(around)) >= _PAPER_SHARE * around.size
     probe = [MarkWord(w.text, w.conf, tuple(c / factor for c in w.bbox)) for w in words]  # type: ignore[misc]
     sig_labels = [w for w in probe if SIGNATURE_LABEL.match(w.text.strip(":;.,()[]"))]
     stamp_labels = [w for w in probe if STAMP_LABEL.match(w.text.strip(":;.,()[]"))]
@@ -204,8 +207,7 @@ def find_marks(rgb: Image.Image, gray: Image.Image, words: Sequence[MarkWord], d
             score = signature_score(shape, labelled)
             if score >= 0.6:
                 found.append(Hit("SIGNATURE", box, score, score < 1.0))  # confident: labelled + connected
-    if "stamp" in wanted and rgb.mode == "RGB":
-        hsv = np.asarray(rgb.resize((width, height), Image.Resampling.BOX).convert("HSV"))
+    if "stamp" in wanted and hsv is not None:
         hue, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]
         colour = (sat >= 80) & (val >= 50) & (val <= 250) & ((hue <= 14) | (hue >= 135))  # red, blue, violet
         for (x0, y0, x1, y1), _ in components(_dilate(colour, _odd(1.5 * mm))):
