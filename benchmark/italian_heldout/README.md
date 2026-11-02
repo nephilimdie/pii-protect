@@ -51,7 +51,7 @@ indiretti, e-mail offuscate o URL-encoded, IPv6.
 | | |
 |---|---|
 | Documents | 442: 342 with PII, 100 PII-free near-miss documents |
-| Characters | 275,227 |
+| Characters | 275,219 |
 | Gold PII spans | 3,964 (PERSON 1,415 · FISCAL_CODE 380 · DATE_OF_BIRTH 336 · ADDRESS 319 · EMAIL 254 · PHONE 247 · BIRTH_PLACE 209 · IBAN 198 · EMPLOYEE_ID 117 · ID_DOCUMENT 77 · CONTRACT_ID 77 · LICENSE_PLATE 73 · IP_ADDRESS 67 · USERNAME 59 · INDIRECT 42 · CADASTRAL_REF 27 · CREDIT_CARD 21 · CASE_ID 20 · VAT_NUMBER 14 · SOCIAL_SECURITY 12) |
 | Negative look-alikes | 2,980 (MONEY 704 · CODE 570 · DOC_DATE 461 · ORG 335 · DOC_NUMBER 324 · LAW_REF 297 · PUBLIC_BODY 156 · COMMON_WORD 133) |
 | Genres (sub-genres) | legal 84 (PEC, verbali, atti di citazione, ricorsi) · hr_tax 50 (buste paga, CU, F24) · real_estate_medical 56 (locazioni, perizie, referti) · chat 44 (WhatsApp, mixed IT/EN) · structured 66 (CRM CSV, server logs, JSON API, spreadsheets) · free_text 42 (letters, whistleblowing, esposti, helpdesk tickets) · negative 100 (delibere, eponymous streets/hospitals, name-like words, product codes, history notes, case-law summaries, tech logs) |
