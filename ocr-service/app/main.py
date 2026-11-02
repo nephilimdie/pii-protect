@@ -19,7 +19,7 @@ from app.config import Settings
 from app.engines import Engine
 from app.errors import ErrorCode, OcrError
 from app.inputs import open_document
-from app.pipeline import ENGINES, Pipeline
+from app.pipeline import ENGINES, Pipeline, parse_marks
 from app.visual import Detector, VisualPipeline, parse_detectors
 
 logger = logging.getLogger("ocr.api")
@@ -216,14 +216,15 @@ def create_app(settings: Settings | None = None, engines: Mapping[str, Engine] |
             languages_of = getattr(engines_now.get("tesseract"), "languages", None)
             languages = languages_of() if callable(languages_of) else frozenset({"ita", "eng"})
             dpi, lang, engine, pages = _options(fields, settings, languages)
+            marks = parse_marks(fields.get("marks"))
             pipeline = Pipeline(settings, engines_now)
 
             def work() -> bytes:
                 document = open_document(data, settings, dpi, pages)
-                return pipeline.run(document, engine, lang, deadline).model_dump_json().encode()
+                return pipeline.run(document, engine, lang, deadline, marks).model_dump_json().encode()
 
             payload = await anyio.to_thread.run_sync(work, limiter=limiter)
-            logger.info("ocr ok engine=%s ms=%d", engine, (time.monotonic() - started) * 1000)
+            logger.info("ocr ok engine=%s marks=%s ms=%d", engine, ",".join(marks) or "-", (time.monotonic() - started) * 1000)
             return Response(payload, media_type="application/json")
 
     @app.post("/v1/visual-pii")

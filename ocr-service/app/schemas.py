@@ -32,6 +32,19 @@ class Line(BaseModel):
     text: str
 
 
+class VisualBox(BaseModel):
+    """Why: faces, codes, plates, signatures and stamps are PII without (readable) text; the caller paints boxes.
+    What: detection type, ``[x0, y0, x1, y1]`` in image pixels (already grown to cover hair,
+    quiet zones), score 0-1 and whether a human should check it (it is redacted either way).
+    Test: ``VisualBox(type="FACE", bbox=(0, 0, 1, 1), score=0.9, needs_review=False).type == "FACE"``.
+    """
+
+    type: Literal["FACE", "QR_CODE", "BARCODE", "LICENSE_PLATE", "SIGNATURE", "STAMP"]
+    bbox: BBox
+    score: float = Field(ge=0, le=1)
+    needs_review: bool
+
+
 class Page(BaseModel):
     """Why: fail-closed redaction needs both what was read and what could not be read.
     What: one page's words/lines plus low-confidence and unrecognized-ink regions.
@@ -48,6 +61,7 @@ class Page(BaseModel):
     low_conf_regions: list[BBox]
     ink_without_text_regions: list[BBox]
     skew: float = 0.0  # residual tilt (degrees, CCW) the text was straightened by; callers pad tilted boxes
+    marks: list[VisualBox] = []  # SIGNATURE / STAMP boxes (only when requested with the ``marks`` field)
 
 
 class OcrResponse(BaseModel):
@@ -57,19 +71,6 @@ class OcrResponse(BaseModel):
     """
 
     pages: list[Page]
-
-
-class VisualBox(BaseModel):
-    """Why: faces, codes and plates are PII without (readable) text; the caller paints boxes.
-    What: detection type, ``[x0, y0, x1, y1]`` in image pixels (already grown to cover hair,
-    quiet zones), score 0-1 and whether a human should check it (it is redacted either way).
-    Test: ``VisualBox(type="FACE", bbox=(0, 0, 1, 1), score=0.9, needs_review=False).type == "FACE"``.
-    """
-
-    type: Literal["FACE", "QR_CODE", "BARCODE", "LICENSE_PLATE"]
-    bbox: BBox
-    score: float = Field(ge=0, le=1)
-    needs_review: bool
 
 
 class VisualResponse(BaseModel):

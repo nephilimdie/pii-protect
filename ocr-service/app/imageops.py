@@ -266,6 +266,24 @@ def _straight_lines(ink: np.ndarray, length: int, min_extent: int, max_thickness
     return lines
 
 
+def ink_probe(gray: Image.Image) -> tuple[np.ndarray, float]:
+    """Why: unread-ink regions and the signature/stamp classifier must see the same strokes.
+    What: on a ~1200 px probe, ink = pixels clearly darker (< 0.65x) than their local
+    background (grey closing over >= 31 px), minus long straight rules/borders; returns the
+    boolean mask and the factor gray pixels / probe pixels (all False on a blank page).
+    Test: a blank page -> no ink; a 1-px rule across the page -> no ink; a scribble -> ink.
+    """
+    small, factor = _probe(gray, _INK_PROBE_SIDE)
+    array = np.asarray(small, dtype=np.uint8)
+    if int(array.max()) - int(array.min()) < 40:  # blank or uniform page (any real ink is darker)
+        return np.zeros(array.shape, dtype=bool), factor
+    side = max(array.shape)
+    background = _closing(array, max(31, side // 40) | 1).astype(np.float32)
+    ink = (array <= 200) & (array < background * 0.65)
+    # Runs of side/40 catch 1-px rules up to ~1.9 deg of residual tilt; rules span >= 1/8 of the side.
+    return ink & ~_straight_lines(ink, max(20, side // 40), side // 8, max(4, side // 150)), factor
+
+
 def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBoxF]:
     """Why: signatures, stamps, handwriting and pictures carry PII the OCR could not read; the
     engine must be told so it can fail closed (redact or refuse) instead of trusting the text.
@@ -276,15 +294,10 @@ def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBo
     Test: text plus a scribble -> one box over the scribble; a form photographed on a dark
     table -> no page-sized region; text-only -> [].
     """
-    small, factor = _probe(gray, _INK_PROBE_SIDE)
-    array = np.asarray(small, dtype=np.uint8)
-    if int(array.max()) - int(array.min()) < 40:  # blank or uniform page (any real ink is darker)
+    ink, factor = ink_probe(gray)
+    if not ink.any():
         return []
-    side = max(array.shape)
-    background = _closing(array, max(31, side // 40) | 1).astype(np.float32)
-    ink = (array <= 200) & (array < background * 0.65)
-    # Runs of side/40 catch 1-px rules up to ~1.9 deg of residual tilt; rules span >= 1/8 of the side.
-    ink &= ~_straight_lines(ink, max(20, side // 40), side // 8, max(4, side // 150))
+    side = max(ink.shape)
     pad = 3
     for x0, y0, x1, y1 in text_boxes:
         ink[max(0, int(y0 / factor) - pad): int(math.ceil(y1 / factor)) + pad,
