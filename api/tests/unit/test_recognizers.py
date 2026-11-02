@@ -117,14 +117,14 @@ def _ml(text: str, pii_type: str, score: float = 0.9) -> PiiEntity:
     # payslip/contract vocabulary the ML layers boxed in the home examples (scores 0.85-1.0)
     _ml("Contributi", "PERSON", 0.85), _ml("Canone", "PERSON", 1.0), _ml("Superminimo", "PERSON", 1.0),
     _ml("Matricola", "PERSON", 1.0), _ml("Perfetto", "PERSON", 1.0),
-    _ml("lorda", "PERSON", 0.99),
+    _ml("lorda", "PERSON", 0.99), _ml("BUSTA", "ADDRESS", 0.9),
 ])
 def test_precision_filter_drops_ml_look_alikes(entity):
     assert precision_filter([entity]) == []
 
 
 def test_precision_filter_keeps_names_and_deterministic_spans():
-    keep = [_ml("Mario Rossi", "PERSON"), PiiEntity(0, 3, "PERSON", "Lei", 1.0, "regex")]
+    keep = [_ml("Mario Rossi", "PERSON"), _ml("Milano", "ADDRESS"), PiiEntity(0, 3, "PERSON", "Lei", 1.0, "regex")]
     assert precision_filter(keep) == keep
 
 

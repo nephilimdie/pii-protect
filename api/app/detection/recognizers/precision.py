@@ -49,7 +49,8 @@ def _ip_ok(e: PiiEntity, _level: str) -> bool:
 
 
 def _address_ok(e: PiiEntity, _level: str) -> bool:
-    return bool(_LETTERS.search(e.text))
+    # a label word alone ("NETTO IN BUSTA 1.742,35" -> ADDRESS "BUSTA") is not a place
+    return bool(_LETTERS.search(e.text)) and not all(t in STOPWORDS for t in _tokens(e.text))
 
 
 _RULES = {"PERSON": _person_ok, "IP_ADDRESS": _ip_ok, "ADDRESS": _address_ok}
