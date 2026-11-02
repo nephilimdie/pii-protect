@@ -81,7 +81,7 @@ jobs:
         run: pip install pytest==8.3.3
 
       - name: Unit tests (generator determinism, scorer, report)
-        run: python -m pytest benchmark/italian/tests benchmark/italian_heldout/tests -q
+        run: python -m pytest benchmark/italian/tests benchmark/italian_heldout/tests benchmark/italian_heldout_v2/tests -q
 
       - name: Re-score committed predictions and re-render report; fail on any drift
         run: |
@@ -92,6 +92,7 @@ jobs:
       - name: Held-out corpus is the frozen one; re-score held-out predictions; fail on any drift
         run: |
           python benchmark/italian_heldout/build.py --check
+          python benchmark/italian_heldout_v2/build.py --check
           python benchmark/italian/score.py --dataset benchmark/italian_heldout/dataset/it_pii_heldout_v1.jsonl --predictions benchmark/italian_heldout/results/predictions --out benchmark/italian_heldout/results/summary.json
           python benchmark/italian/report.py --results benchmark/italian_heldout/results
           python benchmark/italian_heldout/compare.py
