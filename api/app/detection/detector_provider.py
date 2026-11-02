@@ -28,7 +28,7 @@ class DetectorProvider:
         if lc.get("ai4privacy", {}).get("enabled", True):
             registry.register(Ai4PrivacyDetector(model=self._settings.ai4privacy_model))
 
-        if lc.get("rizzo", {}).get("enabled", True):
+        if self._settings.layer_enabled("rizzo"):
             registry.register(RizzoDetector())
 
         if lc.get("regex", {}).get("enabled", True):

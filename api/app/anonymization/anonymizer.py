@@ -212,11 +212,16 @@ class PiiAnonymizer:
         from app.detection.layers.regex_layer import ItalianRegexDetector
         from app.detection.layers.presidio_layer import PresidioDetector
 
+        for layer in self._enabled_layers or ():
+            if self._runs_at_level(layer) and self._registry.get_by_name(layer) is None:
+                raise RuntimeError("A selected detection layer is not installed or enabled on the platform")
         detectors = [
-            detector for detector in self._registry.get_ordered()
+            detector for detector in self._registry.get_ordered(include_unavailable=True)
             if (self._enabled_layers is None or detector.layer_name in self._enabled_layers)
             and self._runs_at_level(detector.layer_name)
         ]
+        if any(not detector.is_available() for detector in detectors):
+            raise RuntimeError("A selected detection layer is unavailable")
         all_entities: list[PiiEntity] = []
 
         with ThreadPoolExecutor(max_workers=max(len(detectors) + 1, 1)) as pool:
@@ -280,7 +285,7 @@ class PiiAnonymizer:
         merged = self._merger.merge(_snap_all(text, self._run_detectors(text, language)), text)
         # Reclassify entities based on surrounding context (e.g. PERSON → ACCOUNT after "username:")
         reclassified = [r for e in merged if (r := self._reclassify_entity(e, text)) is not None]
-        precise = precision_filter(reclassified, self._protection_level)
+        precise = precision_filter(reclassified, self._protection_level, text)
         valid = [e for e in precise if _is_valid_entity(e, self._denylist)]
         # Re-merge after snapping in case boundaries now overlap
         return DetectionResult(entities=self._merger.merge(_snap_all(text, valid), text))

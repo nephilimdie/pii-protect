@@ -22,6 +22,7 @@ _SEP = r"[ .\-]?"
 _A = r"[A-Za-z0-9]"
 # 16 alphanumerics with optional single separators between them (word-bounded)
 _CF_LOOSE = re.compile(rf"(?<![A-Za-z0-9])(?=[A-Za-z]{{2}})(?:{_A}{_SEP}){{15}}{_A}(?![A-Za-z0-9])")
+_CF_GROUPED = re.compile(r"(?<!\w)[A-Za-z]{3}[ .\-]+[A-Za-z]{3}[ .\-]+[A-Za-z0-9]{5}[ .\-]+[A-Za-z0-9]{5}(?!\w)")
 _IBAN_LOOSE = re.compile(rf"(?<![A-Za-z0-9])[A-Za-z]{{2}}[0-9OoIl]{{2}}(?:{_SEP}{_A}){{11,30}}(?![A-Za-z0-9])")
 _PIVA_LOOSE = re.compile(rf"(?i:\bp\.?\s?iva|\bpartita\s+iva|\bvat)\s*(?:n\.?\s*)?:?\s*(?:IT\s?)?(?P<v>\d(?:{_SEP}\d){{10}})(?!\d)")
 _PHONE_LOOSE = re.compile(
@@ -77,7 +78,7 @@ def _repair_iban(raw: str) -> bool:
 def detect_obfuscated(text: str) -> list[PiiEntity]:
     """Why/What: see module docstring. Test: see module docstring."""
     found: list[PiiEntity] = []
-    for m in _CF_LOOSE.finditer(text):
+    for m in (*_CF_LOOSE.finditer(text), *_CF_GROUPED.finditer(text)):
         compact = _SEPARATORS.sub("", m.group())
         if len(compact) == 16 and _repair_cf(compact):
             found.append(entity(text, m.start(), m.end(), "FISCAL_CODE"))

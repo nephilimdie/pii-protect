@@ -42,9 +42,12 @@ MATCHED = {"genre": {"hr": "hr_payroll", "tax": "tax_accounting", "real_estate_i
            "subgenre": {"ricorso": "fine_appeal", "contratto_locazione": "contract_analysis"}}
 ABLATIONS = {"regex": ["regex"], "presidio": ["presidio"], "privacy_filter": ["privacy_filter"],
              "ai4privacy": ["ai4privacy"], "regex_presidio": ["regex", "presidio"],
-             "no_regex": ["presidio", "privacy_filter", "ai4privacy"]}
+             "no_regex": ["presidio", "privacy_filter", "ai4privacy"],
+             # sprint 2: Rizzo-PII engine layer (needs --rizzo-model-volume)
+             "rizzo": ["rizzo"], "with_rizzo": ["regex", "presidio", "privacy_filter", "ai4privacy", "rizzo"],
+             "no_rizzo": ["regex", "presidio", "privacy_filter", "ai4privacy"]}
 SYSTEMS = (["pseudora_matched"] + [f"pseudora_{d}" for d in DOMAINS] + [f"ablation_{a}" for a in ABLATIONS]
-           + [f"pseudora_{GENERIC}_maximum", "pseudora_matched_maximum"]
+           + [f"pseudora_{GENERIC}_maximum", "pseudora_matched_maximum", "ablation_with_rizzo_maximum", "ablation_no_rizzo_maximum"]
            + ["presidio_vanilla_it", "rizzo_default", "rizzo_pii_only"])
 MAXIMUM = "_maximum"  # system-name suffix: same preset at protection_level=maximum
 
@@ -59,8 +62,8 @@ class Engine:
     Test: `with Engine(img, vol, 15691) as e: e.post('/v1/anonymize', {...})` returns 200.
     """
 
-    def __init__(self, image: str, cache_volume: str, port: int) -> None:
-        self.image, self.volume, self.port = image, cache_volume, port
+    def __init__(self, image: str, cache_volume: str, port: int, rizzo_volume: str | None = None) -> None:
+        self.image, self.volume, self.port, self.rizzo_volume = image, cache_volume, port, rizzo_volume
         self.prefix = "bench-it-" + secrets.token_hex(3)
         self.key, self.internal = secrets.token_hex(24), secrets.token_hex(24)
 
@@ -76,6 +79,7 @@ class Engine:
         time.sleep(2)
         sh("docker", "run", "-d", "--name", api, "--network", self.prefix, "-p", f"127.0.0.1:{self.port}:8000",
            "-v", f"{ROOT / 'api'}:/app:ro", "-v", f"{self.volume}:/root/.cache/huggingface",
+           *(["-v", f"{self.rizzo_volume}:/opt/models:ro", "-e", "DETECTION_LAYERS__RIZZO__ENABLED=true"] if self.rizzo_volume else ["-e", "DETECTION_LAYERS__RIZZO__ENABLED=false"]),
            "-e", f"DATABASE_URL=postgresql+asyncpg://bench:{pw}@{pg}:5432/bench",
            "-e", "ENCRYPTION_KEY=" + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
            "-e", f"ADMIN_INITIAL_KEY={self.key}", "-e", f"PII_INTERNAL_API_KEY={self.internal}",
@@ -125,7 +129,7 @@ def engine_meta(engine: Engine, label: str, target: dict | str) -> dict:
 
 
 def run_engine(args: argparse.Namespace, docs: list[dict], todo: list[str], out: Path) -> None:
-    with Engine(args.image, args.cache_volume, args.port) as eng:
+    with Engine(args.image, args.cache_volume, args.port, args.rizzo_model_volume) as eng:
         # an unknown domain silently resolves to "no protect/keep filter": refuse to benchmark that
         _, policies = eng.call("GET", "/v1/admin/domain-policies")
         missing = set(DOMAINS) - {"default"} - {p["domain"] for p in policies}
@@ -149,10 +153,10 @@ def run_engine(args: argparse.Namespace, docs: list[dict], todo: list[str], out:
                 run_system(docs, lambda text: eng.anonymize(text, target), out / f"{system}.json", system, "pseudora",
                            engine_meta(eng, f"Pseudora full pipeline, preset {dom}{note}", target))
             else:
-                name = system.removeprefix("ablation_")
-                target = {"context_type": f"bench_{name}"}
+                name = system.removeprefix("ablation_").removesuffix(MAXIMUM)
+                target = {"context_type": f"bench_{name}", **level}
                 run_system(docs, lambda text: eng.anonymize(text, target), out / f"{system}.json", system, "pseudora",
-                           engine_meta(eng, f"Ablation: layers {'+'.join(ABLATIONS[name])} only ({GENERIC} policy)",
+                           engine_meta(eng, f"Ablation: layers {'+'.join(ABLATIONS[name])} only ({GENERIC} policy){note}",
                                        {**target, "layers": ABLATIONS[name]}))
 
 
@@ -176,6 +180,7 @@ def main() -> None:
     ap.add_argument("--subset", type=int, default=0, help="first N docs per sub-genre (0 = full dataset)")
     ap.add_argument("--port", type=int, default=15691)
     ap.add_argument("--skip-run", action="store_true", help="only re-score existing predictions")
+    ap.add_argument("--reference", default="pseudora_generic_professional", help="paired-bootstrap reference system")
     ap.add_argument("--out", type=Path, help="results directory (default results/ or results-subset/)")
     args = ap.parse_args()
     results = (args.out or HERE / ("results" if not args.subset else "results-subset")).resolve()
@@ -204,7 +209,7 @@ def main() -> None:
                       f"pip install -q --no-deps --target /tmp/deps {RIZZO_DEPS} blinker itsdangerous werkzeug jinja2 markupsafe click >/dev/null"
                       f" && cd /tmp && python /bench/systems/rizzo_pii.py {data} /out {','.join(rizzo)}{sub}")
     subprocess.run([sys.executable, str(HERE / "score.py"), "--dataset", str(dataset), "--predictions", str(out),
-                    "--out", str(results / "summary.json")] + (["--subset", str(args.subset)] if args.subset else []), check=True)
+                    "--reference", args.reference, "--out", str(results / "summary.json")] + (["--subset", str(args.subset)] if args.subset else []), check=True)
     subprocess.run([sys.executable, str(HERE / "report.py"), "--results", str(results)], check=True)
 
 

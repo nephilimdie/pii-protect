@@ -20,6 +20,9 @@ _PROV = r"(?:\s*\(\s*[A-Z]{2}\s*\))?"
 _DATE_LINK = r"(?:\s*,?\s*(?i:il\s+giorno|il|in\s+data(?:\s+del)?|del|lì|li|data)?\s*:?\s*)"
 _BORN = r"(?i:\bnat[oa](?:/[ao])?|(?<![\w.])n\.)"
 _PATTERNS = (
+    # Province and date alone do not establish birth context: require the field label.
+    re.compile(rf"(?i:\bluogo\s+di\s+nascita)\s*:\s*(?P<city>{CITY}){_PROV}"
+               rf"{_DATE_LINK}(?P<date>{DATE})"),
     # nato/a a|in <Città> (PR), il <data>
     re.compile(rf"{_BORN}\s+(?i:a|ad|in)\s+(?P<city>{CITY}){_PROV}(?:{_DATE_LINK}(?P<date>{DATE}))?"),
     # nato/a il <data> a <Città>

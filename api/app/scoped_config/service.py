@@ -66,6 +66,9 @@ class ScopedConfigService:
         ensure_collection(collection)
         if action not in ("override", "custom", "hidden"):
             raise HTTPException(status_code=422, detail="invalid_action")
+        if collection == "detection-layers":
+            from app.scoped_config.layer_validation import validate_layer_override
+            validate_layer_override(item_key, action, data)
 
         return await self._repository.upsert(collection, item_key, scope_type, scope_key, action, data)
 

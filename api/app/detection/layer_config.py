@@ -25,8 +25,8 @@ LAYER_META: dict[str, tuple[str, str]] = {
     "presidio": ("Presidio/spaCy", "NER and recognizer-based detection through Presidio and spaCy"),
     "privacy_filter": ("Privacy Filter", "ONNX privacy-filter model for broad PII detection"),
     "ai4privacy": ("AI4Privacy", "Transformer layer with wider PII category coverage"),
-    "rizzo": ("Rizzo-PII", "Italian mmBERT PII model (Rizzo AI Academy, MIT); best recall on ALL-CAPS names, "
-                           "forms and tables; ~1.2 GB RAM, slower"),
+    "rizzo": ("Rizzo-PII", "Optional Italian mmBERT PII model. Requires installed weights and platform activation; "
+                           "evaluate recall, false positives and memory before enabling."),
 }
 
 DEFAULTS: dict[str, dict] = {

@@ -130,3 +130,14 @@ def test_should_render_every_system_in_tables_and_well_formed_svg_charts():
     for chart in (report.chart_f1, report.chart_tradeoff, report.chart_types):
         root = ET.fromstring(chart(summary["systems"]))
         assert root.tag.endswith("svg") and root.find("{http://www.w3.org/2000/svg}title") is not None
+
+
+def test_report_supports_ablation_only_without_reference():
+    import report
+    summary = json.loads((HERE / "results" / "summary.json").read_text())
+    system = next(iter(summary["systems"].values()))
+    system["ci95"].pop("delta_vs_reference", None)
+    summary["systems"] = {"ablation_new": system}
+    summary["reference"] = None
+    assert "`ablation_new`" in report.tables(summary)
+    assert "<svg" in report.chart_types(summary["systems"])

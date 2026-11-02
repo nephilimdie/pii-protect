@@ -13,6 +13,7 @@ Test: tests/unit/test_rizzo_layer.py drives detect() with a fake pipeline (chunk
 from __future__ import annotations
 
 import logging
+import math
 import re
 from pathlib import Path
 
@@ -103,11 +104,12 @@ class RizzoDetector(DetectorContract):
         Test: preload("/nonexistent", "x") leaves is_available() False.
         """
         path = Path(model_dir)
+        cls._pipeline = None
         if not (path / "config.json").is_file():
             logger.error("Rizzo-PII model not found in %s (expected revision %s)", model_dir, revision)
             return
         found = (path / "REVISION").read_text().strip() if (path / "REVISION").is_file() else "unknown"
-        if found not in (revision, "unknown"):
+        if found != revision:
             logger.error("Rizzo-PII model in %s is revision %s, expected %s", model_dir, found, revision)
             return
         try:
@@ -120,23 +122,33 @@ class RizzoDetector(DetectorContract):
 
     def detect(self, text: str, language: str = "it", layer_config: dict | None = None) -> list[PiiEntity]:
         cfg = layer_config or {}
-        if self._pipeline is None or not text.strip():
+        if not text.strip():
             return []
+        if self._pipeline is None:
+            raise RuntimeError("Rizzo-PII is unavailable")
         min_score = cfg.get("min_score", _MIN_SCORE)
         enabled = set(cfg["enabled_types"]) if "enabled_types" in cfg else None
         parts = chunks(text)
         try:
             results = self._pipeline([c for c, _ in parts])
-        except Exception as exc:  # noqa: BLE001 - contract: never raise
-            logger.error("Rizzo-PII inference failed: %s", exc)
-            return []
+        except Exception:
+            # Upstream exceptions may contain the input text; do not log them.
+            raise RuntimeError("Rizzo-PII inference failed") from None
         if parts and isinstance(results, list) and results and isinstance(results[0], dict):
             results = [results]
+        if not isinstance(results, list) or len(results) != len(parts):
+            raise RuntimeError("Rizzo-PII returned incomplete results")
         spans = []
-        for (_, off), res in zip(parts, results):
+        for (chunk, off), res in zip(parts, results):
+            if not isinstance(res, list):
+                raise RuntimeError("Rizzo-PII returned invalid results")
             for item in res:
                 typ = LABEL_MAP.get(str(item.get("entity_group", "")))
                 score = float(item["score"])
+                if not math.isfinite(score) or not 0 <= score <= 1:
+                    raise RuntimeError("Rizzo-PII returned an invalid score")
+                if not 0 <= int(item["start"]) < int(item["end"]) <= len(chunk):
+                    raise RuntimeError("Rizzo-PII returned invalid offsets")
                 if typ is None or score < min_score or (enabled is not None and typ not in enabled):
                     continue
                 s, e = _widen(text, int(item["start"]) + off, int(item["end"]) + off)
