@@ -39,3 +39,9 @@ def test_rejects_street_name_without_house_number():
     entities = _entities("La nota cita Via Roma senza numero civico.")
 
     assert not any(entity.pii_type == "ADDRESS" for entity in entities)
+
+
+def test_address_city_stops_at_line_break():
+    text = "Nata a Torino il 08/02/1992 — Corso Francia 120, 10143 Torino\nQualifica: Impiegata 4° livello"
+    addresses = [e.text for e in _entities(text) if e.pii_type == "ADDRESS"]
+    assert addresses == ["Corso Francia 120, 10143 Torino"]

@@ -32,6 +32,12 @@ contratto locazione locatore conduttore conduttrice proprieta proprietà immobil
 agenzia entrate inps inail comune regione provincia ministero questura prefettura ufficio direzione sezione erario
 spa srl snc sas società azienda studio banca assicurazione compagnia
 lavoratore lavoratrice dipendente contribuente coniuge carico beneficiario intestatario cliente paziente utente
+retribuzione superminimo contributi contributo trattenute trattenuta competenze competenza detrazioni detrazione
+imponibile irpef netto lordo lorda straordinari straordinario ferie permessi tfr tredicesima quattordicesima
+matricola qualifica livello mansione ccnl totale accredito voci voce
+canone deposito cauzionale cauzione durata rata rate art articolo clausola rinnovo recesso spese condominiali premesse
+importo saldo scadenza allegato allegati pagina
+ciao perfetto certo ok okay bene
 gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre
 lunedi martedi mercoledi giovedi venerdi sabato domenica
 """.split())

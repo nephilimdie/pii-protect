@@ -114,6 +114,10 @@ def _ml(text: str, pii_type: str, score: float = 0.9) -> PiiEntity:
 @pytest.mark.parametrize("entity", [
     _ml("Cordiali saluti", "PERSON"), _ml("PROCURA ALLE LITI", "PERSON"), _ml("R.G", "PERSON"),
     _ml("Lei", "PERSON"), _ml("431/1998", "ADDRESS"), _ml("191.799", "IP_ADDRESS"),
+    # payslip/contract vocabulary the ML layers boxed in the home examples (scores 0.85-1.0)
+    _ml("Contributi", "PERSON", 0.85), _ml("Canone", "PERSON", 1.0), _ml("Superminimo", "PERSON", 1.0),
+    _ml("Matricola", "PERSON", 1.0), _ml("Perfetto", "PERSON", 1.0),
+    _ml("lorda", "PERSON", 0.99),
 ])
 def test_precision_filter_drops_ml_look_alikes(entity):
     assert precision_filter([entity]) == []
@@ -122,6 +126,12 @@ def test_precision_filter_drops_ml_look_alikes(entity):
 def test_precision_filter_keeps_names_and_deterministic_spans():
     keep = [_ml("Mario Rossi", "PERSON"), PiiEntity(0, 3, "PERSON", "Lei", 1.0, "regex")]
     assert precision_filter(keep) == keep
+
+
+def test_keeps_lowercase_first_name():
+    # chat prompts write names in lowercase ("ciao laura"), and ai4privacy lowercases its span text
+    lower = _ml("laura", "PERSON", 0.99)
+    assert precision_filter([lower]) == [lower]
 
 
 def test_maximum_keeps_low_score_single_token_person():

@@ -284,13 +284,16 @@ def ink_probe(gray: Image.Image) -> tuple[np.ndarray, float]:
     return ink & ~_straight_lines(ink, max(20, side // 40), side // 8, max(4, side // 150)), factor
 
 
+_WORD_SIDE_PAD = 0.4  # x word height; a signature beside a word still leaves its own region
+
+
 def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBoxF]:
     """Why: signatures, stamps, handwriting and pictures carry PII the OCR could not read; the
     engine must be told so it can fail closed (redact or refuse) instead of trusting the text.
     What: on a ~1200 px probe, ink = pixels clearly darker (< 0.65x) than their local
     background (closing over >= 31 px), so a photo's dark tabletop or a shadow is
     background, not ink; long straight rules/borders are dropped; padded word boxes are
-    removed; remaining strokes are merged (dilation) into regions in ``gray`` pixels.
+    removed (sideways by 0.4 x word height for glyph overhang); remaining strokes are merged (dilation) into regions in ``gray`` pixels.
     Test: text plus a scribble -> one box over the scribble; a form photographed on a dark
     table -> no page-sized region; text-only -> [].
     """
@@ -300,8 +303,11 @@ def ink_without_text(gray: Image.Image, text_boxes: Iterable[BBoxF]) -> list[BBo
     side = max(ink.shape)
     pad = 3
     for x0, y0, x1, y1 in text_boxes:
+        # glyphs overhang OCR word boxes sideways (rapidocr starts "C"/"M" ~0.25 x height inside
+        # the ink): pad by a share of the word height, so no first letter becomes "unread ink"
+        side_pad = pad + int(_WORD_SIDE_PAD * (y1 - y0) / factor)
         ink[max(0, int(y0 / factor) - pad): int(math.ceil(y1 / factor)) + pad,
-            max(0, int(x0 / factor) - pad): int(math.ceil(x1 / factor)) + pad] = False
+            max(0, int(x0 / factor) - side_pad): int(math.ceil(x1 / factor)) + side_pad] = False
     if not ink.any():
         return []
     merged = np.asarray(Image.fromarray((ink * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(7))) > 0

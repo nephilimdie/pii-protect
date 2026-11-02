@@ -2,7 +2,8 @@
 
 Why: the baseline's false positives on non-PII look-alikes came mostly from ML layers:
 privacy_filter ADDRESS on bare numbers (codes, law refs, amounts), ai4privacy IP_ADDRESS on
-amounts ("191.799"), and PERSON on headings/greetings ("PROCURA ALLE LITI", "Cordiali", "Lei").
+amounts ("191.799"), and PERSON on headings/greetings ("PROCURA ALLE LITI", "Cordiali", "Lei") and on capitalised payslip/
+contract vocabulary ("Contributi", "Canone", "Superminimo") at confident scores.
 What: drops ML-sourced (source != "regex") entities whose text cannot be that type. Deterministic
 spans are never touched. "maximum" keeps the score-free shape rules but skips the low-confidence
 single-token PERSON rule, trading precision for recall.

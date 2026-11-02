@@ -100,6 +100,19 @@ def test_ink_without_text_finds_scribble_only() -> None:
     assert ink_without_text(image, [(95, 95, 405, 145), (590, 680, 910, 770)]) == []
 
 
+def test_ink_ignores_glyph_overhang_beside_a_word_box() -> None:
+    # rapidocr word boxes on rounded chat glyphs start/end ~0.25 x line height inside the ink:
+    # the first letter's stroke must not become an "unread ink" box on every line
+    image = Image.new("L", (900, 400), 255)
+    draw = ImageDraw.Draw(image)
+    draw.arc((54, 180, 84, 215), 90, 270, fill=0, width=4)  # left curve of "C", outside the OCR box
+    for x in range(80, 140, 12):  # the rest of the word: thin strokes
+        draw.line([(x, 182), (x, 214)], fill=0, width=3)
+    draw.line([(300, 300), (380, 340), (460, 290), (540, 330)], fill=0, width=6)  # signature
+    regions = ink_without_text(image, [(64, 179, 139, 216)])
+    assert len(regions) == 1 and regions[0][0] >= 290, regions
+
+
 def photographed_form(marks: bool) -> Image.Image:
     """A blank form (dark table borders, grey rules) on a dark tabletop, tilted 1.5 deg; with
     ``marks`` a signature-like scribble and a stamp-like ring sit on the paper."""
