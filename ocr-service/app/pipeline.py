@@ -5,17 +5,19 @@ one flat 5xx error; no partial page list is ever returned.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from PIL import Image
 
 from app.config import Settings
+from app.detectors.marks import MARKS, MarkWord, find_marks
 from app.engines import Engine, RawWord, remaining
 from app.errors import ErrorCode, OcrError
 from app.imageops import PASSES, Transform, estimate_skew, ink_without_text, merge_boxes, rotate, to_gray
 from app.inputs import Document, PageImage
-from app.schemas import BBox, Line, OcrResponse, Page, Word
+from app.schemas import BBox, Line, OcrResponse, Page, VisualBox, Word
 
 ENGINES = ("tesseract", "rapidocr", "auto")
 MAX_REGION_SHARE = 0.25  # merged review regions never exceed a quarter of the page (no page-wide unions)
@@ -91,7 +93,7 @@ class Pipeline:
             best = candidate if candidate.score > best.score else best
         return best
 
-    def ocr_page(self, page: PageImage, engine: str, lang: str, deadline: float) -> Page:
+    def ocr_page(self, page: PageImage, engine: str, lang: str, deadline: float, marks: tuple[str, ...] = ()) -> Page:
         """Why/What: one page end-to-end; all boxes are reported in the page frame the caller
         sees (EXIF-upright, original resolution), as axis-aligned envelopes that over-cover.
         Test: a page rotated by 3 degrees yields word boxes that contain the unrotated words.
@@ -111,9 +113,17 @@ class Pipeline:
         gap, cap = max(1, round(page.dpi / 25)), page.width * page.height * MAX_REGION_SHARE  # ~1 mm
         low_conf = merge_boxes((w.bbox for w in words if w.conf < self._s.low_conf_threshold), gap, cap)
         ink = merge_boxes((transform.box(b) for b in ink_without_text(work, work_boxes)), 0, cap)  # type: ignore[arg-type]
+        found = []
+        if marks:  # same decoded page and the same OCR words: no second decode or OCR pass
+            remaining(deadline)
+            mark_words = [MarkWord(w.text, w.conf, tuple(c / page.scale for c in w.bbox)) for w in words]  # type: ignore[misc]
+            for hit in find_marks(page.image, gray, mark_words, page.dpi, self._s.low_conf_threshold, marks):
+                box = (max(0, int(hit.bbox[0] * page.scale)), max(0, int(hit.bbox[1] * page.scale)),
+                       min(page.width, math.ceil(hit.bbox[2] * page.scale)), min(page.height, math.ceil(hit.bbox[3] * page.scale)))
+                found.append(VisualBox(type=hit.type, bbox=box, score=round(hit.score, 3), needs_review=hit.needs_review))  # type: ignore[arg-type]
         return Page(index=page.index, width=page.width, height=page.height, dpi=page.dpi, engine=best.engine,
                     words=words, lines=build_lines(words), low_conf_regions=low_conf, ink_without_text_regions=ink,
-                    skew=round((transform.angle + 45) % 90 - 45, 2))
+                    skew=round((transform.angle + 45) % 90 - 45, 2), marks=found)
 
     def _upright(self, gray: Image.Image, page: PageImage, engine: str, lang: str,
                  deadline: float) -> tuple[Attempt, Image.Image, Transform] | None:
@@ -133,9 +143,20 @@ class Pipeline:
         work, transform = rotate(gray, angle, Transform.identity(page.width, page.height, page.scale))
         return self._best(work, engine, lang, page.dpi, deadline), work, transform
 
-    def run(self, document: Document, engine: str, lang: str, deadline: float) -> OcrResponse:
+    def run(self, document: Document, engine: str, lang: str, deadline: float, marks: tuple[str, ...] = ()) -> OcrResponse:
         """Why/What: OCR all pages in order, one bitmap alive at a time. Test: see class."""
-        return OcrResponse(pages=[self.ocr_page(page, engine, lang, deadline) for page in document.pages()])
+        return OcrResponse(pages=[self.ocr_page(page, engine, lang, deadline, marks) for page in document.pages()])
+
+
+def parse_marks(raw: str | None) -> tuple[str, ...]:
+    """Why: the ``marks`` field is untrusted. What: comma list -> ordered subset of MARKS
+    (empty/absent -> none: older callers get the unchanged response). Test: "stamp,signature"
+    -> ("signature", "stamp"); "logo" -> 422 INVALID_PARAMETER.
+    """
+    wanted = {part.strip() for part in (raw or "").split(",") if part.strip()}
+    if not wanted <= set(MARKS):
+        raise OcrError(422, ErrorCode.INVALID_PARAMETER, f"marks must be a comma list of {list(MARKS)}.")
+    return tuple(name for name in MARKS if name in wanted)
 
 
 def build_lines(words: list[Word]) -> list[Line]:

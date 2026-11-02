@@ -27,6 +27,7 @@ from app.documents.admission import AdmissionSlot, DocumentAdmission
 from app.documents.chunking import detection_executor
 from app.documents.models import IMAGE_FORMATS, MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
 from app.documents.ocr_client import get_ocr_client
+from app.documents.ocr_layout import FaceStyle
 from app.documents.service import (
     load_document,
     parse_user_entities,
@@ -62,6 +63,10 @@ _FORM_FIELDS = {
                          "description": "balanced (default) or maximum: lower thresholds, recall-first rules."},
     "entities": {"type": "string", "description": "redact/pseudonymize only: JSON array of {start,end,type} "
                                                    "from /preview, edited by the user. Replaces detection."},
+    "face_style": {"type": "string", "enum": ["black", "pixelate", "blur"], "default": "black",
+                   "description": "redact only, images and scanned pages: how faces are hidden. black (default) is "
+                                  "the safest; pixelate/blur keep at most 8x8 noisy, quantized colour cells per face "
+                                  "(irreversible). Everything else is always painted black."},
 }
 _OPENAPI_FORM = {"requestBody": {"required": True, "content": {"multipart/form-data": {
     "schema": {"type": "object", "required": ["file"], "properties": _FORM_FIELDS}}}}}
@@ -157,7 +162,8 @@ class _StreamAborted(Exception):
     """Content-free error raised to the ASGI server so it drops the connection mid-body."""
 
 
-def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozenset[int] = frozenset()) -> StreamingResponse:
+def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozenset[int] = frozenset(),
+                face_style: str = FaceStyle.BLACK) -> StreamingResponse:
     """Why: a 200-page redaction must not be assembled in memory, yet a failure after the headers
     are sent can no longer change the status code.
     What: renders and sends one page at a time; on any failure the body stops before the PDF
@@ -166,7 +172,7 @@ def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozens
     Test: make page 2 of 3 fail; the client sees a transport error and the received bytes do
     not end with `%%EOF`.
     """
-    pages = doc.render_stream(edits, deadline, keep_review)
+    pages = doc.render_stream(edits, deadline, keep_review, face_style)
     step_lock = threading.Lock()  # close() must never race a next() still running in a thread
 
     def step():
@@ -230,6 +236,7 @@ async def _record_usage(usage: UsageService, api_key: ApiKey, tenant_id: str | N
 async def _process(op: str, request: Request, fields: dict[str, str], payload: bytes, api_key: ApiKey,
                    db: AsyncSession, anonymizer: PiiAnonymizer, tenant_id: str | None,
                    usage: UsageService, state: dict, slot: AdmissionSlot) -> Response:
+    face_style = parse_face_style(fields.get("face_style"))  # before any work: a bad value costs nothing
     doc = await asyncio.to_thread(load_document, payload, _limits())
     state["format"], state["pages"] = doc.format, doc.pages
     if op == Operation.PSEUDONYMIZE:
@@ -259,9 +266,18 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     if op == Operation.PREVIEW:
         return document_headers(JSONResponse(preview_payload(doc, joined, entities, policy)), doc, entities)
     response = await render_document(op, doc, joined, entities, policy, state["deadline"], slot.release,
-                                     state["stream_done"])
+                                     state["stream_done"], face_style=face_style)
     state["streaming"] = isinstance(response, StreamingResponse)
     return response
+
+
+def parse_face_style(raw: str | None) -> str:
+    """Why: the field is untrusted and decides how faces are hidden. What: black (default),
+    pixelate or blur; anything else is a 422. Test: None -> "black"; "sepia" -> 422."""
+    try:
+        return FaceStyle(raw or FaceStyle.BLACK).value
+    except ValueError:
+        raise DocumentError(422, "INVALID_FACE_STYLE", "`face_style` must be black, pixelate or blur.") from None
 
 
 def detection_window(deadline: float) -> tuple[int, int, float]:
@@ -297,17 +313,21 @@ def preview_payload(doc, joined: JoinedText, entities: list, policy: dict) -> di
 
 
 async def render_document(op: str, doc, joined: JoinedText, entities: list, policy: dict, deadline: float,
-                          release, done, keep_review: frozenset[int] = frozenset()) -> Response:
+                          release, done, keep_review: frozenset[int] = frozenset(),
+                          face_style: str = FaceStyle.BLACK) -> Response:
     """Why: sync redact/pseudonymize and job render must produce byte-identical files.
     What: streamed PDF redaction (`release`/`done` run when the body ends) or an in-memory
     DOCX/TXT/image redaction (images keep the `keep_review` regions visible) / pseudonymization
-    ZIP, with the X-Pii-* headers.
+    ZIP, with the X-Pii-* headers. `face_style` (black|pixelate|blur) applies to faces on images
+    and scanned PDF pages.
     Test: covered by the redact/pseudonymize endpoint tests and the job render tests.
     """
     if op == Operation.REDACT and doc.format == DocumentFormat.PDF:
-        response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done, keep_review)
+        response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done, keep_review,
+                                         face_style)
     elif op == Operation.REDACT:
-        review = (keep_review,) if doc.format in IMAGE_FORMATS else ()  # images: needs_review the user kept
+        # images: needs_review the user kept + how faces are hidden
+        review = (keep_review, face_style) if doc.format in IMAGE_FORMATS else ()
         content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), *review)
         response = Response(content, media_type=MEDIA_TYPES[doc.format],
                             headers={"Content-Disposition": f'attachment; filename="redacted.{doc.format}"'})

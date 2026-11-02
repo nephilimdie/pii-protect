@@ -105,6 +105,16 @@ components:
                   preview entities after the user removed/added some). When present, detection
                   is skipped and exactly these spans are processed. Spans must lie inside the
                   text and must not overlap; `type` matches `^[A-Z][A-Z0-9_]*$`. Ignored by preview.
+              face_style:
+                type: string
+                enum: [black, pixelate, blur]
+                default: black
+                description: |
+                  redact only, images and scanned PDF pages: how FACE boxes are hidden. `black` (default)
+                  is the safest. `pixelate`/`blur` are irreversible: each face keeps at most 8x8 colour
+                  cells, each shifted by fresh random noise and quantized (blur also blurs first), so no
+                  identity survives. Every other box (text, codes, plates, signatures, stamps,
+                  needs_review) is always solid black. Invalid -> 422 INVALID_FACE_STYLE before any work.
 
   responses:
     DocumentError:
@@ -1437,7 +1447,9 @@ paths:
                     type: array
                     description: |
                       Scanned pages and images only, with `PII_VISUAL_PII_ENABLED=true` (else empty): faces,
-                      QR codes/barcodes and licence plates found as pixels (ocr-service `/v1/visual-pii`),
+                      QR codes/barcodes and licence plates found as pixels (ocr-service `/v1/visual-pii`), and
+                      handwritten signatures and stamps (ocr-service `/v1/ocr` `marks`; an unread-ink
+                      `needs_review` region wholly inside one is not listed separately),
                       boxes as fractions of the page like `needs_review`. They are **always redacted**
                       (never in `review_keep`); `needs_review: true` flags a weak or small hit (low score, a face
                       under 32 px or in profile, a motorcycle/pre-1994 plate or a low-confidence read) worth a human look. Their
@@ -1450,7 +1462,7 @@ paths:
                           required: [id, type, score, needs_review]
                           properties:
                             id: {type: integer}
-                            type: {type: string, enum: [FACE, BARCODE, LICENSE_PLATE]}
+                            type: {type: string, enum: [FACE, BARCODE, LICENSE_PLATE, SIGNATURE, STAMP]}
                             score: {type: number}
                             needs_review: {type: boolean}
                   policy: {$ref: "#/components/schemas/PolicyMetadata"}
@@ -1744,6 +1756,7 @@ paths:
                 mode: {type: string, enum: [redact, pseudonymize]}
                 exclude: {type: array, items: {type: integer}}
                 review_keep: {type: array, items: {type: integer}, description: "`needs_review` ids to leave un-redacted (default: all redacted)"}
+                face_style: {type: string, enum: [black, pixelate, blur], default: black, description: "How faces are hidden on images/scanned pages (see DocumentUpload `face_style`); black is the safest."}
                 include_terms:
                   type: array
                   maxItems: 500

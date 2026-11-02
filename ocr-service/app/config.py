@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     osd_min_confidence: float = Field(default=2.0, ge=0, le=100)
 
     face_model_path: Path = Path("/opt/ocr-models/yunet/face_detection_yunet_2023mar.onnx")
-    face_threshold: float = Field(default=0.6, ge=0.05, le=1)  # tuned for recall; doubtful ones are reviewed
+    face_threshold: float = Field(default=0.6, ge=0.05, le=1)  # 0.5 added FPs on paintings, no recall; < face_review_score is reviewed
     face_review_score: float = Field(default=0.8, ge=0, le=1)
     face_review_side: int = Field(default=32, ge=0, le=1000)  # faces smaller than this (px) are reviewed
     plate_review_conf: float = Field(default=80.0, ge=0, le=100)

@@ -18,7 +18,7 @@ from PIL import Image, ImageCms, ImageOps
 from app.documents.chunking import DetectionCancelled
 from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 from app.documents.ocr_client import OcrClient
-from app.documents.ocr_layout import ScannedPage, ScannedPages, paint
+from app.documents.ocr_layout import FaceStyle, ScannedPage, ScannedPages, paint
 
 # PIL logs every parsed EXIF tag (GPS included) at DEBUG: never let that reach the engine's logs.
 logging.getLogger("PIL").setLevel(max(logging.getLogger("PIL").level, logging.INFO))
@@ -135,11 +135,11 @@ class ImageDocument(ScannedPages):
 
     def run_ocr(self, client: OcrClient, deadline: float, concurrency: int = 1,
                 progress=None, should_stop=None) -> None:
-        """Why: the image has no text until OCR reads it. What: OCRs the clean frame (greyscale,
-        downscaled to the per-page pixel budget; boxes map back by ratio) with PII_OCR_IMAGE_ENGINE
+        """Why: the image has no text until OCR reads it. What: OCRs the clean frame (colour, so
+        stamps can be told by hue; downscaled to the per-page pixel budget; boxes map back by ratio) with PII_OCR_IMAGE_ENGINE
         (default rapidocr: `auto` keeps Tesseract on noisy/tilted photos whenever its confidence looks
-        fine, while it misreads IBANs and e-mails) and fills the segment; the colour frame of the
-        same size goes to visual PII (faces, codes, plates) when enabled.
+        fine, while it misreads IBANs and e-mails) and fills the segment; the same frame goes to visual
+        PII (faces, codes, plates; signatures/stamps come back with the OCR) when enabled.
         Raises 422 OCR_NO_TEXT_FOUND when neither text nor visual PII was found; any OCR failure propagates (fail closed).
         Test: a fake OcrClient returning "Mario Rossi" -> segments == ["Mario Rossi"].
         """
@@ -151,8 +151,9 @@ class ImageDocument(ScannedPages):
             color = color.resize((max(1, int(color.width * factor)), max(1, int(color.height * factor))),
                                  Image.Resampling.LANCZOS)
         dpi = min(max(round(self._limits.ocr_dpi * factor), _OCR_DPI_RANGE[0]), _OCR_DPI_RANGE[1])
-        result = client.recognize(color.convert("L"), dpi, deadline, self._limits.ocr_image_engine)
-        page = ScannedPage.from_ocr(result, client.visual(color, dpi, deadline))  # same frame: boxes align
+        visual = client.visual(color, dpi, deadline)  # first: recognize() reuses the PNG, then drops it
+        result = client.recognize(color, dpi, deadline, self._limits.ocr_image_engine)  # colour: stamp hues
+        page = ScannedPage.from_ocr(result, visual)  # same frame: boxes align
         self.scanned[0], self.segments[0], self.ocr_pending = page, page.text, []
         self.warnings = sorted({*self.warnings, "image_ocr_applied"})
         if progress:
@@ -160,11 +161,12 @@ class ImageDocument(ScannedPages):
         if not page.text.strip() and not page.visual:
             raise DocumentError(422, "OCR_NO_TEXT_FOUND", "No text could be recognized in this image.")
 
-    def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset()) -> bytes:
+    def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset(),
+               face_style: str = FaceStyle.BLACK) -> bytes:
         if self.ocr_pending:
             raise RuntimeError("image was not OCR'd")  # never return an unreviewed image
         image = self._decode()
-        paint(image, self.scanned[0], edits, self.review_by_page(keep_review).get(0, []))
+        paint(image, self.scanned[0], edits, self.review_by_page(keep_review).get(0, []), face_style)
         buffer = io.BytesIO()
         image.save(buffer, format=_PIL_FORMAT[self.format], **_ENCODE[self.format])
         return buffer.getvalue()

@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import logging
 import math
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -39,6 +40,16 @@ class OcrWord:
 
 
 @dataclass(frozen=True)
+class VisualHit:
+    """A face, QR/barcode or plate found as pixels; ``bbox`` in pixels of the image that was sent."""
+
+    type: str  # FACE | BARCODE (QR codes included) | LICENSE_PLATE | SIGNATURE | STAMP
+    bbox: BBox
+    score: float
+    needs_review: bool
+
+
+@dataclass(frozen=True)
 class OcrResult:
     """One OCR'd page; boxes are pixels of the image that was sent (top-left origin)."""
 
@@ -49,19 +60,12 @@ class OcrResult:
     low_conf_regions: list[BBox]
     ink_regions: list[BBox]
     skew: float = 0.0  # degrees the service straightened the text by (pads boxes on tilted photos)
+    marks: tuple[VisualHit, ...] = ()  # SIGNATURE / STAMP found on the page (always painted)
 
 
-VISUAL_TYPES = {"FACE": "FACE", "QR_CODE": "BARCODE", "BARCODE": "BARCODE", "LICENSE_PLATE": "LICENSE_PLATE"}
-
-
-@dataclass(frozen=True)
-class VisualHit:
-    """A face, QR/barcode or plate found as pixels; ``bbox`` in pixels of the image that was sent."""
-
-    type: str  # FACE | BARCODE (QR codes included) | LICENSE_PLATE
-    bbox: BBox
-    score: float
-    needs_review: bool
+VISUAL_TYPES = {"FACE": "FACE", "QR_CODE": "BARCODE", "BARCODE": "BARCODE", "LICENSE_PLATE": "LICENSE_PLATE",
+                "SIGNATURE": "SIGNATURE", "STAMP": "STAMP"}
+MARKS = "signature,stamp"
 
 
 def _unavailable(code: str = "OCR_UNAVAILABLE", retry_after: int | None = None) -> DocumentError:
@@ -101,7 +105,7 @@ def parse_result(body: object, width: int, height: int) -> OcrResult:
     skew = page.get("skew", 0.0)
     if not isinstance(skew, (int, float)) or not -45 <= skew <= 45:
         raise ValueError("skew")
-    return OcrResult(width, height, words, lines, *regions, float(skew))
+    return OcrResult(width, height, words, lines, *regions, float(skew), tuple(_hits(page.get("marks", []), width, height)))
 
 
 def parse_visual(body: object, width: int, height: int) -> list[VisualHit]:
@@ -111,8 +115,14 @@ def parse_visual(body: object, width: int, height: int) -> list[VisualHit]:
     """
     if not isinstance(body, dict) or body.get("width") != width or body.get("height") != height:
         raise ValueError("size")
+    return _hits(body.get("boxes", []), width, height)
+
+
+def _hits(raws: object, width: int, height: int) -> list[VisualHit]:
+    if not isinstance(raws, list):
+        raise ValueError("visual boxes")
     hits = []
-    for raw in body.get("boxes", []):
+    for raw in raws:
         if not isinstance(raw, dict) or raw.get("type") not in VISUAL_TYPES:
             raise ValueError("visual box")
         hits.append(VisualHit(VISUAL_TYPES[raw["type"]], _bbox(raw.get("bbox"), width, height),
@@ -125,6 +135,8 @@ class OcrClient:
     workers are full; the engine must wait politely, bounded by the document deadline.
     What: ``recognize(image, dpi, deadline, engine)`` posts one PNG page with X-Internal-Key
     (``engine`` overrides the client default for this page, e.g. rapidocr for photos);
+    (with ``marks=signature,stamp`` whenever visual PII is on: SIGNATURE/STAMP come back on the
+    OCR page; send colour pages so stamps can be told by hue; one PNG encode serves both calls);
     ``visual(image, dpi, deadline)`` finds faces/codes/plates (``[]`` when ``visual_detectors``
     is empty, i.e. PII_VISUAL_PII_ENABLED is off; ``scan=True`` skips plates on scanned PDF pages:
     their plate text is in the OCR text already, and the plate detector re-OCRs the whole page,
@@ -144,11 +156,17 @@ class OcrClient:
         self._fields = {"lang": lang, "engine": engine}
         self.visual_detectors = visual_detectors
         self._sleep, self._clock = sleep, clock
+        self._local = threading.local()
 
     def recognize(self, image: Image.Image, dpi: int, deadline: float, engine: str | None = None) -> OcrResult:
-        data = {**self._fields, "dpi": str(dpi), **({"engine": engine} if engine else {})}
-        return self._post("/v1/ocr", image, dpi, data, deadline,
-                          lambda body: parse_result(body, image.width, image.height))
+        # signatures/stamps ride on the OCR call (same decode + words) whenever visual PII is on
+        data = {**self._fields, "dpi": str(dpi), **({"engine": engine} if engine else {}),
+                **({"marks": MARKS} if self.visual_detectors else {})}
+        try:
+            return self._post("/v1/ocr", image, dpi, data, deadline,
+                              lambda body: parse_result(body, image.width, image.height))
+        finally:
+            self._local.last = None  # never keep a page (PII) alive in a pooled worker thread
 
     def visual(self, image: Image.Image, dpi: int, deadline: float, scan: bool = False) -> list[VisualHit]:
         wanted = ",".join(d for d in self.visual_detectors.split(",") if d and not (scan and d == "plate"))
@@ -157,11 +175,20 @@ class OcrClient:
         return self._post("/v1/visual-pii", image, dpi, {"detectors": wanted}, deadline,
                           lambda body: parse_visual(body, image.width, image.height))
 
-    def _post(self, path: str, image: Image.Image, dpi: int, data: dict[str, str], deadline: float,
-              parse: Callable[[object], T]) -> T:
+    def _png(self, image: Image.Image, dpi: int) -> bytes:
+        """One PNG encode per page: visual() then recognize() of the same image (same thread) share it;
+        recognize() drops it."""
+        last = getattr(self._local, "last", None)
+        if last is not None and last[0] is image and last[1] == dpi:
+            return last[2]
         buffer = io.BytesIO()
         image.save(buffer, format="PNG", compress_level=_PNG_LEVEL, dpi=(dpi, dpi))
-        files = {"file": ("page.png", buffer.getvalue(), "image/png")}
+        self._local.last = (image, dpi, buffer.getvalue())
+        return self._local.last[2]
+
+    def _post(self, path: str, image: Image.Image, dpi: int, data: dict[str, str], deadline: float,
+              parse: Callable[[object], T]) -> T:
+        files = {"file": ("page.png", self._png(image, dpi), "image/png")}
         for attempt in range(self._retries + 1):
             remaining = deadline - self._clock()
             if remaining <= 0:

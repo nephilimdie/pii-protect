@@ -342,7 +342,8 @@ def test_scanned_job_lifecycle_with_review_keep(ocr_jobs):
     assert preview["ocr_pages"] == [2, 3] and len(preview["needs_review"]) == 4
     bad = _render(ocr_jobs, job_id, review_keep=[4])
     assert bad.status_code == 422 and bad.json()["error"] == "INVALID_RENDER_REQUEST"
-    rendered = _render(ocr_jobs, job_id, review_keep=[1])  # the user reviewed page 2's signature
+    assert _render(ocr_jobs, job_id, face_style="sepia").status_code == 422
+    rendered = _render(ocr_jobs, job_id, review_keep=[1], face_style="blur")  # the user reviewed page 2's signature
     assert rendered.status_code == 200, rendered.text
     pages = _pages(rendered.content)
     assert len(pages) == 3 and all(chars == 0 for _, chars, _ in pages)

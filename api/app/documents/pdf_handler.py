@@ -18,7 +18,7 @@ from PIL import Image, ImageChops
 from app.documents.chunking import DetectionCancelled
 from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 from app.documents.ocr_client import OcrClient
-from app.documents.ocr_layout import ScannedPage, ScannedPages, paint
+from app.documents.ocr_layout import FaceStyle, ScannedPage, ScannedPages, paint
 from app.documents.pdf_writer import ImagePdfWriter, PageImage
 
 # PDFium is not thread-safe: every call into it goes through this lock. It is taken
@@ -193,7 +193,7 @@ class PdfDocument(ScannedPages):
             if time.monotonic() > deadline:
                 raise DocumentError(504, "OCR_TIMEOUT", "OCR of the scanned pages exceeded the time limit.")
             image, dpi = self._ocr_image(source, index)
-            visual = client.visual(image, dpi, deadline, scan=True)
+            visual = client.visual(image, dpi, deadline, scan=True)  # first: recognize() reuses the PNG
             return index, ScannedPage.from_ocr(client.recognize(image, dpi, deadline), visual)
 
         try:
@@ -229,20 +229,22 @@ class PdfDocument(ScannedPages):
         with PDFIUM_LOCK:
             page = source[index]
             try:
-                bitmap = page.render(scale=scale, grayscale=True, may_draw_forms=False, draw_annots=False)
+                # colour: stamps are told by hue (red/blue/violet); the OCR service greys it itself
+                bitmap = page.render(scale=scale, may_draw_forms=False, draw_annots=False, rev_byteorder=True)
                 try:
-                    image = bitmap.to_pil().copy()
+                    image = bitmap.to_pil().convert("RGB")
                 finally:
                     bitmap.close()
             finally:
                 page.close()
         return image, dpi
 
-    def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset()) -> bytes:
-        return b"".join(self.render_stream(edits, None, keep_review))
+    def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset(),
+               face_style: str = FaceStyle.BLACK) -> bytes:
+        return b"".join(self.render_stream(edits, None, keep_review, face_style))
 
     def render_stream(self, edits: list[SegmentEdit], deadline: float | None = None,
-                      keep_review: frozenset[int] = frozenset()) -> Iterator[bytes]:
+                      keep_review: frozenset[int] = frozenset(), face_style: str = FaceStyle.BLACK) -> Iterator[bytes]:
         """Yields the output PDF in pieces (header, one chunk per page, trailer ending in %%EOF).
         Any failure raises before the trailer, so an incomplete body never ends in %%EOF.
         `keep_review`: ids of review_boxes() the user checked and wants left visible."""
@@ -261,7 +263,8 @@ class PdfDocument(ScannedPages):
                 if deadline is not None and time.monotonic() > deadline:
                     raise PdfRenderTimeout()
                 if index in self.scanned:
-                    image = self._render_scanned(source, index, plan, by_page.get(index, []), review.get(index, []))
+                    image = self._render_scanned(source, index, plan, by_page.get(index, []), review.get(index, []),
+                                                 face_style)
                 else:
                     image = self._render_page(source, index, plan, by_page.get(index, []))
                 yield writer.add_page(image, plan.frame, plan.rotation)
@@ -295,7 +298,7 @@ class PdfDocument(ScannedPages):
                 bitmap.close()
 
     def _render_scanned(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit],
-                        review: list) -> PageImage:
+                        review: list, face_style: str = "black") -> PageImage:
         """Scanned page: render as displayed (the frame OCR saw), paint entity and review boxes,
         rotate back into the /MediaBox frame. Only pixels leave: no OCR text is written."""
         with PDFIUM_LOCK:
@@ -308,7 +311,7 @@ class PdfDocument(ScannedPages):
                     bitmap.close()
             finally:
                 page.close()
-        paint(image, self.scanned[index], edits, review)
+        paint(image, self.scanned[index], edits, review, face_style)
         if plan.rotation in _UNROTATE:
             image = image.transpose(_UNROTATE[plan.rotation])
         return _encode(image)
