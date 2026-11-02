@@ -209,7 +209,7 @@ def test_screenshot_png_redact_end_to_end(img):
     assert out.format == "PNG"
     _assert_redacted(out, SCREENSHOT)
     _assert_no_metadata(r.content)
-    assert img.fake.sizes == [((1280, 720), "L")]  # native resolution, greyscale
+    assert img.fake.sizes == [((1280, 720), "RGB")]  # native resolution, colour (stamp hues)
     assert img.fake.engines == ["rapidocr"]  # PII_OCR_IMAGE_ENGINE default (scanned PDFs keep `auto`)
 
 
@@ -224,7 +224,7 @@ def test_photo_jpeg_exif_orientation_and_gps_removed(img):
     assert out.format == "JPEG" and out.size == PHOTO.size  # displayed upright: stored size was swapped
     _assert_redacted(out, PHOTO, dark=30)
     _assert_no_metadata(r.content)
-    assert img.fake.sizes == [(PHOTO.size, "L")]  # OCR saw the upright frame
+    assert img.fake.sizes == [(PHOTO.size, "RGB")]  # OCR saw the upright frame (colour)
 
 
 def test_preview_payload_has_scanned_pdf_shape(img):

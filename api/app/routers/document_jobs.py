@@ -86,6 +86,7 @@ class RenderRequest(BaseModel):
     include_terms: list[IncludeTerm] = Field(default_factory=list, max_length=500)
     entities: list[UserEntity] | None = Field(default=None, max_length=MAX_USER_ENTITIES)
     review_keep: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)  # needs_review ids left visible
+    face_style: Literal["black", "pixelate", "blur"] = "black"  # faces on images/scans; black is the safest
 
 
 async def _finish_analysis(api_key: ApiKey, tenant_id: str | None, job_id: str, policy: dict, chars: int,
@@ -291,7 +292,8 @@ async def render_document_job(
     try:
         response = await docs.render_document(body.mode, doc, joined, entities, policy,
                                               time.monotonic() + settings.document_timeout_seconds,
-                                              lambda: store.delete(job), delivered, frozenset(body.review_keep))
+                                              lambda: store.delete(job), delivered, frozenset(body.review_keep),
+                                              body.face_style)
     except Exception as exc:
         store.delete(job)
         logger.warning("document job render failed closed: %s", type(exc).__name__)

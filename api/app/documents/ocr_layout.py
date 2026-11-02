@@ -5,8 +5,10 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass
+from enum import StrEnum
 
-from PIL import Image, ImageDraw
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter
 
 from app.documents.models import SegmentEdit
 from app.documents.ocr_client import BBox, OcrResult, VisualHit
@@ -17,6 +19,21 @@ REVIEW_REASONS = ("low_confidence", "unrecognized_ink")
 TILT_MIN_DEG = 0.5  # below this a page counts as straight
 TILT_ERROR_DEG = 1.0  # assumed error of the service's skew estimate
 TILT_END_PAD = 0.3  # of the line height, left/right: a first/last glyph clipped by a tilted word box
+STYLE_CELLS = 8  # pixelate/blur keep at most 8 x 8 colour cells of a face (no identity survives that)
+STYLE_NOISE = 24  # +/- per cell and channel, fresh OS randomness on every render
+STYLE_LEVELS = 16  # cell colours are then quantized to multiples of 16
+
+
+class FaceStyle(StrEnum):
+    """How faces are hidden. BLACK (default) is the safest: nothing of the face survives."""
+
+    BLACK = "black"
+    PIXELATE = "pixelate"
+    BLUR = "blur"
+
+
+def _inside(inner: BBox, outer: BBox) -> bool:
+    return outer[0] <= inner[0] and outer[1] <= inner[1] and inner[2] <= outer[2] and inner[3] <= outer[3]
 
 
 @dataclass(frozen=True)
@@ -32,7 +49,8 @@ class ScannedPage:
     """Why: detection works on text, redaction on pixels; both must agree character by character.
     What: page text built from OCR lines (words joined by spaces, lines by "\\n", blocks by a
     blank line) with each word's char span and box, plus the fail-closed review regions
-    (low-confidence and ink-without-text) and visual hits (faces, codes, plates), all in the
+    (low-confidence and ink-without-text, minus those wholly inside a signature/stamp) and
+    visual hits (faces, codes, plates, signatures, stamps), all in the
     pixels of the OCR'd image, plus the page ``skew`` (degrees) used to pad tilted boxes.
     Test: words "Mario" "Rossi" on one line -> text "Mario Rossi"; boxes(0, 11) is one box
     spanning both words; boxes(6, 8) is the box of "Rossi" only.
@@ -72,9 +90,12 @@ class ScannedPage:
                 parts.append(token)
                 cursor += len(token)
             block = words[-1].block_id
-        review = tuple([(REVIEW_REASONS[0], box) for box in result.low_conf_regions]
-                       + [(REVIEW_REASONS[1], box) for box in result.ink_regions])
-        return cls(result.width, result.height, "".join(parts), tuple(spans), review, tuple(visual or ()), result.skew)
+        # a review region wholly inside a signature/stamp box is painted by that mark anyway
+        marks = [hit.bbox for hit in result.marks]
+        review = tuple((reason, box) for reason, boxes in zip(REVIEW_REASONS, (result.low_conf_regions, result.ink_regions))
+                       for box in boxes if not any(_inside(box, mark) for mark in marks))
+        return cls(result.width, result.height, "".join(parts), tuple(spans), review,
+                   (*(visual or ()), *result.marks), result.skew)
 
     def boxes(self, start: int, end: int) -> list[BBox]:
         """One box per line segment covering every word that overlaps [start, end) (whole words)."""
@@ -141,7 +162,7 @@ class ScannedPages:
         return [{"id": n, **box} for n, box in enumerate(boxes)]
 
     def visual_entities(self) -> list[dict]:
-        """Faces, codes and plates (always painted; ``needs_review`` = worth a human look)."""
+        """Faces, codes, plates, signatures, stamps (always painted; ``needs_review`` = worth a human look)."""
         out = []
         for index in sorted(self.scanned):
             page = self.scanned[index]
@@ -163,17 +184,55 @@ class ScannedPages:
         return out
 
 
-def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], review: list[BBox]) -> None:
+def obscure(image: Image.Image, box: BBox, style: str) -> None:
+    """Why: some users want a face to read as "a person" instead of a black box, but a mosaic
+    or blur must never be reversible (deblurring and super-resolution recover small mosaics).
+    What: replaces the box with at most STYLE_CELLS x STYLE_CELLS cell colours (box average;
+    BLUR first blurs with a radius of 1/4 of the box), each shifted by +/-STYLE_NOISE of fresh
+    OS randomness and quantized to STYLE_LEVELS, then enlarged (PIXELATE: hard blocks; BLUR:
+    smooth). At most 64 noisy, quantized colours remain of any face. Mutates ``image``.
+    Test: test_documents_visual.py: a pixelated face has <= 64 colours and nothing finer than
+    its cell grid; a blurred one has almost no edge energy; two renders differ (fresh noise).
+    """
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    region = image.crop(box)
+    if style == FaceStyle.BLUR:
+        region = region.filter(ImageFilter.GaussianBlur(max(w, h) / 4))
+    longest = max(w, h)
+    cells = (max(1, round(STYLE_CELLS * w / longest)), max(1, round(STYLE_CELLS * h / longest)))
+    grid = np.asarray(region.resize(cells, Image.Resampling.BOX), dtype=np.int16)
+    grid = grid + np.random.default_rng().integers(-STYLE_NOISE, STYLE_NOISE + 1, grid.shape)
+    grid = (np.clip(grid, 0, 255) // STYLE_LEVELS * STYLE_LEVELS + STYLE_LEVELS // 2).astype(np.uint8)
+    small = Image.fromarray(grid, "RGB")
+    if style == FaceStyle.PIXELATE:
+        out = small.resize((w, h), Image.Resampling.NEAREST)
+    else:
+        out = small.resize((w, h), Image.Resampling.BILINEAR).filter(ImageFilter.GaussianBlur(longest / STYLE_CELLS / 2))
+    image.paste(out, (x0, y0))
+
+
+def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], review: list[BBox],
+          face_style: str = FaceStyle.BLACK) -> None:
     """Why: the only thing that hides PII in a scan is opaque pixels over the OCR boxes.
     What: paints solid black over every edited span's line boxes, every review region and every
-    visual hit (faces, codes, plates: never optional), scaled from the OCR'd image to ``image``
-    and padded (to_device, tilt-aware for lines). Mutates ``image`` (RGB).
+    visual hit (faces, codes, plates, signatures, stamps: never optional), scaled from the
+    OCR'd image to ``image`` and padded (to_device, tilt-aware for lines). With ``face_style``
+    pixelate/blur, FACE boxes are obscured irreversibly instead (see obscure); anything black
+    that overlaps a face stays black on top. Mutates ``image`` (RGB).
     Test: an edit over "Mario Rossi" -> mean pixel value in the word box < 20.
     """
     fx, fy = image.width / page.width, image.height / page.height
     draw = ImageDraw.Draw(image)
+    styled = face_style != FaceStyle.BLACK
     boxes = [(box, True) for edit in edits for box in page.boxes(edit.start, edit.end)]
-    boxes += [(box, False) for box in [*review, *(hit.bbox for hit in page.visual)]]
+    boxes += [(box, False) for box in [*review, *(hit.bbox for hit in page.visual if not (styled and hit.type == "FACE"))]]
+    if styled:
+        for hit in page.visual:
+            if hit.type == "FACE":
+                x0, y0, x1, y1 = to_device(hit.bbox, fx, fy, image.width, image.height, False)
+                if x1 > x0 and y1 > y0:
+                    obscure(image, (x0, y0, x1, y1), face_style)
     for box, line in boxes:
         x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line, page.skew)
         if x1 > x0 and y1 > y0:

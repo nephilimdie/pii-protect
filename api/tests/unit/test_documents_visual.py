@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -36,10 +37,20 @@ class FakeVisual:
 
     def __init__(self, ocr, boxes: list[tuple[str, tuple[int, int, int, int], bool]], frame: tuple[int, int]) -> None:
         self.ocr, self.boxes, self.frame, self.calls, self.fail, self.modes = ocr, boxes, frame, [], None, []
+        self.marks: list[tuple[str, tuple[int, int, int, int], bool]] = []
+        self.mark_fields: list[str | None] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         if request.url.path != "/v1/visual-pii":
-            return self.ocr(request)
+            response = self.ocr(request)
+            field = re.search(rb'name="marks"\r\n\r\n([\w,]+)', request.content)
+            self.mark_fields.append(field.group(1).decode() if field else None)
+            body = response.json()
+            page = body["pages"][0]
+            f = page["width"] / self.frame[0]
+            page["marks"] = [{"type": kind, "bbox": [round(v * f) for v in box], "score": 0.9, "needs_review": review}
+                             for kind, box, review in self.marks]
+            return httpx.Response(200, json=body)
         body = request.content
         self.calls.append(body.split(b'name="detectors"\r\n\r\n', 1)[1].split(b"\r\n", 1)[0].decode())
         if self.fail:
@@ -196,3 +207,108 @@ def test_real_visual_pii_face_and_text_on_one_photo(env, monkeypatch):  # noqa: 
     out = Image.open(io.BytesIO(_post(env, "redact", image_tests.png(scene)).content)).convert("RGB")
     eyes_to_chin = (face_at[0] + 62, face_at[1] + 45, face_at[0] + 95, face_at[1] + 85)  # fixture face at half scale
     assert _dark(out, eyes_to_chin)
+
+
+# ── signatures, stamps (marks on the OCR page) ───────────────────────────────
+
+SIG, STAMP = (90, 590, 520, 700), (1120, 480, 1260, 640)  # SIG contains SCREENSHOT's ink review region
+
+
+def test_marks_are_requested_parsed_painted_and_absorb_review_ink(vis):
+    vis.fake.marks = [("SIGNATURE", SIG, False), ("STAMP", STAMP, True)]
+    body = _post(vis, "preview", image_tests.png(image_tests.SCREENSHOT.image)).json()
+    assert vis.fake.mark_fields == ["signature,stamp"]
+    assert [(v["type"], v["needs_review"]) for v in body["visual_entities"]][-2:] == [("SIGNATURE", False), ("STAMP", True)]
+    assert [b["reason"] for b in body["needs_review"]] == ["low_confidence"]  # the ink region is inside SIG
+    r = _post(vis, "redact", image_tests.png(image_tests.SCREENSHOT.image))
+    out = Image.open(io.BytesIO(r.content))
+    assert all(_dark(out, box) for box in (SIG, STAMP, FACE))
+    assert {"SIGNATURE", "STAMP"} <= set(r.headers["x-pii-types"].split(","))
+
+
+def test_marks_not_requested_when_visual_pii_is_off(vis, monkeypatch):
+    _client(vis.fake, monkeypatch, detectors="")
+    _post(vis, "preview", image_tests.png(image_tests.SCREENSHOT.image))
+    assert vis.fake.mark_fields == [None]
+
+
+def test_bad_mark_fails_closed():
+    page = {"width": 10, "height": 10, "words": [], "marks": [{"type": "LOGO", "bbox": [0, 0, 1, 1]}]}
+    with pytest.raises(ValueError):
+        ocr_client.parse_result({"pages": [page]}, 10, 10)
+    page["marks"] = [{"type": "STAMP", "bbox": [0, 0, 11, 1]}]
+    with pytest.raises(ValueError):
+        ocr_client.parse_result({"pages": [page]}, 10, 10)
+
+
+# ── face_style ───────────────────────────────────────────────────────────────
+
+def _face_image() -> Image.Image:
+    """A detailed synthetic 'face' (fine checkerboard + gradient): lots of recoverable detail."""
+    image = Image.new("RGB", (400, 300), (240, 240, 240))
+    pixels = image.load()
+    for y in range(50, 250):
+        for x in range(100, 300):
+            v = 255 if (x // 3 + y // 3) % 2 else 0
+            pixels[x, y] = (v, (x * 7) % 256, (y * 5) % 256)
+    return image
+
+
+def _edge_energy(image: Image.Image) -> float:
+    import numpy as np
+
+    a = np.asarray(image.convert("L"), dtype=np.float32)
+    return float(np.abs(np.diff(a, axis=0)).mean() + np.abs(np.diff(a, axis=1)).mean())
+
+
+@pytest.mark.parametrize("style", ["pixelate", "blur"])
+def test_face_style_is_irreversible(style):
+    from app.documents.ocr_layout import STYLE_CELLS, obscure
+
+    box = (100, 50, 300, 250)
+    original = _face_image()
+    first, second = original.copy(), original.copy()
+    obscure(first, box, style)
+    obscure(second, box, style)
+    face, face2 = first.crop(box), second.crop(box)
+    assert face.tobytes() != face2.tobytes()  # fresh noise on every render
+    assert first.crop((0, 0, 100, 300)).tobytes() == original.crop((0, 0, 100, 300)).tobytes()  # only the box
+    assert _edge_energy(face) < 0.1 * _edge_energy(original.crop(box))  # no fine detail survives
+    # nothing finer than the cell grid: shrinking to the grid and back loses (almost) nothing
+    grid = face.resize((STYLE_CELLS, STYLE_CELLS), Image.Resampling.BOX)
+    rebuilt = grid.resize(face.size, Image.Resampling.NEAREST if style == "pixelate" else Image.Resampling.BILINEAR)
+    import numpy as np
+
+    error = np.abs(np.asarray(face, dtype=np.int16) - np.asarray(rebuilt, dtype=np.int16)).mean()
+    assert error < (2 if style == "pixelate" else 12), error
+    if style == "pixelate":
+        assert len(face.getcolors(10_000)) <= STYLE_CELLS * STYLE_CELLS
+
+
+def test_face_style_keeps_everything_else_black(vis):
+    for style in ("pixelate", "blur"):
+        r = _post(vis, "redact", image_tests.png(image_tests.SCREENSHOT.image), face_style=style)
+        assert r.status_code == 200, r.text
+        out = Image.open(io.BytesIO(r.content))
+        image_tests._assert_redacted(out, image_tests.SCREENSHOT)
+        assert _dark(out, QR) and _dark(out, PLATE) and not _dark(out, FACE)
+    black = Image.open(io.BytesIO(_post(vis, "redact", image_tests.png(image_tests.SCREENSHOT.image)).content))
+    assert _dark(black, FACE)  # default stays black
+
+
+def test_invalid_face_style_is_rejected_before_any_work(vis):
+    r = _post(vis, "redact", image_tests.png(image_tests.SCREENSHOT.image), face_style="sepia")
+    assert r.status_code == 422 and r.json()["error"] == "INVALID_FACE_STYLE", r.text
+    assert vis.fake.ocr.calls == 0
+
+
+def test_scanned_pdf_face_style_pixelate(env, monkeypatch):  # noqa: F811
+    env.fake = FakeVisual(scan_tests.FakeOcr(), [("FACE", SCAN_FACE, False)], scan_tests.SCAN_SIZE)
+    _client(env.fake, monkeypatch)
+    monkeypatch.setitem(base._PATTERNS, scan_tests.IBAN, "IBAN")
+    r = _post(env, "redact", scan_tests.make_scan_pdf(pages=1), domain="hr_payroll", face_style="pixelate")
+    assert r.status_code == 200, r.text
+    ((_, _, image),) = scan_tests._pages(r.content)
+    scan_tests._assert_scan_redacted(image)
+    face = image.convert("RGB").crop(SCAN_FACE)
+    assert len(face.getcolors(100_000)) <= 400  # 64 cells (+ JPEG/scale edges), not a black box either
