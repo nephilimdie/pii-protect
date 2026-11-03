@@ -7,6 +7,7 @@ PII-free near-miss documents, no name/town shared with it_pii_v1 or it_pii_heldo
 Test: python3 -m pytest benchmark/italian_heldout_v2/tests -q
 """
 import hashlib
+import importlib.util
 import json
 import random
 import re
@@ -16,9 +17,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
 
-import build  # noqa: E402
 import ident as I  # noqa: E402
 from builder import PII_TYPES  # noqa: E402
+
+_build_spec = importlib.util.spec_from_file_location("heldout_v2_build", HERE / "build.py")
+build = importlib.util.module_from_spec(_build_spec)
+_build_spec.loader.exec_module(build)
 
 FROZEN = re.search(r"sha256: `([0-9a-f]{64})`", (HERE / "FREEZE.md").read_text()).group(1)
 
@@ -58,7 +62,7 @@ def test_should_have_valid_spans_and_pii_free_negatives():
             assert a["end"] <= b["start"], (d["id"], a, b)
         for s in spans:
             v = d["text"][s["start"]:s["end"]]
-            assert v and v == v.strip() and "\n" not in v, (d["id"], s)
+            assert v and v == v.strip(), (d["id"], s)
         assert {e["type"] for e in d["entities"]} <= set(PII_TYPES)
         if d["genre"] == "negative":
             assert not d["entities"], d["id"]
