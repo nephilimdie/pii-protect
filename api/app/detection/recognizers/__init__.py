@@ -17,10 +17,13 @@ from app.detection.recognizers.key_value import detect_key_values
 from app.detection.recognizers.obfuscated import detect_obfuscated
 from app.detection.recognizers.persons import detect_persons
 from app.detection.recognizers.precision import precision_filter
+from app.detection.recognizers.network import detect_network
+from app.detection.recognizers.tabular import detect_tabular
 
 __all__ = ["BALANCED", "MAXIMUM", "MAXIMUM_ML_MIN_SCORE", "ML_LAYERS", "PROTECTION_LEVELS", "detect_contextual", "precision_filter"]
 
-_RECOGNIZERS = (detect_birth, detect_identifiers, detect_key_values, detect_obfuscated, detect_persons)
+_RECOGNIZERS = (detect_birth, detect_identifiers, detect_key_values, detect_obfuscated, detect_persons,
+                detect_network, detect_tabular)
 
 
 def detect_contextual(text: str, level: str = BALANCED) -> list[PiiEntity]:

@@ -1,0 +1,2148 @@
+{
+ "bootstrap_samples": 1000,
+ "dataset": "it_pii_heldout_v2.jsonl",
+ "documents": 426,
+ "matching": {
+  "direct_view": "gold types ['BIRTH_PLACE', 'CADASTRAL_REF', 'CASE_ID', 'CONTRACT_ID', 'INDIRECT'] treated as ignore regions",
+  "leak_rate": "gold word tokens not fully covered by any masked span (type-agnostic)",
+  "lenient": "any overlap + compatible type (recall per gold span, precision per predicted span)",
+  "neg_fp_rate": "negative look-alike spans overlapped by any masked span",
+  "strict": "exact start/end + compatible type, one-to-one"
+ },
+ "reference": "ablation_no_rizzo",
+ "subset_per_subgenre": 0,
+ "systems": {
+  "ablation_no_rizzo": {
+   "ci95": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      0.0,
+      0.0
+     ],
+     "lenient_f1": [
+      0.0,
+      0.0
+     ],
+     "strict_f1": [
+      0.0,
+      0.0
+     ]
+    },
+    "leak_rate": [
+     0.1605,
+     0.1997
+    ],
+    "lenient_f1": [
+     0.7741,
+     0.8083
+    ],
+    "lenient_p": [
+     0.7805,
+     0.8198
+    ],
+    "lenient_r": [
+     0.7615,
+     0.8074
+    ],
+    "neg_fp_rate": [
+     0.153,
+     0.2073
+    ],
+    "strict_f1": [
+     0.6521,
+     0.6899
+    ]
+   },
+   "ci95_direct": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      0.0,
+      0.0
+     ],
+     "lenient_f1": [
+      0.0,
+      0.0
+     ],
+     "strict_f1": [
+      0.0,
+      0.0
+     ]
+    },
+    "leak_rate": [
+     0.144,
+     0.181
+    ],
+    "lenient_f1": [
+     0.7979,
+     0.8308
+    ],
+    "lenient_p": [
+     0.7838,
+     0.8265
+    ],
+    "lenient_r": [
+     0.8042,
+     0.8445
+    ],
+    "neg_fp_rate": [
+     0.153,
+     0.2073
+    ],
+    "strict_f1": [
+     0.6754,
+     0.7108
+    ]
+   },
+   "direct": {
+    "leak_rate": 0.1619284684920739,
+    "lenient_f1": 0.8149500393593059,
+    "lenient_p": 0.8049525101763908,
+    "lenient_r": 0.8251990308065075,
+    "n_gold": 2889,
+    "n_pred": 2948,
+    "neg_fp_rate": 0.1799761620977354,
+    "strict_f1": 0.6935069384958027,
+    "strict_p": 0.6865671641791045,
+    "strict_r": 0.7005884389061959
+   },
+   "hard_cases": {
+    "compound_first": {
+     "lenient_recall": 0.921875,
+     "spans": 64
+    },
+    "double_surname": {
+     "lenient_recall": 0.7469879518072289,
+     "spans": 83
+    },
+    "first_name_only": {
+     "lenient_recall": 0.7326732673267327,
+     "spans": 202
+    },
+    "foreign": {
+     "lenient_recall": 0.7965116279069767,
+     "spans": 172
+    },
+    "health": {
+     "lenient_recall": 0.0,
+     "spans": 8
+    },
+    "health_card": {
+     "lenient_recall": 0.9333333333333333,
+     "spans": 15
+    },
+    "initial": {
+     "lenient_recall": 0.9367088607594937,
+     "spans": 79
+    },
+    "ipv6": {
+     "lenient_recall": 1.0,
+     "spans": 15
+    },
+    "iso_date": {
+     "lenient_recall": 0.8235294117647058,
+     "spans": 51
+    },
+    "key_value": {
+     "lenient_recall": 0.9382716049382716,
+     "spans": 81
+    },
+    "lowercase": {
+     "lenient_recall": 0.7446808510638298,
+     "spans": 94
+    },
+    "month_abbrev": {
+     "lenient_recall": 0.2765957446808511,
+     "spans": 47
+    },
+    "no_cue": {
+     "lenient_recall": 0.25161290322580643,
+     "spans": 155
+    },
+    "noisy": {
+     "lenient_recall": 0.6756756756756757,
+     "spans": 37
+    },
+    "nosologico": {
+     "lenient_recall": 0.0,
+     "spans": 15
+    },
+    "obfuscated": {
+     "lenient_recall": 0.5789473684210527,
+     "spans": 38
+    },
+    "particle": {
+     "lenient_recall": 0.8222222222222222,
+     "spans": 135
+    },
+    "pec": {
+     "lenient_recall": 1.0,
+     "spans": 13
+    },
+    "short_year": {
+     "lenient_recall": 0.7368421052631579,
+     "spans": 19
+    },
+    "spaced_code": {
+     "lenient_recall": 0.7441860465116279,
+     "spans": 43
+    },
+    "spoken": {
+     "lenient_recall": 0.75,
+     "spans": 52
+    },
+    "surname_only": {
+     "lenient_recall": 0.7218934911242604,
+     "spans": 169
+    },
+    "table_cell": {
+     "lenient_recall": 0.45724907063197023,
+     "spans": 538
+    },
+    "uppercase": {
+     "lenient_recall": 0.43478260869565216,
+     "spans": 368
+    },
+    "uppercase_surname": {
+     "lenient_recall": 0.8571428571428571,
+     "spans": 63
+    },
+    "word_like": {
+     "lenient_recall": 0.8163265306122449,
+     "spans": 98
+    },
+    "year_only": {
+     "lenient_recall": 0.0,
+     "spans": 11
+    }
+   },
+   "meta": {
+    "engine_commit": "7b8b69d3602bc66973cd62c1c1332191720bd7a2",
+    "engine_image": "docjobs-engine:base",
+    "family": "pseudora",
+    "label": "Ablation: layers regex+presidio+privacy_filter+ai4privacy only (generic_professional policy)",
+    "ms_per_1k_chars": 317.96,
+    "readiness": {
+     "ai4privacy": true,
+     "presidio": true,
+     "privacy_filter": true,
+     "rizzo": true
+    },
+    "system": "ablation_no_rizzo",
+    "target": {
+     "context_type": "bench_no_rizzo",
+     "layers": [
+      "regex",
+      "presidio",
+      "privacy_filter",
+      "ai4privacy"
+     ]
+    },
+    "transport": "HTTP /v1/anonymize dry_run (masked spans only)"
+   },
+   "negative_docs": 100,
+   "negative_docs_flagged_rate": 0.7,
+   "negatives": {
+    "CODE": {
+     "masked_rate": 0.15217391304347827,
+     "spans": 184
+    },
+    "COMMON_WORD": {
+     "masked_rate": 0.4438202247191011,
+     "spans": 178
+    },
+    "DOC_DATE": {
+     "masked_rate": 0.05128205128205128,
+     "spans": 312
+    },
+    "DOC_NUMBER": {
+     "masked_rate": 0.21296296296296297,
+     "spans": 108
+    },
+    "LAW_REF": {
+     "masked_rate": 0.358974358974359,
+     "spans": 273
+    },
+    "MONEY": {
+     "masked_rate": 0.025714285714285714,
+     "spans": 350
+    },
+    "ORG": {
+     "masked_rate": 0.08633093525179857,
+     "spans": 139
+    },
+    "PUBLIC_BODY": {
+     "masked_rate": 0.27611940298507465,
+     "spans": 134
+    }
+   },
+   "overall": {
+    "leak_rate": 0.17951231466732018,
+    "lenient_f1": 0.79209640466947,
+    "lenient_p": 0.7992980216975112,
+    "lenient_r": 0.7850234009360374,
+    "n_gold": 3205,
+    "n_pred": 3134,
+    "neg_fp_rate": 0.1799761620977354,
+    "strict_f1": 0.6710837671557028,
+    "strict_p": 0.6786853860880664,
+    "strict_r": 0.6636505460218409
+   },
+   "per_genre": {
+    "formal": {
+     "leak_rate": 0.2182741116751269,
+     "lenient_f1": 0.8218042454642804,
+     "lenient_p": 0.8475289169295478,
+     "lenient_r": 0.7975951903807615,
+     "n_gold": 998,
+     "n_pred": 951,
+     "neg_fp_rate": 0.11586901763224182,
+     "strict_f1": 0.689584402257568,
+     "strict_p": 0.7066246056782335,
+     "strict_r": 0.6733466933867736
+    },
+    "informal": {
+     "leak_rate": 0.15547024952015356,
+     "lenient_f1": 0.8466514504665382,
+     "lenient_p": 0.8920454545454546,
+     "lenient_r": 0.8056537102473498,
+     "n_gold": 566,
+     "n_pred": 528,
+     "neg_fp_rate": 0.09615384615384616,
+     "strict_f1": 0.7038391224862889,
+     "strict_p": 0.7291666666666666,
+     "strict_r": 0.6802120141342756
+    },
+    "negative": {
+     "leak_rate": 0.0,
+     "lenient_f1": 0.0,
+     "lenient_p": 0.0,
+     "lenient_r": 1.0,
+     "n_gold": 0,
+     "n_pred": 200,
+     "neg_fp_rate": 0.2650918635170604,
+     "strict_f1": 0.0,
+     "strict_p": 0.0,
+     "strict_r": 1.0
+    },
+    "private": {
+     "leak_rate": 0.17539267015706805,
+     "lenient_f1": 0.8314465471397978,
+     "lenient_p": 0.8412322274881516,
+     "lenient_r": 0.8218859138533178,
+     "n_gold": 859,
+     "n_pred": 844,
+     "neg_fp_rate": 0.11056511056511056,
+     "strict_f1": 0.7598355842630652,
+     "strict_p": 0.7665876777251185,
+     "strict_r": 0.7532013969732246
+    },
+    "structured": {
+     "leak_rate": 0.14082687338501293,
+     "lenient_f1": 0.7749023476771213,
+     "lenient_p": 0.8477905073649754,
+     "lenient_r": 0.7135549872122762,
+     "n_gold": 782,
+     "n_pred": 611,
+     "neg_fp_rate": 0.06666666666666667,
+     "strict_f1": 0.6073223259152907,
+     "strict_p": 0.6923076923076923,
+     "strict_r": 0.540920716112532
+    }
+   },
+   "per_type": {
+    "ADDRESS": {
+     "gold": 307,
+     "leak_rate": 0.12234580384226491,
+     "lenient_recall": 0.996742671009772,
+     "strict_recall": 0.6026058631921825
+    },
+    "BIRTH_PLACE": {
+     "gold": 223,
+     "leak_rate": 0.4090909090909091,
+     "lenient_recall": 0.336322869955157,
+     "strict_recall": 0.32286995515695066
+    },
+    "CADASTRAL_REF": {
+     "gold": 16,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "CASE_ID": {
+     "gold": 26,
+     "leak_rate": 0.46938775510204084,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.0
+    },
+    "CONTRACT_ID": {
+     "gold": 43,
+     "leak_rate": 0.5,
+     "lenient_recall": 0.3488372093023256,
+     "strict_recall": 0.3488372093023256
+    },
+    "CREDIT_CARD": {
+     "gold": 17,
+     "leak_rate": 0.5681818181818182,
+     "lenient_recall": 0.5882352941176471,
+     "strict_recall": 0.5882352941176471
+    },
+    "DATE_OF_BIRTH": {
+     "gold": 259,
+     "leak_rate": 0.24087591240875914,
+     "lenient_recall": 0.6718146718146718,
+     "strict_recall": 0.6718146718146718
+    },
+    "EMAIL": {
+     "gold": 231,
+     "leak_rate": 0.08695652173913043,
+     "lenient_recall": 0.9307359307359307,
+     "strict_recall": 0.9004329004329005
+    },
+    "EMPLOYEE_ID": {
+     "gold": 52,
+     "leak_rate": 0.32857142857142857,
+     "lenient_recall": 0.4423076923076923,
+     "strict_recall": 0.4423076923076923
+    },
+    "FISCAL_CODE": {
+     "gold": 252,
+     "leak_rate": 0.34521158129175944,
+     "lenient_recall": 0.9523809523809523,
+     "strict_recall": 0.9523809523809523
+    },
+    "IBAN": {
+     "gold": 114,
+     "leak_rate": 0.0,
+     "lenient_recall": 0.7543859649122807,
+     "strict_recall": 0.7543859649122807
+    },
+    "ID_DOCUMENT": {
+     "gold": 74,
+     "leak_rate": 0.06756756756756757,
+     "lenient_recall": 0.8783783783783784,
+     "strict_recall": 0.8783783783783784
+    },
+    "INDIRECT": {
+     "gold": 8,
+     "leak_rate": 1.0,
+     "lenient_recall": 0.0,
+     "strict_recall": 0.0
+    },
+    "IP_ADDRESS": {
+     "gold": 29,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "LICENSE_PLATE": {
+     "gold": 54,
+     "leak_rate": 0.024193548387096774,
+     "lenient_recall": 0.9814814814814815,
+     "strict_recall": 0.9814814814814815
+    },
+    "PERSON": {
+     "gold": 1156,
+     "leak_rate": 0.22023809523809523,
+     "lenient_recall": 0.782871972318339,
+     "strict_recall": 0.6072664359861591
+    },
+    "PHONE": {
+     "gold": 247,
+     "leak_rate": 0.02848575712143928,
+     "lenient_recall": 0.9919028340080972,
+     "strict_recall": 0.9271255060728745
+    },
+    "USERNAME": {
+     "gold": 67,
+     "leak_rate": 0.25742574257425743,
+     "lenient_recall": 0.3880597014925373,
+     "strict_recall": 0.19402985074626866
+    },
+    "VAT_NUMBER": {
+     "gold": 30,
+     "leak_rate": 0.5333333333333333,
+     "lenient_recall": 0.23333333333333334,
+     "strict_recall": 0.23333333333333334
+    }
+   },
+   "pred_precision": {
+    "ADDRESS": {
+     "lenient_precision": 0.7242152466367713,
+     "pred": 446
+    },
+    "BIRTH_PLACE": {
+     "lenient_precision": 1.0,
+     "pred": 75
+    },
+    "CADASTRAL_REF": {
+     "lenient_precision": 1.0,
+     "pred": 16
+    },
+    "CASE_ID": {
+     "lenient_precision": 0.8387096774193549,
+     "pred": 31
+    },
+    "CONTRACT_ID": {
+     "lenient_precision": 0.625,
+     "pred": 24
+    },
+    "CREDIT_CARD": {
+     "lenient_precision": 1.0,
+     "pred": 10
+    },
+    "DATE_OF_BIRTH": {
+     "lenient_precision": 1.0,
+     "pred": 174
+    },
+    "EMAIL": {
+     "lenient_precision": 0.9953703703703703,
+     "pred": 216
+    },
+    "EMPLOYEE_ID": {
+     "lenient_precision": 1.0,
+     "pred": 23
+    },
+    "FISCAL_CODE": {
+     "lenient_precision": 0.963855421686747,
+     "pred": 249
+    },
+    "GENERIC_ID": {
+     "lenient_precision": 0.5652173913043478,
+     "pred": 23
+    },
+    "IBAN": {
+     "lenient_precision": 0.9662921348314607,
+     "pred": 89
+    },
+    "ID_DOCUMENT": {
+     "lenient_precision": 1.0,
+     "pred": 65
+    },
+    "IP_ADDRESS": {
+     "lenient_precision": 1.0,
+     "pred": 29
+    },
+    "LICENSE_PLATE": {
+     "lenient_precision": 1.0,
+     "pred": 53
+    },
+    "PERSON": {
+     "lenient_precision": 0.6898481215027977,
+     "pred": 1251
+    },
+    "PHONE": {
+     "lenient_precision": 0.7522935779816514,
+     "pred": 327
+    },
+    "USERNAME": {
+     "lenient_precision": 1.0,
+     "pred": 26
+    },
+    "VAT_NUMBER": {
+     "lenient_precision": 1.0,
+     "pred": 7
+    }
+   }
+  },
+  "ablation_no_rizzo_maximum": {
+   "ci95": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      -0.0141,
+      -0.0089
+     ],
+     "lenient_f1": [
+      -0.0121,
+      -0.0062
+     ],
+     "strict_f1": [
+      -0.0154,
+      -0.0061
+     ]
+    },
+    "leak_rate": [
+     0.1491,
+     0.1882
+    ],
+    "lenient_f1": [
+     0.7649,
+     0.7993
+    ],
+    "lenient_p": [
+     0.7563,
+     0.7971
+    ],
+    "lenient_r": [
+     0.7686,
+     0.8126
+    ],
+    "neg_fp_rate": [
+     0.1677,
+     0.2217
+    ],
+    "strict_f1": [
+     0.6415,
+     0.6787
+    ]
+   },
+   "ci95_direct": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      -0.0127,
+      -0.0077
+     ],
+     "lenient_f1": [
+      -0.0117,
+      -0.0053
+     ],
+     "strict_f1": [
+      -0.0158,
+      -0.0058
+     ]
+    },
+    "leak_rate": [
+     0.1338,
+     0.1707
+    ],
+    "lenient_f1": [
+     0.7889,
+     0.823
+    ],
+    "lenient_p": [
+     0.7616,
+     0.8045
+    ],
+    "lenient_r": [
+     0.8112,
+     0.8509
+    ],
+    "neg_fp_rate": [
+     0.1677,
+     0.2217
+    ],
+    "strict_f1": [
+     0.6647,
+     0.7002
+    ]
+   },
+   "direct": {
+    "leak_rate": 0.1517096816454867,
+    "lenient_f1": 0.8066592834659359,
+    "lenient_p": 0.7827087442472058,
+    "lenient_r": 0.8321218414676359,
+    "n_gold": 2889,
+    "n_pred": 3042,
+    "neg_fp_rate": 0.19427890345649582,
+    "strict_f1": 0.6828528072837632,
+    "strict_p": 0.665680473372781,
+    "strict_r": 0.7009345794392523
+   },
+   "hard_cases": {
+    "compound_first": {
+     "lenient_recall": 0.921875,
+     "spans": 64
+    },
+    "double_surname": {
+     "lenient_recall": 0.7590361445783133,
+     "spans": 83
+    },
+    "first_name_only": {
+     "lenient_recall": 0.7623762376237624,
+     "spans": 202
+    },
+    "foreign": {
+     "lenient_recall": 0.8197674418604651,
+     "spans": 172
+    },
+    "health": {
+     "lenient_recall": 0.0,
+     "spans": 8
+    },
+    "health_card": {
+     "lenient_recall": 0.9333333333333333,
+     "spans": 15
+    },
+    "initial": {
+     "lenient_recall": 0.9367088607594937,
+     "spans": 79
+    },
+    "ipv6": {
+     "lenient_recall": 1.0,
+     "spans": 15
+    },
+    "iso_date": {
+     "lenient_recall": 0.8235294117647058,
+     "spans": 51
+    },
+    "key_value": {
+     "lenient_recall": 0.9506172839506173,
+     "spans": 81
+    },
+    "lowercase": {
+     "lenient_recall": 0.7659574468085106,
+     "spans": 94
+    },
+    "month_abbrev": {
+     "lenient_recall": 0.2765957446808511,
+     "spans": 47
+    },
+    "no_cue": {
+     "lenient_recall": 0.25161290322580643,
+     "spans": 155
+    },
+    "noisy": {
+     "lenient_recall": 0.7027027027027027,
+     "spans": 37
+    },
+    "nosologico": {
+     "lenient_recall": 0.0,
+     "spans": 15
+    },
+    "obfuscated": {
+     "lenient_recall": 0.5789473684210527,
+     "spans": 38
+    },
+    "particle": {
+     "lenient_recall": 0.837037037037037,
+     "spans": 135
+    },
+    "pec": {
+     "lenient_recall": 1.0,
+     "spans": 13
+    },
+    "short_year": {
+     "lenient_recall": 0.7368421052631579,
+     "spans": 19
+    },
+    "spaced_code": {
+     "lenient_recall": 0.7441860465116279,
+     "spans": 43
+    },
+    "spoken": {
+     "lenient_recall": 0.75,
+     "spans": 52
+    },
+    "surname_only": {
+     "lenient_recall": 0.7396449704142012,
+     "spans": 169
+    },
+    "table_cell": {
+     "lenient_recall": 0.4739776951672863,
+     "spans": 538
+    },
+    "uppercase": {
+     "lenient_recall": 0.47282608695652173,
+     "spans": 368
+    },
+    "uppercase_surname": {
+     "lenient_recall": 0.873015873015873,
+     "spans": 63
+    },
+    "word_like": {
+     "lenient_recall": 0.8469387755102041,
+     "spans": 98
+    },
+    "year_only": {
+     "lenient_recall": 0.0,
+     "spans": 11
+    }
+   },
+   "meta": {
+    "engine_commit": "7b8b69d3602bc66973cd62c1c1332191720bd7a2",
+    "engine_image": "docjobs-engine:base",
+    "family": "pseudora",
+    "label": "Ablation: layers regex+presidio+privacy_filter+ai4privacy only (generic_professional policy), protection_level maximum",
+    "ms_per_1k_chars": 316.93,
+    "readiness": {
+     "ai4privacy": true,
+     "presidio": true,
+     "privacy_filter": true,
+     "rizzo": true
+    },
+    "system": "ablation_no_rizzo_maximum",
+    "target": {
+     "context_type": "bench_no_rizzo",
+     "layers": [
+      "regex",
+      "presidio",
+      "privacy_filter",
+      "ai4privacy"
+     ],
+     "protection_level": "maximum"
+    },
+    "transport": "HTTP /v1/anonymize dry_run (masked spans only)"
+   },
+   "negative_docs": 100,
+   "negative_docs_flagged_rate": 0.75,
+   "negatives": {
+    "CODE": {
+     "masked_rate": 0.15217391304347827,
+     "spans": 184
+    },
+    "COMMON_WORD": {
+     "masked_rate": 0.47191011235955055,
+     "spans": 178
+    },
+    "DOC_DATE": {
+     "masked_rate": 0.05448717948717949,
+     "spans": 312
+    },
+    "DOC_NUMBER": {
+     "masked_rate": 0.21296296296296297,
+     "spans": 108
+    },
+    "LAW_REF": {
+     "masked_rate": 0.3663003663003663,
+     "spans": 273
+    },
+    "MONEY": {
+     "masked_rate": 0.04,
+     "spans": 350
+    },
+    "ORG": {
+     "masked_rate": 0.14388489208633093,
+     "spans": 139
+    },
+    "PUBLIC_BODY": {
+     "masked_rate": 0.29850746268656714,
+     "spans": 134
+    }
+   },
+   "overall": {
+    "leak_rate": 0.16799411836784708,
+    "lenient_f1": 0.7832402700834451,
+    "lenient_p": 0.775377969762419,
+    "lenient_r": 0.7912636505460219,
+    "n_gold": 3205,
+    "n_pred": 3241,
+    "neg_fp_rate": 0.19427890345649582,
+    "strict_f1": 0.6602544213465715,
+    "strict_p": 0.6565874730021598,
+    "strict_r": 0.6639625585023401
+   },
+   "per_genre": {
+    "formal": {
+     "leak_rate": 0.20667150108774474,
+     "lenient_f1": 0.8135780419129063,
+     "lenient_p": 0.8269824922760041,
+     "lenient_r": 0.8006012024048096,
+     "n_gold": 998,
+     "n_pred": 971,
+     "neg_fp_rate": 0.12342569269521411,
+     "strict_f1": 0.6866429659725749,
+     "strict_p": 0.6961894953656025,
+     "strict_r": 0.6773547094188377
+    },
+    "informal": {
+     "leak_rate": 0.14587332053742802,
+     "lenient_f1": 0.8418368430297988,
+     "lenient_p": 0.8710865561694291,
+     "lenient_r": 0.8144876325088339,
+     "n_gold": 566,
+     "n_pred": 543,
+     "neg_fp_rate": 0.15384615384615385,
+     "strict_f1": 0.6780883678990082,
+     "strict_p": 0.6924493554327809,
+     "strict_r": 0.6643109540636042
+    },
+    "negative": {
+     "leak_rate": 0.0,
+     "lenient_f1": 0.0,
+     "lenient_p": 0.0,
+     "lenient_r": 1.0,
+     "n_gold": 0,
+     "n_pred": 219,
+     "neg_fp_rate": 0.2742782152230971,
+     "strict_f1": 0.0,
+     "strict_p": 0.0,
+     "strict_r": 1.0
+    },
+    "private": {
+     "leak_rate": 0.16535776614310646,
+     "lenient_f1": 0.8206037501662308,
+     "lenient_p": 0.8125,
+     "lenient_r": 0.8288707799767171,
+     "n_gold": 859,
+     "n_pred": 880,
+     "neg_fp_rate": 0.13267813267813267,
+     "strict_f1": 0.7464059804485337,
+     "strict_p": 0.7375,
+     "strict_r": 0.7555296856810244
+    },
+    "structured": {
+     "leak_rate": 0.12532299741602068,
+     "lenient_f1": 0.7723230447169187,
+     "lenient_p": 0.8312101910828026,
+     "lenient_r": 0.7212276214833759,
+     "n_gold": 782,
+     "n_pred": 628,
+     "neg_fp_rate": 0.1,
+     "strict_f1": 0.6056737588652482,
+     "strict_p": 0.6799363057324841,
+     "strict_r": 0.5460358056265985
+    }
+   },
+   "per_type": {
+    "ADDRESS": {
+     "gold": 307,
+     "leak_rate": 0.10111223458038422,
+     "lenient_recall": 0.996742671009772,
+     "strict_recall": 0.5960912052117264
+    },
+    "BIRTH_PLACE": {
+     "gold": 223,
+     "leak_rate": 0.3531468531468531,
+     "lenient_recall": 0.336322869955157,
+     "strict_recall": 0.32286995515695066
+    },
+    "CADASTRAL_REF": {
+     "gold": 16,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "CASE_ID": {
+     "gold": 26,
+     "leak_rate": 0.46938775510204084,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.0
+    },
+    "CONTRACT_ID": {
+     "gold": 43,
+     "leak_rate": 0.5,
+     "lenient_recall": 0.3488372093023256,
+     "strict_recall": 0.3488372093023256
+    },
+    "CREDIT_CARD": {
+     "gold": 17,
+     "leak_rate": 0.5909090909090909,
+     "lenient_recall": 0.5294117647058824,
+     "strict_recall": 0.5294117647058824
+    },
+    "DATE_OF_BIRTH": {
+     "gold": 259,
+     "leak_rate": 0.24087591240875914,
+     "lenient_recall": 0.6718146718146718,
+     "strict_recall": 0.6718146718146718
+    },
+    "EMAIL": {
+     "gold": 231,
+     "leak_rate": 0.08466819221967964,
+     "lenient_recall": 0.9307359307359307,
+     "strict_recall": 0.9004329004329005
+    },
+    "EMPLOYEE_ID": {
+     "gold": 52,
+     "leak_rate": 0.32857142857142857,
+     "lenient_recall": 0.4423076923076923,
+     "strict_recall": 0.4423076923076923
+    },
+    "FISCAL_CODE": {
+     "gold": 252,
+     "leak_rate": 0.34521158129175944,
+     "lenient_recall": 0.9484126984126984,
+     "strict_recall": 0.9484126984126984
+    },
+    "IBAN": {
+     "gold": 114,
+     "leak_rate": 0.0,
+     "lenient_recall": 0.7543859649122807,
+     "strict_recall": 0.7543859649122807
+    },
+    "ID_DOCUMENT": {
+     "gold": 74,
+     "leak_rate": 0.06756756756756757,
+     "lenient_recall": 0.8783783783783784,
+     "strict_recall": 0.8783783783783784
+    },
+    "INDIRECT": {
+     "gold": 8,
+     "leak_rate": 1.0,
+     "lenient_recall": 0.0,
+     "strict_recall": 0.0
+    },
+    "IP_ADDRESS": {
+     "gold": 29,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "LICENSE_PLATE": {
+     "gold": 54,
+     "leak_rate": 0.024193548387096774,
+     "lenient_recall": 0.9814814814814815,
+     "strict_recall": 0.9814814814814815
+    },
+    "PERSON": {
+     "gold": 1156,
+     "leak_rate": 0.20604395604395603,
+     "lenient_recall": 0.8019031141868512,
+     "strict_recall": 0.6124567474048442
+    },
+    "PHONE": {
+     "gold": 247,
+     "leak_rate": 0.02848575712143928,
+     "lenient_recall": 0.9919028340080972,
+     "strict_recall": 0.9230769230769231
+    },
+    "USERNAME": {
+     "gold": 67,
+     "leak_rate": 0.21782178217821782,
+     "lenient_recall": 0.3880597014925373,
+     "strict_recall": 0.19402985074626866
+    },
+    "VAT_NUMBER": {
+     "gold": 30,
+     "leak_rate": 0.5333333333333333,
+     "lenient_recall": 0.23333333333333334,
+     "strict_recall": 0.23333333333333334
+    }
+   },
+   "pred_precision": {
+    "ADDRESS": {
+     "lenient_precision": 0.6971046770601337,
+     "pred": 449
+    },
+    "BIRTH_PLACE": {
+     "lenient_precision": 1.0,
+     "pred": 75
+    },
+    "CADASTRAL_REF": {
+     "lenient_precision": 1.0,
+     "pred": 16
+    },
+    "CASE_ID": {
+     "lenient_precision": 0.8387096774193549,
+     "pred": 31
+    },
+    "CONTRACT_ID": {
+     "lenient_precision": 0.625,
+     "pred": 24
+    },
+    "CREDIT_CARD": {
+     "lenient_precision": 1.0,
+     "pred": 9
+    },
+    "DATE_OF_BIRTH": {
+     "lenient_precision": 1.0,
+     "pred": 174
+    },
+    "EMAIL": {
+     "lenient_precision": 0.9907834101382489,
+     "pred": 217
+    },
+    "EMPLOYEE_ID": {
+     "lenient_precision": 1.0,
+     "pred": 23
+    },
+    "FISCAL_CODE": {
+     "lenient_precision": 0.9637096774193549,
+     "pred": 248
+    },
+    "GENERIC_ID": {
+     "lenient_precision": 0.5652173913043478,
+     "pred": 23
+    },
+    "IBAN": {
+     "lenient_precision": 0.9662921348314607,
+     "pred": 89
+    },
+    "ID_DOCUMENT": {
+     "lenient_precision": 1.0,
+     "pred": 65
+    },
+    "IP_ADDRESS": {
+     "lenient_precision": 1.0,
+     "pred": 29
+    },
+    "LICENSE_PLATE": {
+     "lenient_precision": 1.0,
+     "pred": 53
+    },
+    "PERSON": {
+     "lenient_precision": 0.6560178306092125,
+     "pred": 1346
+    },
+    "PHONE": {
+     "lenient_precision": 0.7299703264094956,
+     "pred": 337
+    },
+    "USERNAME": {
+     "lenient_precision": 1.0,
+     "pred": 26
+    },
+    "VAT_NUMBER": {
+     "lenient_precision": 1.0,
+     "pred": 7
+    }
+   }
+  },
+  "ablation_with_rizzo": {
+   "ci95": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      -0.0696,
+      -0.0466
+     ],
+     "lenient_f1": [
+      -0.0337,
+      -0.017
+     ],
+     "strict_f1": [
+      -0.0351,
+      -0.0157
+     ]
+    },
+    "leak_rate": [
+     0.1075,
+     0.138
+    ],
+    "lenient_f1": [
+     0.7497,
+     0.7825
+    ],
+    "lenient_p": [
+     0.6905,
+     0.7326
+    ],
+    "lenient_r": [
+     0.8087,
+     0.8531
+    ],
+    "neg_fp_rate": [
+     0.2724,
+     0.3327
+    ],
+    "strict_f1": [
+     0.6256,
+     0.6656
+    ]
+   },
+   "ci95_direct": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      -0.063,
+      -0.0399
+     ],
+     "lenient_f1": [
+      -0.035,
+      -0.0165
+     ],
+     "strict_f1": [
+      -0.0336,
+      -0.0127
+     ]
+    },
+    "leak_rate": [
+     0.097,
+     0.1272
+    ],
+    "lenient_f1": [
+     0.773,
+     0.8054
+    ],
+    "lenient_p": [
+     0.6979,
+     0.7421
+    ],
+    "lenient_r": [
+     0.8551,
+     0.8916
+    ],
+    "neg_fp_rate": [
+     0.2724,
+     0.3327
+    ],
+    "strict_f1": [
+     0.6499,
+     0.6888
+    ]
+   },
+   "direct": {
+    "leak_rate": 0.111358574610245,
+    "lenient_f1": 0.7895977106769976,
+    "lenient_p": 0.7195888063963449,
+    "lenient_r": 0.8746971270335756,
+    "n_gold": 2889,
+    "n_pred": 3502,
+    "neg_fp_rate": 0.300953516090584,
+    "strict_f1": 0.6703176341730557,
+    "strict_p": 0.6116504854368932,
+    "strict_r": 0.7414330218068536
+   },
+   "hard_cases": {
+    "compound_first": {
+     "lenient_recall": 0.9375,
+     "spans": 64
+    },
+    "double_surname": {
+     "lenient_recall": 0.8433734939759037,
+     "spans": 83
+    },
+    "first_name_only": {
+     "lenient_recall": 0.801980198019802,
+     "spans": 202
+    },
+    "foreign": {
+     "lenient_recall": 0.9127906976744186,
+     "spans": 172
+    },
+    "health": {
+     "lenient_recall": 1.0,
+     "spans": 8
+    },
+    "health_card": {
+     "lenient_recall": 0.9333333333333333,
+     "spans": 15
+    },
+    "initial": {
+     "lenient_recall": 0.9746835443037974,
+     "spans": 79
+    },
+    "ipv6": {
+     "lenient_recall": 1.0,
+     "spans": 15
+    },
+    "iso_date": {
+     "lenient_recall": 0.8235294117647058,
+     "spans": 51
+    },
+    "key_value": {
+     "lenient_recall": 0.9382716049382716,
+     "spans": 81
+    },
+    "lowercase": {
+     "lenient_recall": 0.8191489361702128,
+     "spans": 94
+    },
+    "month_abbrev": {
+     "lenient_recall": 0.2765957446808511,
+     "spans": 47
+    },
+    "no_cue": {
+     "lenient_recall": 0.25161290322580643,
+     "spans": 155
+    },
+    "noisy": {
+     "lenient_recall": 0.8108108108108109,
+     "spans": 37
+    },
+    "nosologico": {
+     "lenient_recall": 0.0,
+     "spans": 15
+    },
+    "obfuscated": {
+     "lenient_recall": 1.0,
+     "spans": 38
+    },
+    "particle": {
+     "lenient_recall": 0.8666666666666667,
+     "spans": 135
+    },
+    "pec": {
+     "lenient_recall": 1.0,
+     "spans": 13
+    },
+    "short_year": {
+     "lenient_recall": 0.7368421052631579,
+     "spans": 19
+    },
+    "spaced_code": {
+     "lenient_recall": 0.8604651162790697,
+     "spans": 43
+    },
+    "spoken": {
+     "lenient_recall": 1.0,
+     "spans": 52
+    },
+    "surname_only": {
+     "lenient_recall": 0.7751479289940828,
+     "spans": 169
+    },
+    "table_cell": {
+     "lenient_recall": 0.5204460966542751,
+     "spans": 538
+    },
+    "uppercase": {
+     "lenient_recall": 0.5896739130434783,
+     "spans": 368
+    },
+    "uppercase_surname": {
+     "lenient_recall": 0.9365079365079365,
+     "spans": 63
+    },
+    "word_like": {
+     "lenient_recall": 0.9387755102040817,
+     "spans": 98
+    },
+    "year_only": {
+     "lenient_recall": 0.0,
+     "spans": 11
+    }
+   },
+   "meta": {
+    "engine_commit": "7b8b69d3602bc66973cd62c1c1332191720bd7a2",
+    "engine_image": "docjobs-engine:base",
+    "family": "pseudora",
+    "label": "Ablation: layers regex+presidio+privacy_filter+ai4privacy+rizzo only (generic_professional policy)",
+    "ms_per_1k_chars": 544.32,
+    "readiness": {
+     "ai4privacy": true,
+     "presidio": true,
+     "privacy_filter": true,
+     "rizzo": true
+    },
+    "system": "ablation_with_rizzo",
+    "target": {
+     "context_type": "bench_with_rizzo",
+     "layers": [
+      "regex",
+      "presidio",
+      "privacy_filter",
+      "ai4privacy",
+      "rizzo"
+     ]
+    },
+    "transport": "HTTP /v1/anonymize dry_run (masked spans only)"
+   },
+   "negative_docs": 100,
+   "negative_docs_flagged_rate": 0.95,
+   "negatives": {
+    "CODE": {
+     "masked_rate": 0.43478260869565216,
+     "spans": 184
+    },
+    "COMMON_WORD": {
+     "masked_rate": 0.702247191011236,
+     "spans": 178
+    },
+    "DOC_DATE": {
+     "masked_rate": 0.060897435897435896,
+     "spans": 312
+    },
+    "DOC_NUMBER": {
+     "masked_rate": 0.5833333333333334,
+     "spans": 108
+    },
+    "LAW_REF": {
+     "masked_rate": 0.4468864468864469,
+     "spans": 273
+    },
+    "MONEY": {
+     "masked_rate": 0.025714285714285714,
+     "spans": 350
+    },
+    "ORG": {
+     "masked_rate": 0.08633093525179857,
+     "spans": 139
+    },
+    "PUBLIC_BODY": {
+     "masked_rate": 0.5597014925373134,
+     "spans": 134
+    }
+   },
+   "overall": {
+    "leak_rate": 0.12192133316995467,
+    "lenient_f1": 0.7670405522001726,
+    "lenient_p": 0.7113897039210456,
+    "lenient_r": 0.8321372854914196,
+    "n_gold": 3205,
+    "n_pred": 3749,
+    "neg_fp_rate": 0.300953516090584,
+    "strict_f1": 0.6456715559390278,
+    "strict_p": 0.5988263536943185,
+    "strict_r": 0.7004680187207488
+   },
+   "per_genre": {
+    "formal": {
+     "leak_rate": 0.15119651921682378,
+     "lenient_f1": 0.789294549426401,
+     "lenient_p": 0.7384219554030875,
+     "lenient_r": 0.8476953907815631,
+     "n_gold": 998,
+     "n_pred": 1166,
+     "neg_fp_rate": 0.2141057934508816,
+     "strict_f1": 0.6404805914972274,
+     "strict_p": 0.5943396226415094,
+     "strict_r": 0.6943887775551102
+    },
+    "informal": {
+     "leak_rate": 0.06781829814459372,
+     "lenient_f1": 0.8879080104624477,
+     "lenient_p": 0.8942807625649913,
+     "lenient_r": 0.8816254416961131,
+     "n_gold": 566,
+     "n_pred": 577,
+     "neg_fp_rate": 0.09615384615384616,
+     "strict_f1": 0.7751531058617672,
+     "strict_p": 0.7677642980935875,
+     "strict_r": 0.7826855123674912
+    },
+    "negative": {
+     "leak_rate": 0.0,
+     "lenient_f1": 0.0,
+     "lenient_p": 0.0,
+     "lenient_r": 1.0,
+     "n_gold": 0,
+     "n_pred": 346,
+     "neg_fp_rate": 0.4540682414698163,
+     "strict_f1": 0.0,
+     "strict_p": 0.0,
+     "strict_r": 1.0
+    },
+    "private": {
+     "leak_rate": 0.1243455497382199,
+     "lenient_f1": 0.827999019009938,
+     "lenient_p": 0.7863777089783281,
+     "lenient_r": 0.8742724097788126,
+     "n_gold": 859,
+     "n_pred": 969,
+     "neg_fp_rate": 0.16216216216216217,
+     "strict_f1": 0.7472647702407003,
+     "strict_p": 0.7048503611971104,
+     "strict_r": 0.7951105937136205
+    },
+    "structured": {
+     "leak_rate": 0.12080103359173126,
+     "lenient_f1": 0.7467592701530854,
+     "lenient_p": 0.76410998552822,
+     "lenient_r": 0.7301790281329923,
+     "n_gold": 782,
+     "n_pred": 691,
+     "neg_fp_rate": 0.05,
+     "strict_f1": 0.5784114052953157,
+     "strict_p": 0.6164978292329957,
+     "strict_r": 0.5447570332480819
+    }
+   },
+   "per_type": {
+    "ADDRESS": {
+     "gold": 307,
+     "leak_rate": 0.09908998988877654,
+     "lenient_recall": 0.996742671009772,
+     "strict_recall": 0.6449511400651465
+    },
+    "BIRTH_PLACE": {
+     "gold": 223,
+     "leak_rate": 0.21328671328671328,
+     "lenient_recall": 0.336322869955157,
+     "strict_recall": 0.32286995515695066
+    },
+    "CADASTRAL_REF": {
+     "gold": 16,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.9375
+    },
+    "CASE_ID": {
+     "gold": 26,
+     "leak_rate": 0.45918367346938777,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.038461538461538464
+    },
+    "CONTRACT_ID": {
+     "gold": 43,
+     "leak_rate": 0.3125,
+     "lenient_recall": 0.3488372093023256,
+     "strict_recall": 0.3488372093023256
+    },
+    "CREDIT_CARD": {
+     "gold": 17,
+     "leak_rate": 0.5681818181818182,
+     "lenient_recall": 0.5882352941176471,
+     "strict_recall": 0.5882352941176471
+    },
+    "DATE_OF_BIRTH": {
+     "gold": 259,
+     "leak_rate": 0.24087591240875914,
+     "lenient_recall": 0.6718146718146718,
+     "strict_recall": 0.6718146718146718
+    },
+    "EMAIL": {
+     "gold": 231,
+     "leak_rate": 0.012585812356979404,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.9653679653679653
+    },
+    "EMPLOYEE_ID": {
+     "gold": 52,
+     "leak_rate": 0.32857142857142857,
+     "lenient_recall": 0.4423076923076923,
+     "strict_recall": 0.4423076923076923
+    },
+    "FISCAL_CODE": {
+     "gold": 252,
+     "leak_rate": 0.2026726057906459,
+     "lenient_recall": 0.9722222222222222,
+     "strict_recall": 0.9563492063492064
+    },
+    "IBAN": {
+     "gold": 114,
+     "leak_rate": 0.0,
+     "lenient_recall": 0.7543859649122807,
+     "strict_recall": 0.7543859649122807
+    },
+    "ID_DOCUMENT": {
+     "gold": 74,
+     "leak_rate": 0.02702702702702703,
+     "lenient_recall": 0.918918918918919,
+     "strict_recall": 0.918918918918919
+    },
+    "INDIRECT": {
+     "gold": 8,
+     "leak_rate": 0.5714285714285714,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.0
+    },
+    "IP_ADDRESS": {
+     "gold": 29,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "LICENSE_PLATE": {
+     "gold": 54,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "PERSON": {
+     "gold": 1156,
+     "leak_rate": 0.13232600732600733,
+     "lenient_recall": 0.8754325259515571,
+     "strict_recall": 0.6747404844290658
+    },
+    "PHONE": {
+     "gold": 247,
+     "leak_rate": 0.022488755622188907,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.9433198380566802
+    },
+    "USERNAME": {
+     "gold": 67,
+     "leak_rate": 0.25742574257425743,
+     "lenient_recall": 0.3880597014925373,
+     "strict_recall": 0.19402985074626866
+    },
+    "VAT_NUMBER": {
+     "gold": 30,
+     "leak_rate": 0.23333333333333334,
+     "lenient_recall": 0.5333333333333333,
+     "strict_recall": 0.3333333333333333
+    }
+   },
+   "pred_precision": {
+    "ADDRESS": {
+     "lenient_precision": 0.487987987987988,
+     "pred": 666
+    },
+    "BIRTH_PLACE": {
+     "lenient_precision": 1.0,
+     "pred": 75
+    },
+    "CADASTRAL_REF": {
+     "lenient_precision": 0.6388888888888888,
+     "pred": 36
+    },
+    "CASE_ID": {
+     "lenient_precision": 0.21379310344827587,
+     "pred": 145
+    },
+    "CONTRACT_ID": {
+     "lenient_precision": 0.625,
+     "pred": 24
+    },
+    "CREDIT_CARD": {
+     "lenient_precision": 1.0,
+     "pred": 10
+    },
+    "DATE_OF_BIRTH": {
+     "lenient_precision": 1.0,
+     "pred": 174
+    },
+    "EMAIL": {
+     "lenient_precision": 0.84,
+     "pred": 275
+    },
+    "EMPLOYEE_ID": {
+     "lenient_precision": 1.0,
+     "pred": 23
+    },
+    "FISCAL_CODE": {
+     "lenient_precision": 0.9578544061302682,
+     "pred": 261
+    },
+    "GENERIC_ID": {
+     "lenient_precision": 0.5652173913043478,
+     "pred": 23
+    },
+    "IBAN": {
+     "lenient_precision": 0.9247311827956989,
+     "pred": 93
+    },
+    "ID_DOCUMENT": {
+     "lenient_precision": 0.5590551181102362,
+     "pred": 127
+    },
+    "IP_ADDRESS": {
+     "lenient_precision": 1.0,
+     "pred": 29
+    },
+    "LICENSE_PLATE": {
+     "lenient_precision": 0.9818181818181818,
+     "pred": 55
+    },
+    "PERSON": {
+     "lenient_precision": 0.7197026022304833,
+     "pred": 1345
+    },
+    "PHONE": {
+     "lenient_precision": 0.7286135693215339,
+     "pred": 339
+    },
+    "USERNAME": {
+     "lenient_precision": 1.0,
+     "pred": 26
+    },
+    "VAT_NUMBER": {
+     "lenient_precision": 0.6956521739130435,
+     "pred": 23
+    }
+   }
+  },
+  "ablation_with_rizzo_maximum": {
+   "ci95": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      -0.0791,
+      -0.0562
+     ],
+     "lenient_f1": [
+      -0.0394,
+      -0.0225
+     ],
+     "strict_f1": [
+      -0.0399,
+      -0.0198
+     ]
+    },
+    "leak_rate": [
+     0.0986,
+     0.1284
+    ],
+    "lenient_f1": [
+     0.7437,
+     0.7768
+    ],
+    "lenient_p": [
+     0.6767,
+     0.718
+    ],
+    "lenient_r": [
+     0.8156,
+     0.8576
+    ],
+    "neg_fp_rate": [
+     0.2799,
+     0.3404
+    ],
+    "strict_f1": [
+     0.6229,
+     0.6603
+    ]
+   },
+   "ci95_direct": {
+    "delta_vs_reference": {
+     "leak_rate": [
+      -0.0716,
+      -0.0486
+     ],
+     "lenient_f1": [
+      -0.0403,
+      -0.0217
+     ],
+     "strict_f1": [
+      -0.0386,
+      -0.0166
+     ]
+    },
+    "leak_rate": [
+     0.0887,
+     0.1184
+    ],
+    "lenient_f1": [
+     0.7672,
+     0.7997
+    ],
+    "lenient_p": [
+     0.685,
+     0.7288
+    ],
+    "lenient_r": [
+     0.863,
+     0.8969
+    ],
+    "neg_fp_rate": [
+     0.2799,
+     0.3404
+    ],
+    "strict_f1": [
+     0.6465,
+     0.6844
+    ]
+   },
+   "direct": {
+    "leak_rate": 0.10258089872920215,
+    "lenient_f1": 0.7839325693144945,
+    "lenient_p": 0.7061783617556612,
+    "lenient_r": 0.8809276566285912,
+    "n_gold": 2889,
+    "n_pred": 3577,
+    "neg_fp_rate": 0.30870083432657924,
+    "strict_f1": 0.6659449427776059,
+    "strict_p": 0.6019010343863573,
+    "strict_r": 0.7452405676704742
+   },
+   "hard_cases": {
+    "compound_first": {
+     "lenient_recall": 0.9375,
+     "spans": 64
+    },
+    "double_surname": {
+     "lenient_recall": 0.8433734939759037,
+     "spans": 83
+    },
+    "first_name_only": {
+     "lenient_recall": 0.8564356435643564,
+     "spans": 202
+    },
+    "foreign": {
+     "lenient_recall": 0.936046511627907,
+     "spans": 172
+    },
+    "health": {
+     "lenient_recall": 1.0,
+     "spans": 8
+    },
+    "health_card": {
+     "lenient_recall": 0.9333333333333333,
+     "spans": 15
+    },
+    "initial": {
+     "lenient_recall": 0.9746835443037974,
+     "spans": 79
+    },
+    "ipv6": {
+     "lenient_recall": 1.0,
+     "spans": 15
+    },
+    "iso_date": {
+     "lenient_recall": 0.8235294117647058,
+     "spans": 51
+    },
+    "key_value": {
+     "lenient_recall": 0.9506172839506173,
+     "spans": 81
+    },
+    "lowercase": {
+     "lenient_recall": 0.8297872340425532,
+     "spans": 94
+    },
+    "month_abbrev": {
+     "lenient_recall": 0.2765957446808511,
+     "spans": 47
+    },
+    "no_cue": {
+     "lenient_recall": 0.25161290322580643,
+     "spans": 155
+    },
+    "noisy": {
+     "lenient_recall": 0.8108108108108109,
+     "spans": 37
+    },
+    "nosologico": {
+     "lenient_recall": 0.0,
+     "spans": 15
+    },
+    "obfuscated": {
+     "lenient_recall": 0.9736842105263158,
+     "spans": 38
+    },
+    "particle": {
+     "lenient_recall": 0.9111111111111111,
+     "spans": 135
+    },
+    "pec": {
+     "lenient_recall": 1.0,
+     "spans": 13
+    },
+    "short_year": {
+     "lenient_recall": 0.7368421052631579,
+     "spans": 19
+    },
+    "spaced_code": {
+     "lenient_recall": 0.8604651162790697,
+     "spans": 43
+    },
+    "spoken": {
+     "lenient_recall": 1.0,
+     "spans": 52
+    },
+    "surname_only": {
+     "lenient_recall": 0.8165680473372781,
+     "spans": 169
+    },
+    "table_cell": {
+     "lenient_recall": 0.5427509293680297,
+     "spans": 538
+    },
+    "uppercase": {
+     "lenient_recall": 0.625,
+     "spans": 368
+    },
+    "uppercase_surname": {
+     "lenient_recall": 0.9365079365079365,
+     "spans": 63
+    },
+    "word_like": {
+     "lenient_recall": 0.9693877551020408,
+     "spans": 98
+    },
+    "year_only": {
+     "lenient_recall": 0.0,
+     "spans": 11
+    }
+   },
+   "meta": {
+    "engine_commit": "7b8b69d3602bc66973cd62c1c1332191720bd7a2",
+    "engine_image": "docjobs-engine:base",
+    "family": "pseudora",
+    "label": "Ablation: layers regex+presidio+privacy_filter+ai4privacy+rizzo only (generic_professional policy), protection_level maximum",
+    "ms_per_1k_chars": 554.48,
+    "readiness": {
+     "ai4privacy": true,
+     "presidio": true,
+     "privacy_filter": true,
+     "rizzo": true
+    },
+    "system": "ablation_with_rizzo_maximum",
+    "target": {
+     "context_type": "bench_with_rizzo",
+     "layers": [
+      "regex",
+      "presidio",
+      "privacy_filter",
+      "ai4privacy",
+      "rizzo"
+     ],
+     "protection_level": "maximum"
+    },
+    "transport": "HTTP /v1/anonymize dry_run (masked spans only)"
+   },
+   "negative_docs": 100,
+   "negative_docs_flagged_rate": 0.95,
+   "negatives": {
+    "CODE": {
+     "masked_rate": 0.41304347826086957,
+     "spans": 184
+    },
+    "COMMON_WORD": {
+     "masked_rate": 0.7078651685393258,
+     "spans": 178
+    },
+    "DOC_DATE": {
+     "masked_rate": 0.057692307692307696,
+     "spans": 312
+    },
+    "DOC_NUMBER": {
+     "masked_rate": 0.5833333333333334,
+     "spans": 108
+    },
+    "LAW_REF": {
+     "masked_rate": 0.4542124542124542,
+     "spans": 273
+    },
+    "MONEY": {
+     "masked_rate": 0.04285714285714286,
+     "spans": 350
+    },
+    "ORG": {
+     "masked_rate": 0.14388489208633093,
+     "spans": 139
+    },
+    "PUBLIC_BODY": {
+     "masked_rate": 0.5671641791044776,
+     "spans": 134
+    }
+   },
+   "overall": {
+    "leak_rate": 0.11236368092145571,
+    "lenient_f1": 0.7611398955488141,
+    "lenient_p": 0.6973649882598487,
+    "lenient_r": 0.8377535101404057,
+    "n_gold": 3205,
+    "n_pred": 3833,
+    "neg_fp_rate": 0.30870083432657924,
+    "strict_f1": 0.6410912190963342,
+    "strict_p": 0.5885729193842942,
+    "strict_r": 0.7039001560062402
+   },
+   "per_genre": {
+    "formal": {
+     "leak_rate": 0.14031907179115302,
+     "lenient_f1": 0.7828614528481755,
+     "lenient_p": 0.7250423011844331,
+     "lenient_r": 0.8507014028056112,
+     "n_gold": 998,
+     "n_pred": 1182,
+     "neg_fp_rate": 0.21662468513853905,
+     "strict_f1": 0.6412844036697248,
+     "strict_p": 0.5913705583756346,
+     "strict_r": 0.7004008016032064
+    },
+    "informal": {
+     "leak_rate": 0.061420345489443376,
+     "lenient_f1": 0.8789773114396674,
+     "lenient_p": 0.8728813559322034,
+     "lenient_r": 0.8851590106007067,
+     "n_gold": 566,
+     "n_pred": 590,
+     "neg_fp_rate": 0.15384615384615385,
+     "strict_f1": 0.7491349480968857,
+     "strict_p": 0.7338983050847457,
+     "strict_r": 0.765017667844523
+    },
+    "negative": {
+     "leak_rate": 0.0,
+     "lenient_f1": 0.0,
+     "lenient_p": 0.0,
+     "lenient_r": 1.0,
+     "n_gold": 0,
+     "n_pred": 357,
+     "neg_fp_rate": 0.452755905511811,
+     "strict_f1": 0.0,
+     "strict_p": 0.0,
+     "strict_r": 1.0
+    },
+    "private": {
+     "leak_rate": 0.11910994764397906,
+     "lenient_f1": 0.8174111263111197,
+     "lenient_p": 0.7665995975855131,
+     "lenient_r": 0.8754365541327125,
+     "n_gold": 859,
+     "n_pred": 994,
+     "neg_fp_rate": 0.18427518427518427,
+     "strict_f1": 0.7393416082029143,
+     "strict_p": 0.6891348088531187,
+     "strict_r": 0.7974388824214202
+    },
+    "structured": {
+     "leak_rate": 0.10400516795865633,
+     "lenient_f1": 0.7522778743350713,
+     "lenient_p": 0.7591549295774648,
+     "lenient_r": 0.7455242966751918,
+     "n_gold": 782,
+     "n_pred": 710,
+     "neg_fp_rate": 0.06666666666666667,
+     "strict_f1": 0.5884718498659517,
+     "strict_p": 0.6183098591549295,
+     "strict_r": 0.5613810741687979
+    }
+   },
+   "per_type": {
+    "ADDRESS": {
+     "gold": 307,
+     "leak_rate": 0.07785642062689585,
+     "lenient_recall": 0.996742671009772,
+     "strict_recall": 0.6384364820846905
+    },
+    "BIRTH_PLACE": {
+     "gold": 223,
+     "leak_rate": 0.17482517482517482,
+     "lenient_recall": 0.336322869955157,
+     "strict_recall": 0.32286995515695066
+    },
+    "CADASTRAL_REF": {
+     "gold": 16,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.9375
+    },
+    "CASE_ID": {
+     "gold": 26,
+     "leak_rate": 0.45918367346938777,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.038461538461538464
+    },
+    "CONTRACT_ID": {
+     "gold": 43,
+     "leak_rate": 0.3125,
+     "lenient_recall": 0.3488372093023256,
+     "strict_recall": 0.3488372093023256
+    },
+    "CREDIT_CARD": {
+     "gold": 17,
+     "leak_rate": 0.5909090909090909,
+     "lenient_recall": 0.5294117647058824,
+     "strict_recall": 0.5294117647058824
+    },
+    "DATE_OF_BIRTH": {
+     "gold": 259,
+     "leak_rate": 0.24087591240875914,
+     "lenient_recall": 0.6718146718146718,
+     "strict_recall": 0.6718146718146718
+    },
+    "EMAIL": {
+     "gold": 231,
+     "leak_rate": 0.013729977116704805,
+     "lenient_recall": 0.9956709956709957,
+     "strict_recall": 0.9653679653679653
+    },
+    "EMPLOYEE_ID": {
+     "gold": 52,
+     "leak_rate": 0.32857142857142857,
+     "lenient_recall": 0.4423076923076923,
+     "strict_recall": 0.4423076923076923
+    },
+    "FISCAL_CODE": {
+     "gold": 252,
+     "leak_rate": 0.2026726057906459,
+     "lenient_recall": 0.9682539682539683,
+     "strict_recall": 0.9523809523809523
+    },
+    "IBAN": {
+     "gold": 114,
+     "leak_rate": 0.0,
+     "lenient_recall": 0.7543859649122807,
+     "strict_recall": 0.7543859649122807
+    },
+    "ID_DOCUMENT": {
+     "gold": 74,
+     "leak_rate": 0.02702702702702703,
+     "lenient_recall": 0.918918918918919,
+     "strict_recall": 0.918918918918919
+    },
+    "INDIRECT": {
+     "gold": 8,
+     "leak_rate": 0.5714285714285714,
+     "lenient_recall": 1.0,
+     "strict_recall": 0.0
+    },
+    "IP_ADDRESS": {
+     "gold": 29,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "LICENSE_PLATE": {
+     "gold": 54,
+     "leak_rate": 0.0,
+     "lenient_recall": 1.0,
+     "strict_recall": 1.0
+    },
+    "PERSON": {
+     "gold": 1156,
+     "leak_rate": 0.12042124542124542,
+     "lenient_recall": 0.8944636678200693,
+     "strict_recall": 0.6894463667820069
+    },
+    "PHONE": {
+     "gold": 247,
+     "leak_rate": 0.026986506746626688,
+     "lenient_recall": 0.9959514170040485,
+     "strict_recall": 0.9352226720647774
+    },
+    "USERNAME": {
+     "gold": 67,
+     "leak_rate": 0.21782178217821782,
+     "lenient_recall": 0.3880597014925373,
+     "strict_recall": 0.19402985074626866
+    },
+    "VAT_NUMBER": {
+     "gold": 30,
+     "leak_rate": 0.23333333333333334,
+     "lenient_recall": 0.5333333333333333,
+     "strict_recall": 0.3333333333333333
+    }
+   },
+   "pred_precision": {
+    "ADDRESS": {
+     "lenient_precision": 0.4779299847792998,
+     "pred": 657
+    },
+    "BIRTH_PLACE": {
+     "lenient_precision": 1.0,
+     "pred": 75
+    },
+    "CADASTRAL_REF": {
+     "lenient_precision": 0.6388888888888888,
+     "pred": 36
+    },
+    "CASE_ID": {
+     "lenient_precision": 0.21379310344827587,
+     "pred": 145
+    },
+    "CONTRACT_ID": {
+     "lenient_precision": 0.625,
+     "pred": 24
+    },
+    "CREDIT_CARD": {
+     "lenient_precision": 1.0,
+     "pred": 9
+    },
+    "DATE_OF_BIRTH": {
+     "lenient_precision": 1.0,
+     "pred": 174
+    },
+    "EMAIL": {
+     "lenient_precision": 0.8394160583941606,
+     "pred": 274
+    },
+    "EMPLOYEE_ID": {
+     "lenient_precision": 1.0,
+     "pred": 23
+    },
+    "FISCAL_CODE": {
+     "lenient_precision": 0.9576923076923077,
+     "pred": 260
+    },
+    "GENERIC_ID": {
+     "lenient_precision": 0.5652173913043478,
+     "pred": 23
+    },
+    "IBAN": {
+     "lenient_precision": 0.9347826086956522,
+     "pred": 92
+    },
+    "ID_DOCUMENT": {
+     "lenient_precision": 0.5772357723577236,
+     "pred": 123
+    },
+    "IP_ADDRESS": {
+     "lenient_precision": 1.0,
+     "pred": 29
+    },
+    "LICENSE_PLATE": {
+     "lenient_precision": 0.9818181818181818,
+     "pred": 55
+    },
+    "PERSON": {
+     "lenient_precision": 0.6877607788595271,
+     "pred": 1438
+    },
+    "PHONE": {
+     "lenient_precision": 0.7089337175792507,
+     "pred": 347
+    },
+    "USERNAME": {
+     "lenient_precision": 1.0,
+     "pred": 26
+    },
+    "VAT_NUMBER": {
+     "lenient_precision": 0.6956521739130435,
+     "pred": 23
+    }
+   }
+  }
+ }
+}

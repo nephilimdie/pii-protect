@@ -7,14 +7,17 @@ from fastapi import HTTPException
 from app.anonymization.anonymizer import PiiAnonymizer
 from app.detection.detector_registry import DetectorRegistry
 from app.detection.layers.ai4privacy_layer import Ai4PrivacyDetector
+from app.detection.layers.rizzo_layer import RizzoDetector
 from app.routers import _anonymize_logic as module
 from app.routers._anonymize_models import AnonymizeRequest
 
 
 @pytest.mark.asyncio
-async def test_real_detector_failure_reaches_router_as_503_without_original(monkeypatch):
-    layer = Ai4PrivacyDetector()
-    layer._pipeline = Mock(side_effect=RuntimeError('inference unavailable'))
+@pytest.mark.parametrize('detector', [Ai4PrivacyDetector, RizzoDetector])
+@pytest.mark.parametrize('available', [True, False])
+async def test_real_detector_failure_reaches_router_as_503_without_original(monkeypatch, detector, available):
+    layer = detector()
+    layer._pipeline = Mock(side_effect=RuntimeError('inference unavailable')) if available else None
     registry = DetectorRegistry()
     registry.register(layer)
     anonymizer = PiiAnonymizer(registry)

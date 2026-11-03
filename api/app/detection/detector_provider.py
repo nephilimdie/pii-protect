@@ -4,6 +4,7 @@ from app.detection.layers.regex_layer import ItalianRegexDetector
 from app.detection.layers.presidio_layer import PresidioDetector
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
 from app.detection.layers.ai4privacy_layer import Ai4PrivacyDetector
+from app.detection.layers.rizzo_layer import RizzoDetector
 from app.detection.models import RegexPattern
 
 
@@ -26,6 +27,9 @@ class DetectorProvider:
 
         if lc.get("ai4privacy", {}).get("enabled", True):
             registry.register(Ai4PrivacyDetector(model=self._settings.ai4privacy_model))
+
+        if self._settings.layer_enabled("rizzo"):
+            registry.register(RizzoDetector())
 
         if lc.get("regex", {}).get("enabled", True):
             registry.register(ItalianRegexDetector(self._regex_patterns))

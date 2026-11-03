@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.scoped_config.collections import BASE_QUERIES, item_key, normalize
+from app.scoped_config.collections import BASE_QUERIES, detection_layers_query, item_key, normalize
 
 
 class ScopedConfigRepository:
@@ -13,7 +13,7 @@ class ScopedConfigRepository:
         self._db = db
 
     async def base_items(self, collection: str) -> list[dict[str, Any]]:
-        result = await self._db.execute(text(BASE_QUERIES[collection]))
+        result = await self._db.execute(text(BASE_QUERIES[collection] or detection_layers_query()))
         items = []
 
         for row in result.fetchall():

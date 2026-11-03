@@ -151,6 +151,7 @@ async def get_anonymizer(
         presidio_context=cfg.presidio_context if tenant_id is not None else None,
         enabled_layers=cfg.enabled_layers,
         layer_configs=layer_configs,
+        layer_levels=cfg.layer_levels,
     )
 
 

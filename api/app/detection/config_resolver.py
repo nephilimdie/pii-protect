@@ -27,6 +27,7 @@ class ResolvedDetectionConfig:
     regex_patterns: list[dict]
     presidio_context: dict[str, list[str]]
     enabled_layers: set[str] | None = None
+    layer_levels: dict[str, frozenset[str]] | None = None
 
 
 # In-process cache: cache_key (tenant_id or "") -> (timestamp, ResolvedDetectionConfig)
@@ -142,6 +143,23 @@ def _append_context_word(result: dict[str, list[str]], item: dict) -> None:
         bucket.append(word)
 
 
+def _apply_layer_levels(platform_raw: list[dict], overrides: list[dict]) -> dict[str, frozenset[str]]:
+    """Why: a tenant may run a layer at more (or fewer) protection levels than the platform default.
+    What: code -> levels from the platform rows, replaced by an override's "protection_levels" when present.
+    Test: rows [{"code":"rizzo","protection_levels":["maximum"]}] + override data {"protection_levels":["balanced","maximum"]}
+    -> {"rizzo": frozenset({"balanced","maximum"})}.
+    """
+    data = {str(o["item_key"]): o["data"] for o in overrides
+            if o["action"] == "override" and isinstance(o.get("data"), dict) and "protection_levels" in o["data"]}
+    out = {}
+    for layer in platform_raw:
+        code = str(layer.get("code") or "")
+        levels = data.get(code, layer).get("protection_levels")
+        if code and levels is not None:
+            out[code] = frozenset([levels] if isinstance(levels, str) else levels)
+    return out
+
+
 def _apply_layer_overrides(
     platform_raw: list[dict],
     overrides: list[dict],
@@ -193,6 +211,7 @@ class GlobalDetectionConfigResolver:
             regex_patterns=getattr(app_state, "regex_patterns_raw", []),
             presidio_context=getattr(app_state, "presidio_context", {}),
             enabled_layers=None,
+            layer_levels=_apply_layer_levels(getattr(app_state, "detection_layers_raw", []), []),
         )
         _cache[cache_key] = (time.monotonic(), config)
         return config
@@ -257,6 +276,10 @@ class CloudScopedDetectionConfigResolver:
                 overrides.get("context-words", []),
             ),
             enabled_layers=_apply_layer_overrides(
+                getattr(app_state, "detection_layers_raw", []),
+                overrides.get("detection-layers", []),
+            ),
+            layer_levels=_apply_layer_levels(
                 getattr(app_state, "detection_layers_raw", []),
                 overrides.get("detection-layers", []),
             ),

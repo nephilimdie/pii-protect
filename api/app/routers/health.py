@@ -8,10 +8,11 @@ from app.detection.contracts.detector_contract import DetectorContract
 from app.detection.layers.presidio_layer import PresidioDetector
 from app.detection.layers.privacy_filter_layer import PrivacyFilterDetector
 from app.detection.layers.ai4privacy_layer import Ai4PrivacyDetector
+from app.detection.layers.rizzo_layer import RizzoDetector
 
 router = APIRouter()
 
-_ML_LAYERS: tuple[type[DetectorContract], ...] = (PresidioDetector, PrivacyFilterDetector, Ai4PrivacyDetector)
+_ML_LAYERS: tuple[type[DetectorContract], ...] = (PresidioDetector, PrivacyFilterDetector, Ai4PrivacyDetector, RizzoDetector)
 
 
 def _ml_layer_status(enabled_only: bool) -> dict[str, bool]:

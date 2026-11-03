@@ -88,6 +88,18 @@ Commercial marketplace operations remain outside the core: accounts, payments, e
 
 ## Backlog (unscheduled)
 
+### Futuro: modello PII proprietario
+
+- [ ] Valutare un token classifier Pseudora con dati autorizzati e licenze tracciate.
+- [ ] Definire split indipendenti per sorgente/template, annotazione e budget.
+- [ ] Misurare il guadagno rispetto ai motori esistenti prima di finanziare il training.
+
+**Decisione 2026-11-02: solo documentazione, nessun training ora.** Rizzo-PII resta
+un'integrazione opzionale da valutare nella pipeline; non e' un modello Pseudora.
+Metodo, vincoli e criteri: [Rizzo methodology](research/rizzo-methodology.md).
+
+### Altre funzionalita'
+
 - PDF/DOCX input support (with embedded text extraction)
 - Browser extension for real-time PII redaction in web forms
 - On-device mode (SQLite + smaller models) for air-gapped environments

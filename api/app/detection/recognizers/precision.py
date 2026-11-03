@@ -5,7 +5,8 @@ privacy_filter ADDRESS on bare numbers (codes, law refs, amounts), ai4privacy IP
 amounts ("191.799"), and PERSON on headings/greetings ("PROCURA ALLE LITI", "Cordiali", "Lei") and on capitalised payslip/
 contract vocabulary ("Contributi", "Canone", "Superminimo") at confident scores.
 What: drops ML-sourced (source != "regex") entities whose text cannot be that type. Deterministic
-spans are never touched. "maximum" keeps the score-free shape rules but skips the low-confidence
+spans retain format checks, except explicit public citations and placeholder names.
+"maximum" keeps the score-free shape rules but skips the low-confidence
 single-token PERSON rule, trading precision for recall.
 Test: PERSON "Cordiali saluti" (ml) -> dropped; ADDRESS "431/1998" (ml) -> dropped;
 IP_ADDRESS "191.799" (ml) -> dropped; PERSON "Mario Rossi" (ml) -> kept.
@@ -16,13 +17,16 @@ import ipaddress
 import re
 
 from app.detection.entities import PiiEntity
-from app.detection.recognizers.common import BALANCED, SOURCE
+from app.detection.recognizers.common import BALANCED, SOURCE, DATE
 from app.detection.recognizers.persons import STOPWORDS
 
 _LETTERS = re.compile(r"[A-Za-zÀ-ÿ]{3,}")
 _TOKEN_STRIP = ".,:;'’\"()[]"
 # a single-token ML PERSON below this score is more often a capitalised common word than a name
 _SINGLE_PERSON_MIN_SCORE = 0.85
+_PLACEHOLDER = re.compile(r"(?:tizio|caio|sempronio)(?:[ ,]+(?:e )?(?:tizio|caio|sempronio))*", re.I)
+_CITATION = re.compile(r"\bCass(?:\.|azione)\s*[^\n;]{0,80}?\bn\.\s*(?P<value>\d{1,6}(?:/\d{4})?)(?!\d)", re.I)
+_HISTORY = re.compile(rf"\b(?:battaglia|trattato|costituzione|armistizio)\s+(?:del\s+)?(?P<value>{DATE})", re.I)
 
 
 def _tokens(text: str) -> list[str]:
@@ -30,6 +34,8 @@ def _tokens(text: str) -> list[str]:
 
 
 def _person_ok(e: PiiEntity, level: str) -> bool:
+    if _PLACEHOLDER.fullmatch(e.text.strip()):
+        return False
     tokens = _tokens(e.text)
     if not tokens or all(t in STOPWORDS for t in tokens):
         return False
@@ -56,7 +62,22 @@ def _address_ok(e: PiiEntity, _level: str) -> bool:
 _RULES = {"PERSON": _person_ok, "IP_ADDRESS": _ip_ok, "ADDRESS": _address_ok}
 
 
-def precision_filter(entities: list[PiiEntity], level: str = BALANCED) -> list[PiiEntity]:
+def precision_filter(entities: list[PiiEntity], level: str = BALANCED, text: str = "") -> list[PiiEntity]:
     """Why/What: see module docstring. Test: see module docstring."""
-    return [e for e in entities
-            if e.source == SOURCE or (rule := _RULES.get(e.pii_type)) is None or rule(e, level)]
+    public_numbers = [m.span("value") for m in _CITATION.finditer(text)]
+    historical_dates = [m.span("value") for m in _HISTORY.finditer(text)]
+    found = []
+    for e in entities:
+        if e.pii_type == "PERSON" and _PLACEHOLDER.fullmatch(e.text.strip()):
+            continue
+        public_spans = historical_dates if e.pii_type == "DATE" else public_numbers if e.pii_type in {
+            "PRACTICE_ID", "CASE_ID", "PHONE", "TAX_DOCUMENT_ID",
+        } else []
+        if any(start <= e.start < e.end <= end for start, end in public_spans):
+            continue
+        if e.source != SOURCE and e.pii_type == "PHONE" and e.text.strip().lower() in STOPWORDS:
+            continue
+        rule = _RULES.get(e.pii_type)
+        if e.source == SOURCE or rule is None or rule(e, level):
+            found.append(e)
+    return found

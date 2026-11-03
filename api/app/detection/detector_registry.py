@@ -8,9 +8,9 @@ class DetectorRegistry:
     def register(self, detector: DetectorContract) -> None:
         self._detectors.append(detector)
 
-    def get_ordered(self) -> list[DetectorContract]:
+    def get_ordered(self, *, include_unavailable: bool = False) -> list[DetectorContract]:
         return sorted(
-            [d for d in self._detectors if d.is_available()],
+            [d for d in self._detectors if include_unavailable or d.is_available()],
             key=lambda d: d.priority,
         )
 

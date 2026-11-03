@@ -207,6 +207,7 @@ async def test_detection_layers_can_be_overridden_per_tenant():
                     "display_name": "Privacy Filter",
                     "enabled": False,
                     "description": "Disable for realtime benchmark",
+                    "protection_levels": ["maximum"],
                 },
             },
         )
@@ -215,6 +216,11 @@ async def test_detection_layers_can_be_overridden_per_tenant():
             headers={"X-Api-Key": "tenant-a"},
             params={"scope_type": "tenant", "scope_key": "tenant-a"},
         )
+        other = await client.get(
+            "/v1/admin/scoped-config/detection-layers",
+            headers={"X-Api-Key": "tenant-b"},
+            params={"scope_type": "tenant", "scope_key": "tenant-b"},
+        )
 
     assert updated.status_code == 200
     assert listed.status_code == 200
@@ -222,3 +228,8 @@ async def test_detection_layers_can_be_overridden_per_tenant():
     assert items["regex"]["enabled"] is True
     assert items["privacy_filter"]["enabled"] is False
     assert items["privacy_filter"]["_scope"] == "tenant:tenant-a"
+    assert items["privacy_filter"]["protection_levels"] == ["maximum"]
+    assert other.status_code == 200
+    other_items = {item["_item_key"]: item for item in other.json()["items"]}
+    assert other_items["privacy_filter"]["enabled"] is True
+    assert "protection_levels" not in other_items["privacy_filter"]

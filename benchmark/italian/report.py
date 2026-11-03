@@ -57,7 +57,7 @@ def tables(summary: dict) -> str:
     Test: every system id in summary['systems'] appears in the headline table."""
     S = summary["systems"]
     order = sorted(S, key=lambda n: -S[n]["overall"]["lenient_f1"])
-    key = [k for k in KEY if k in S]
+    key = [k for k in KEY if k in S] or list(S)
     out = [f"Dataset `{summary['dataset']}` · {summary['documents']} documents · bootstrap {summary['bootstrap_samples']}"
            " resamples over documents · all values in %.\n",
            "### Overall\n",
@@ -72,8 +72,8 @@ def tables(summary: dict) -> str:
     out += ["", f"### Difference vs `{ref}` (paired bootstrap, 95% CI; positive leak delta = leaks more)\n",
             "| System | Δ strict F1 | Δ lenient F1 | Δ leak rate |", "|---|---|---|---|"]
     for n in order:
-        d = S[n]["ci95"]["delta_vs_reference"]
-        if n != ref:
+        d = S[n]["ci95"].get("delta_vs_reference")
+        if n != ref and d:
             out.append(f"| `{n}` | {ci(d['strict_f1'])} | {ci(d['lenient_f1'])} | {ci(d['leak_rate'])} |")
     out += ["", "### Lenient recall by entity type (leak rate in parentheses)\n",
             "| Type (gold spans) | " + " | ".join(f"`{k}`" for k in key) + " |", "|---" * (len(key) + 1) + "|"]
@@ -184,7 +184,7 @@ def chart_tradeoff(S: dict) -> str:
 def chart_types(S: dict) -> str:
     """Why: averages hide which entity types each system misses.
     What: heatmap of lenient recall, entity type x key system, sequential blue, value in every cell."""
-    key = [k for k in KEY if k in S]
+    key = [k for k in KEY if k in S] or list(S)
     types = [t for t in KEY_TYPES if t in S[key[0]]["per_type"]]
     L, T, cw, ch = 150, 150, 104, 24
     b = [f'<text x="16" y="24" font-size="15" font-weight="600" fill="{INK}">Lenient recall by entity type</text>',
