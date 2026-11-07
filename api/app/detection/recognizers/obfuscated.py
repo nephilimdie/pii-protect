@@ -81,7 +81,8 @@ def detect_obfuscated(text: str) -> list[PiiEntity]:
     found: list[PiiEntity] = []
     for start, end in (*(m.span("cf") for m in _CF_LOOSE.finditer(text)), *(m.span() for m in _CF_GROUPED.finditer(text))):
         compact = _SEPARATORS.sub("", text[start:end])
-        if len(compact) == 16 and _repair_cf(compact):
+        # OCR repair only on one unbroken token: on a spaced word run ("ARIANO IRPINO IL 01") it finds chance checksums
+        if len(compact) == 16 and (_repair_cf(compact) if len(compact) == end - start else is_valid_codice_fiscale(compact.upper())):
             found.append(entity(text, start, end, "FISCAL_CODE"))
     for m in _IBAN_LOOSE.finditer(text):
         compact = _SEPARATORS.sub("", m.group())

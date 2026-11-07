@@ -107,6 +107,11 @@ def test_spaced_fiscal_code_after_a_word_is_found_whole(text, value):
     assert ("FISCAL_CODE", value) in _found(text)
 
 
+def test_spaced_word_run_is_not_an_ocr_repaired_fiscal_code():
+    """Why: held-out v2 FP: the word-start scan made "ARIANO IRPINO IL 01" pass the checksum after OCR repair."""
+    assert not any(t == "FISCAL_CODE" for t, _ in _found("RILASCIATO DA QUESTURA DI ARIANO IRPINO IL 01.12.2024"))
+
+
 def test_ocr_damaged_fiscal_code_repaired_only_when_checksum_passes():
     assert any(t == "FISCAL_CODE" for t, _ in _found("codice RSSMRA8OAO1H5O1U"))  # O for 0
     assert not any(t == "FISCAL_CODE" for t, _ in _found("codice RSSMRA8OAO1H5O1A"))  # wrong check char
