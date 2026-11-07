@@ -18,7 +18,8 @@ from app.detection.recognizers.common import entity
 
 _NUM = r"(?i:(?:n(?:r|um)?\.?|n°|numero)\s*)"
 _IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.]|\.\d)")
-_IPV6 = re.compile(r"(?<![\w:.])(?=[0-9A-Fa-f:]*:[0-9A-Fa-f]*:)[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:])")
+# start of text/word, or glued to an "IP:"/"IPv6:" label ("IPv6:2001:db8::1" is otherwise unmatchable)
+_IPV6 = re.compile(r"(?:(?<![\w:.])|(?<=(?i:ip):)|(?<=(?i:ipv6):))(?=[0-9A-Fa-f:]*:[0-9A-Fa-f]*:)[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:])")
 _VERSION_CUE = re.compile(r"(?i)(?:\bv|versione|version|release|build)\s*\.?\s*$")
 _CASE = re.compile(
     rf"(?:(?<![\w.])(?i:N\.?\s?R\.?\s?G\.?(?:\s?N\.?\s?R\.?)?|R\.?\s?G\.?(?:\s?(?:N\.?\s?R\.?|A\.?\s?C\.?|L\.?|E\.?))?"

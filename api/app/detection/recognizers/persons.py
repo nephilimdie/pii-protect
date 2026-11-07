@@ -51,7 +51,7 @@ _NAME = rf"{_TOKEN}(?:[ ](?:{_PARTICLE}[ ])?(?:{_CAP}|{_UP})){{0,3}}"
 _LOWER_NAME = r"[a-zà-ÿ][a-zà-ÿ'’]+(?:[ ][a-zà-ÿ][a-zà-ÿ'’]+){1,2}"
 
 # Cues that need a colon after them (labels) vs. cues that read naturally before a name.
-_LABEL_CUES = (r"soggetto|nome|cognome(?:\s*,?\s*(?:e\s+)?(?:nome|denominazione))?|denominazione|contribuente"
+LABEL_CUES = (r"soggetto|nome|cognome(?:\s*,?\s*(?:e\s+)?(?:nome|denominazione))?|denominazione|contribuente"
                r"|coniuge(?:\s+a\s+carico)?|cedente|cessionario|destinatario|firma(?:to)?|per|assegnato|assegnata"
                r"|beneficiari[oa](?:\s+designat[oa])?|intestatari[oa]|lavorat(?:ore|rice)|paziente|cliente|assicurat[oa]"
                r"|contraente|dipendente|richiedente|delegat[oa]|referente|titolare|nominativo")
@@ -60,7 +60,7 @@ _NATURAL_CUES = (r"il/la|il\s+sottoscritto|la\s+sottoscritta|sottoscritt[oa](?:/
                  r"|(?:il\s+)?mio\s+capo|cv\s+di|customer|gentile(?:\s+(?:sig(?:\.|nor[ae]?)|cliente|dott\.?(?:ssa)?))?"
                  r"|egregi[oa](?:\s+(?:sig\.|signor[ae]?|dott\.?(?:ssa)?|avv\.))?|(?:dall?['’]\s?)?avv\.|avvocato|dott\.(?:ssa)?"
                  r"|dott(?:ssa|oressa|or)?|sig\.(?:ra)?|signor[ae]?|prof\.(?:ssa)?|geom\.|ing\.|rag\.|notaio|giudice")
-_CUE = re.compile(rf"(?i:(?<![\w])(?:(?P<label>{_LABEL_CUES})\s*:|(?P<natural>{_NATURAL_CUES})))[ \t]*\n?[ \t]*")
+_CUE = re.compile(rf"(?i:(?<![\w])(?:(?P<label>{LABEL_CUES})\s*:|(?P<natural>{_NATURAL_CUES})))[ \t]*\n?[ \t]*")
 _NAME_AT = re.compile(_NAME)
 _LOWER_AT = re.compile(_LOWER_NAME)
 _LOWER_FOLLOW = re.compile(r"\s*(?:[,(<\n;]|$|-\s|(?i:nat[oa]\b|n\.\s+a\b|c\.\s?f\.|cf\b|codice\s+fiscale|\w+=))")
