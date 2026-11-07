@@ -16,10 +16,21 @@ def test_obfuscated_email_preserves_original_span(value):
     assert any(e.pii_type == "EMAIL" and e.text == value for e in detect_network(text))
 
 
+def _ips(text):
+    return [t for _, t in sorted({(e.start, e.text) for e in detect_contextual(text) if e.pii_type == "IP_ADDRESS"})]
+
+
 @pytest.mark.parametrize("value", ["2001:db8::1", "::1", "fe80::1234:abcd"])
 def test_ipv6_requires_valid_address(value):
-    assert any(e.text == value for e in detect_network("IP " + value))
-    assert not detect_network("IP 2001:xyz::1 o ora 12:30:40")
+    assert value in _ips("IP " + value)
+    assert not _ips("IP 2001:xyz::1 o ora 12:30:40")
+
+
+@pytest.mark.parametrize("label", ["IP:", "IPv6:", "ipv6: ", "ip="])
+def test_ipv6_glued_to_label_is_captured_whole(label):
+    ip = "2001:db8:85a3::8a2e:370:7334"
+    assert _ips(f"{label}{ip} {label}{ip}") == [ip, ip]
+    assert not _ips("ora 12:30:40") and not _ips("v6:2001:xyz::1")
 
 
 @pytest.mark.parametrize("value", ["16-GIU-1979", "16 giu 1979", "16/giu/79"])
@@ -100,3 +111,15 @@ def test_street_named_after_person_keeps_address_type():
     merged = EntityMerger().merge(candidates, text)
     assert any(e.pii_type == "ADDRESS" and "Giuseppe Verdi" in e.text for e in merged)
     assert not any(e.pii_type == "PERSON" for e in merged)
+
+
+@pytest.mark.parametrize("sep", [" accesso da ", " IP ", ", "])
+def test_repeated_ipv6_with_ml_head_survives_merge_and_precision_filter(sep):
+    ip = "2001:db8:85a3::8a2e:370:7334"
+    text = f"Log: accesso da {ip}{sep}{ip}"
+    second = text.rindex(ip)
+    # ai4privacy tags "da <ip>": regex must win without the ML head "da" being glued back onto the address
+    ml = replace(entity(text, second - 3, len(text), "IP_ADDRESS", 0.91), source="ai4privacy")
+    merged = EntityMerger().merge(detect_contextual(text) + [ml], text)
+    kept = precision_filter(merged, text=text)
+    assert [e.text for e in kept if e.pii_type == "IP_ADDRESS"] == [ip, ip]

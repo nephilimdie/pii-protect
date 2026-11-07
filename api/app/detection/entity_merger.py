@@ -3,6 +3,9 @@ from dataclasses import replace
 from app.detection.entities import PiiEntity
 
 _MAX_MERGE_GAP = 5
+# complete values on their own: gluing two of them (or an ML head like "da") yields an unparseable IP that the
+# precision filter then drops whole, leaking the address ("accesso da <ip> accesso da <ip>")
+_NEVER_JOINED = frozenset({"IP_ADDRESS"})
 
 
 class EntityMerger:
@@ -64,7 +67,7 @@ class EntityMerger:
             last = merged[-1]
             gap = entity.start - last.end
             gap_text = text[last.end:entity.start] if text else ""
-            if last.pii_type == entity.pii_type and 0 < gap <= _MAX_MERGE_GAP and "\n" not in gap_text:
+            if last.pii_type == entity.pii_type not in _NEVER_JOINED and 0 < gap <= _MAX_MERGE_GAP and "\n" not in gap_text:
                 merged[-1] = PiiEntity(
                     start=last.start,
                     end=entity.end,

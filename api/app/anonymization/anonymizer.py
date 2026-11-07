@@ -11,6 +11,7 @@ from app.detection.entity_merger import EntityMerger
 from app.detection.token_generator import TokenGenerator
 from app.anonymization.anonymization_result import AnonymizationResult
 from app.detection.recognizers import BALANCED, MAXIMUM, MAXIMUM_ML_MIN_SCORE, ML_LAYERS, precision_filter
+from app.detection.recognizers.persons import LABEL_CUES
 
 def _is_word_char(char: str) -> bool:
     return char.isalnum() or char == "_" or unicodedata.category(char).startswith("M")
@@ -36,6 +37,11 @@ _FIELD_LABEL = (
 )
 _SEPARATORS = r"[\s,;:.\-–—]"
 _LABEL_PREFIX_RE = re.compile(rf"(?:{_FIELD_LABEL}{_SEPARATORS}*)+", re.IGNORECASE)
+# "Dati: nome Mario Rossi": form labels ML layers glue in front of a name (same cues the persons recognizer reads)
+_PERSON_LABEL_PREFIX_RE = re.compile(rf"^(?:(?:dati(?:\s+anagrafici)?|{LABEL_CUES})\b\s*:?\s*)+", re.IGNORECASE)
+# label separators ('.', '-') also join an e-mail local part or URL ("pec.rossi@x.it"): never cut inside those
+_GLUED_VALUE_TYPES = frozenset({"EMAIL", "URL", "IBAN"})
+_TOKEN_RE = re.compile(r"\S*")
 _PERSON_SUFFIX_RE = re.compile(rf"(?:{_SEPARATORS}|{_FIELD_LABEL})+$", re.IGNORECASE)
 
 # Compiled reclassification rules loaded from DB at startup / on change.
@@ -82,6 +88,20 @@ _KINSHIP_PREFIX_RE = re.compile(
 )
 
 
+def _label_cut(text: str, entity: PiiEntity, start: int, cut: int) -> int:
+    """Why: a label regex ending in '.'/'-' also matches the start of "pec.rossi@x.it"; cutting there leaks.
+    What: returns cut, or the start of the token holding it when that token is an e-mail/URL/IBAN value.
+    Test: EMAIL "pec.rossi@x.it" -> 0; EMAIL "email: pec.rossi@x.it" -> 7; FISCAL_CODE "C.F.RSSMRA..." -> 4.
+    """
+    token = cut
+    while token > start and not text[token - 1].isspace():
+        token -= 1
+    if token == cut:
+        return cut
+    word = _TOKEN_RE.match(text, token).group()
+    return token if entity.pii_type in _GLUED_VALUE_TYPES or "@" in word or "://" in word else cut
+
+
 def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity | None:
     start, end = entity.start, entity.end
 
@@ -101,7 +121,7 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity | None:
 
     if entity.pii_type == "PERSON":
         # Strip leading titles ("sig.ra", "avv.") and kinship terms ML models include in the span
-        for prefix_re in (_KINSHIP_PREFIX_RE, _HONORIFIC_PREFIX_RE):
+        for prefix_re in (_PERSON_LABEL_PREFIX_RE, _KINSHIP_PREFIX_RE, _HONORIFIC_PREFIX_RE):
             if m := prefix_re.match(text[start:end]):
                 start += m.end()
         # Strip trailing punctuation and field labels ("Mario Rossi, C.F." -> "Mario Rossi")
@@ -109,7 +129,7 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity | None:
             end = start + m.start()
     # matched on the full text, so a fragment of a label ("C" of "C.F.", "Cod" of "Cod. Fisc.") is dropped too
     if entity.pii_type not in _PASSWORD_TYPES and (m := _LABEL_PREFIX_RE.match(text, start)):
-        start = m.end()
+        start = _label_cut(text, entity, start, m.end())
 
     if start >= end:
         return None  # span was only a title/label: nothing left to protect
