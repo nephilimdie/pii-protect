@@ -189,6 +189,17 @@ def _apply_layer_overrides(
     return enabled
 
 
+def _global_enabled_layers(platform_raw: list[dict]) -> set[str] | None:
+    """Why: requests without a tenant must not run an installed opt-in layer (rizzo) that is off by default.
+    What: None (every loaded layer) unless some installed layer is off by default; then the default-on codes.
+    Test: [{"code":"regex","enabled":True,"installed":True},{"code":"rizzo","enabled":False,"installed":True}]
+    -> {"regex"}; without the rizzo row -> None.
+    """
+    if not any(row.get("installed") and not row.get("enabled", True) for row in platform_raw):
+        return None
+    return {str(row["code"]) for row in platform_raw if row.get("code") and row.get("enabled", True)}
+
+
 # ── GlobalDetectionConfigResolver ────────────────────────────────────────────
 
 class GlobalDetectionConfigResolver:
@@ -210,7 +221,7 @@ class GlobalDetectionConfigResolver:
             reclassification_rules=getattr(app_state, "reclassification_rules_raw", []),
             regex_patterns=getattr(app_state, "regex_patterns_raw", []),
             presidio_context=getattr(app_state, "presidio_context", {}),
-            enabled_layers=None,
+            enabled_layers=_global_enabled_layers(getattr(app_state, "detection_layers_raw", [])),
             layer_levels=_apply_layer_levels(getattr(app_state, "detection_layers_raw", []), []),
         )
         _cache[cache_key] = (time.monotonic(), config)

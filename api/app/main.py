@@ -74,7 +74,9 @@ def _detection_layers_raw() -> list[dict]:
             "code": code,
             "display_name": label,
             "description": description,
-            "enabled": settings.layer_enabled(code),
+            # enabled = tenant default; installed = loaded on the platform (opt-in layers differ)
+            "enabled": settings.layer_tenant_default(code),
+            "installed": settings.layer_enabled(code),
             "protection_levels": settings.layer_levels(code),
         }
         for code, (label, description) in LAYER_META.items()
