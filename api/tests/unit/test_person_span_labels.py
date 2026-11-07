@@ -11,6 +11,8 @@ from app.anonymization.anonymizer import PiiAnonymizer, _snap_to_word_boundary
 from app.detection.detector_registry import DetectorRegistry
 from app.detection.entities import PiiEntity
 from app.detection.entity_merger import EntityMerger
+from app.detection.layers.regex_layer import ItalianRegexDetector
+from app.detection.recognizers import MAXIMUM
 from app.routers._anonymize_logic import get_anonymizer
 from tests.unit.test_documents import _post, env  # noqa: F401  (fixture reuse)
 
@@ -108,3 +110,42 @@ def test_merger_clips_ml_span_instead_of_dropping_it_against_regex():
     merged = EntityMerger().merge([ml, cf], text)
     assert [(e.pii_type, e.text) for e in merged] == [("PERSON", "Mario Rossi, C.F"), ("FISCAL_CODE", text[18:])]
     assert all(a.end <= b.start for a, b in zip(merged, merged[1:]))  # never overlapping
+
+
+SMOKE_TEXT = "Il sig. Mario Rossi, C.F. RSSMRA85T10A562S (scritto anche RSSMRA 85T10 A562S), residente a Milano."
+
+
+class SmokeMlDetector(ReplayDetector):
+    """Why: replays the ML spans the prod smoke test showed at maximum (privacy_filter ACCOUNT_NUMBER).
+    What: emits ACCOUNT_NUMBER on the "C" of "C.F." and on the spaced codice fiscale.
+    Test: detect(SMOKE_TEXT) returns two ACCOUNT_NUMBER spans.
+    """
+
+    def detect(self, text: str, language: str = "it", cfg: dict | None = None) -> list[PiiEntity]:
+        c, cf = text.index("C.F."), text.index("RSSMRA 85T10")
+        return [PiiEntity(c, c + 1, "ACCOUNT_NUMBER", "C", 0.6), PiiEntity(cf, cf + 18, "ACCOUNT_NUMBER", text[cf:cf + 18], 0.7)]
+
+
+def test_smoke_spaced_cf_is_fiscal_code_and_label_stays_clear():
+    registry = DetectorRegistry()
+    registry.register(ItalianRegexDetector([]))
+    registry.register(SmokeMlDetector())
+    anonymizer = PiiAnonymizer(registry)
+    anonymizer.set_protection_level(MAXIMUM)
+    spans = [(e.pii_type, e.text) for e in anonymizer.detect_only(SMOKE_TEXT, "c", "x").entities]
+    assert ("FISCAL_CODE", "RSSMRA 85T10 A562S") in spans
+    assert not any(t == "ACCOUNT_NUMBER" for t, _ in spans), spans
+
+
+@pytest.mark.parametrize("text, fragment", [
+    ("C.F. RSSMRA85T10A562S", "C"), ("C.F. RSSMRA85T10A562S", "C."), ("C. F. RSSMRA85T10A562S", "C"),
+    ("P.IVA 01234567897", "P"), ("P. IVA 01234567897", "P."), ("Cod. Fisc. RSSMRA85T10A562S", "Cod"),
+    ("Cod. Fisc. RSSMRA85T10A562S", "Cod. Fisc"), ("codice fiscale: RSSMRA85T10A562S", "codice"),
+])
+def test_label_abbreviation_fragment_of_any_type_is_dropped(text, fragment):
+    assert _snap_to_word_boundary(text, PiiEntity(0, len(fragment), "ACCOUNT_NUMBER", fragment, 0.6)) is None
+
+
+def test_label_prefix_still_trimmed_from_label_plus_value_span():
+    text = "C.F. RSSMRA85T10A562S"
+    assert _snap_to_word_boundary(text, PiiEntity(0, len(text), "ACCOUNT_NUMBER", text, 0.6)).text == "RSSMRA85T10A562S"

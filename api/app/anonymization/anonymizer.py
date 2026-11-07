@@ -35,7 +35,7 @@ _FIELD_LABEL = (
     r"|domiciliat[oa]|tel(?:efono|\.)|cell(?:ulare|\.)|e-?mail|pec|n\.|nr\.|matr(?:icola|\.))(?![^\W_])"
 )
 _SEPARATORS = r"[\s,;:.\-–—]"
-_LABEL_PREFIX_RE = re.compile(rf"^(?:{_FIELD_LABEL}{_SEPARATORS}*)+", re.IGNORECASE)
+_LABEL_PREFIX_RE = re.compile(rf"(?:{_FIELD_LABEL}{_SEPARATORS}*)+", re.IGNORECASE)
 _PERSON_SUFFIX_RE = re.compile(rf"(?:{_SEPARATORS}|{_FIELD_LABEL})+$", re.IGNORECASE)
 
 # Compiled reclassification rules loaded from DB at startup / on change.
@@ -107,8 +107,9 @@ def _snap_to_word_boundary(text: str, entity: PiiEntity) -> PiiEntity | None:
         # Strip trailing punctuation and field labels ("Mario Rossi, C.F." -> "Mario Rossi")
         if m := _PERSON_SUFFIX_RE.search(text[start:end]):
             end = start + m.start()
-    if entity.pii_type not in _PASSWORD_TYPES and (m := _LABEL_PREFIX_RE.match(text[start:end])):
-        start += m.end()
+    # matched on the full text, so a fragment of a label ("C" of "C.F.", "Cod" of "Cod. Fisc.") is dropped too
+    if entity.pii_type not in _PASSWORD_TYPES and (m := _LABEL_PREFIX_RE.match(text, start)):
+        start = m.end()
 
     if start >= end:
         return None  # span was only a title/label: nothing left to protect
