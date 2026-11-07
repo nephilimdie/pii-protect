@@ -36,7 +36,8 @@ def ensure_collection(collection: str) -> None:
 
 def detection_layers_query() -> str:
     """Why: the scoped-config view of the layers must match what the engine actually loads and gates.
-    What: SELECT over VALUES rows (code, display_name, description, enabled, protection_levels) from LAYER_META + settings.
+    What: SELECT over VALUES rows (code, display_name, description, enabled, protection_levels) from LAYER_META + settings;
+    enabled is the tenant default, so an installed opt-in layer (rizzo) shows as off until a tenant enables it.
     Test: "rizzo" and "'maximum'" appear in detection_layers_query() with default settings.
     """
     from app.config import settings
@@ -45,7 +46,7 @@ def detection_layers_query() -> str:
     def q(v: str) -> str:
         return "'" + v.replace("'", "''") + "'"
     rows = ",".join(
-        f"({q(code)}, {q(name)}, {q(desc)}, {'true' if settings.layer_enabled(code) else 'false'}, "
+        f"({q(code)}, {q(name)}, {q(desc)}, {'true' if settings.layer_tenant_default(code) else 'false'}, "
         f"ARRAY[{','.join(q(lv) for lv in settings.layer_levels(code))}]::text[])"
         for code, (name, desc) in LAYER_META.items())
     return f"SELECT * FROM (VALUES {rows}) AS detection_layers(code, display_name, description, enabled, protection_levels)"

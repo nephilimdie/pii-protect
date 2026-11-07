@@ -120,8 +120,9 @@ class Settings(BaseSettings):
         "presidio":       {"enabled": True},
         "privacy_filter": {"enabled": True},
         "ai4privacy":     {"enabled": True},
-        # loaded at startup; runs only at these protection levels unless a policy names it explicitly
-        "rizzo":          {"enabled": False, "protection_levels": ["maximum"]},
+        # enabled = installed and loaded at startup; tenant_default = on for tenants without an override.
+        # Runs only at these protection levels unless a policy names it explicitly.
+        "rizzo":          {"enabled": False, "tenant_default": False, "protection_levels": ["maximum"]},
         "regex":          {"enabled": True},
     }
 
@@ -149,7 +150,16 @@ class Settings(BaseSettings):
         What: True unless detection_layers[name].enabled is explicitly false (unknown layers default on).
         Test: Settings(detection_layers={"presidio": {"enabled": False}}).layer_enabled("presidio") is False.
         """
-        return bool(self.detection_layers.get(name, {}).get("enabled", name != "rizzo"))
+        return _flag(self.detection_layers.get(name, {}).get("enabled", name != "rizzo"))
+
+    def layer_tenant_default(self, name: str) -> bool:
+        """Why: an opt-in layer (rizzo) may be installed on the platform yet off until a tenant enables it.
+        What: True when the layer is loaded and detection_layers[name].tenant_default is not false
+        (rizzo defaults to false, so PII_RIZZO_ENABLED=true alone never switches it on for anyone).
+        Test: Settings(detection_layers={"rizzo": {"enabled": "true"}}).layer_tenant_default("rizzo") is False.
+        """
+        default = name != "rizzo"
+        return self.layer_enabled(name) and _flag(self.detection_layers.get(name, {}).get("tenant_default", default))
 
     def layer_levels(self, name: str) -> list[str]:
         """Why: an expensive or recall-first layer (rizzo) may be meant for "maximum" only.
@@ -161,6 +171,13 @@ class Settings(BaseSettings):
         default = ["maximum"] if name == "rizzo" else ["balanced", "maximum"]
         levels = self.detection_layers.get(name, {}).get("protection_levels", default)
         return [x.strip() for x in levels.split(",")] if isinstance(levels, str) else list(levels)
+
+
+def _flag(value: Any) -> bool:
+    """Env-provided nested values stay strings ("false"), so bool() alone would read them as True."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 settings = Settings()

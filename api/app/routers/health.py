@@ -51,6 +51,10 @@ async def readiness(db: AsyncSession = Depends(get_db)):
     layers = _ml_layer_status(enabled_only=True)
     checks["detector"] = all(layers.values())
     checks["detector_layers"] = layers
+    # installed and loaded, but off unless a tenant enables it (e.g. rizzo)
+    opt_in = sorted(n for n in layers if not settings.layer_tenant_default(n))
+    if opt_in:
+        checks["opt_in_layers"] = opt_in
     if not (checks["database"] and checks["migrations"] and checks["detector"]):
         raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
     return {"status": "ready", "checks": checks}
