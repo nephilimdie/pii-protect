@@ -19,6 +19,9 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 - Documents over `PII_DOCUMENT_MAX_TEXT_CHARS` now fail fast with `422 DOCUMENT_TOO_LONG` (was `413 DOCUMENT_TEXT_TOO_LONG`) carrying `max_chars`, `chars` and `estimated_max_pages` (~2,200 chars per page), checked after extraction and before detection, so a 180-page PDF is refused in about a second instead of timing out after `PII_DOCUMENT_TIMEOUT_SECONDS`. Size the limit to detection throughput: prod detects ~1.1k chars/s, so 90000 fits a 100 s timeout.
 - Batch multiline Privacy Filter inference to reduce ONNX overhead while preserving entity offsets and single-line fallback compatibility.
 
+### Fixed
+- A spaced or dashed codice fiscale right after a word ("scritto anche RSSMRA 85T10 A562S") is labelled `FISCAL_CODE` again, not `ACCOUNT_NUMBER`: the tolerant CF scan now tries every word start, so a failed earlier window no longer hides the code. Fragments of field labels ("C" of "C.F.", "P" of "P.IVA", "Cod" of "Cod. Fisc.") are never masked, which removes the `ACCOUNT_NUMBER` false positive at `protection_level=maximum`.
+
 ### Planned
 - See [Roadmap](doc/roadmap.md)
 

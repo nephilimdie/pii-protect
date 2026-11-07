@@ -96,6 +96,22 @@ def test_identifier_labels_are_not_phones(text):
     assert not any(t == "PHONE" for t, _ in _found(text))
 
 
+@pytest.mark.parametrize("text, value", [
+    # prod smoke: the failed 16-char window "anche RSSMRA 85T10" used to swallow the CF start
+    ("C.F. RSSMRA85T10A562S (scritto anche RSSMRA 85T10 A562S), residente", "RSSMRA 85T10 A562S"),
+    ("detto anche RSSMRA-85T10-A562S.", "RSSMRA-85T10-A562S"),
+    ("il cf di lui rssmra 85t10 a562s", "rssmra 85t10 a562s"),
+    ("CF RSS MRA 85T10 A562S", "RSS MRA 85T10 A562S"),
+])
+def test_spaced_fiscal_code_after_a_word_is_found_whole(text, value):
+    assert ("FISCAL_CODE", value) in _found(text)
+
+
+def test_spaced_word_run_is_not_an_ocr_repaired_fiscal_code():
+    """Why: held-out v2 FP: the word-start scan made "ARIANO IRPINO IL 01" pass the checksum after OCR repair."""
+    assert not any(t == "FISCAL_CODE" for t, _ in _found("RILASCIATO DA QUESTURA DI ARIANO IRPINO IL 01.12.2024"))
+
+
 def test_ocr_damaged_fiscal_code_repaired_only_when_checksum_passes():
     assert any(t == "FISCAL_CODE" for t, _ in _found("codice RSSMRA8OAO1H5O1U"))  # O for 0
     assert not any(t == "FISCAL_CODE" for t, _ in _found("codice RSSMRA8OAO1H5O1A"))  # wrong check char

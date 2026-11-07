@@ -20,8 +20,9 @@ from app.detection.recognizers.common import entity
 
 _SEP = r"[ .\-]?"
 _A = r"[A-Za-z0-9]"
-# 16 alphanumerics with optional single separators between them (word-bounded)
-_CF_LOOSE = re.compile(rf"(?<![A-Za-z0-9])(?=[A-Za-z]{{2}})(?:{_A}{_SEP}){{15}}{_A}(?![A-Za-z0-9])")
+# 16 alphanumerics with optional single separators between them (word-bounded). A lookahead, so every
+# word start is tried: a consumed failing window ("anche RSSMRA 85T10") must not hide the CF after it.
+_CF_LOOSE = re.compile(rf"(?<![A-Za-z0-9])(?=(?P<cf>(?=[A-Za-z]{{2}})(?:{_A}{_SEP}){{15}}{_A}(?![A-Za-z0-9])))")
 _CF_GROUPED = re.compile(r"(?<!\w)[A-Za-z]{3}[ .\-]+[A-Za-z]{3}[ .\-]+[A-Za-z0-9]{5}[ .\-]+[A-Za-z0-9]{5}(?!\w)")
 _IBAN_LOOSE = re.compile(rf"(?<![A-Za-z0-9])[A-Za-z]{{2}}[0-9OoIl]{{2}}(?:{_SEP}{_A}){{11,30}}(?![A-Za-z0-9])")
 _PIVA_LOOSE = re.compile(rf"(?i:\bp\.?\s?iva|\bpartita\s+iva|\bvat)\s*(?:n\.?\s*)?:?\s*(?:IT\s?)?(?P<v>\d(?:{_SEP}\d){{10}})(?!\d)")
@@ -78,10 +79,11 @@ def _repair_iban(raw: str) -> bool:
 def detect_obfuscated(text: str) -> list[PiiEntity]:
     """Why/What: see module docstring. Test: see module docstring."""
     found: list[PiiEntity] = []
-    for m in (*_CF_LOOSE.finditer(text), *_CF_GROUPED.finditer(text)):
-        compact = _SEPARATORS.sub("", m.group())
-        if len(compact) == 16 and _repair_cf(compact):
-            found.append(entity(text, m.start(), m.end(), "FISCAL_CODE"))
+    for start, end in (*(m.span("cf") for m in _CF_LOOSE.finditer(text)), *(m.span() for m in _CF_GROUPED.finditer(text))):
+        compact = _SEPARATORS.sub("", text[start:end])
+        # OCR repair only on one unbroken token: on a spaced word run ("ARIANO IRPINO IL 01") it finds chance checksums
+        if len(compact) == 16 and (_repair_cf(compact) if len(compact) == end - start else is_valid_codice_fiscale(compact.upper())):
+            found.append(entity(text, start, end, "FISCAL_CODE"))
     for m in _IBAN_LOOSE.finditer(text):
         compact = _SEPARATORS.sub("", m.group())
         # the loose shape may run into a following word: shrink to the longest valid prefix
