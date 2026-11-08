@@ -115,6 +115,15 @@ components:
                   cells, each shifted by fresh random noise and quantized (blur also blurs first), so no
                   identity survives. Every other box (text, codes, plates, signatures, stamps,
                   needs_review) is always solid black. Invalid -> 422 INVALID_FACE_STYLE before any work.
+              review_keep:
+                type: string
+                description: |
+                  redact only, images and scanned PDF pages: JSON array of `needs_review` ids from
+                  `/v1/documents/preview` (e.g. `[0, 2]`) to leave un-redacted; the same choice as the job
+                  render's `review_keep`. Default: every needs_review region is painted. Text entities and
+                  visual hits (faces, codes, plates, signatures, stamps) are always painted. Not an array of
+                  non-negative integers -> 422 INVALID_REVIEW_KEEP before any work; an id the OCR did not
+                  produce -> 422 INVALID_REVIEW_KEEP.
 
   responses:
     DocumentError:
