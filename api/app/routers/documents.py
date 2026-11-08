@@ -9,6 +9,7 @@ independent of PII_FAILURE_MODE.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 import time
@@ -29,6 +30,7 @@ from app.documents.models import IMAGE_FORMATS, MEDIA_TYPES, DocumentError, Docu
 from app.documents.ocr_client import get_ocr_client
 from app.documents.ocr_layout import FaceStyle
 from app.documents.service import (
+    MAX_USER_ENTITIES,
     load_document,
     parse_user_entities,
     pseudonymization_edits,
@@ -67,6 +69,9 @@ _FORM_FIELDS = {
                    "description": "redact only, images and scanned pages: how faces are hidden. black (default) is "
                                   "the safest; pixelate/blur keep at most 8x8 noisy, quantized colour cells per face "
                                   "(irreversible). Everything else is always painted black."},
+    "review_keep": {"type": "string", "description": "redact only, images and scanned pages: JSON array of "
+                                                     "`needs_review` ids (from /preview) to leave un-redacted. "
+                                                     "Default: every needs_review region is painted."},
 }
 _OPENAPI_FORM = {"requestBody": {"required": True, "content": {"multipart/form-data": {
     "schema": {"type": "object", "required": ["file"], "properties": _FORM_FIELDS}}}}}
@@ -237,6 +242,7 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
                    db: AsyncSession, anonymizer: PiiAnonymizer, tenant_id: str | None,
                    usage: UsageService, state: dict, slot: AdmissionSlot) -> Response:
     face_style = parse_face_style(fields.get("face_style"))  # before any work: a bad value costs nothing
+    keep_review = parse_review_keep(fields.get("review_keep")) if op == Operation.REDACT else frozenset()
     doc = await asyncio.to_thread(load_document, payload, _limits())
     state["format"], state["pages"] = doc.format, doc.pages
     if op == Operation.PSEUDONYMIZE:
@@ -265,8 +271,11 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     state["entities"] = entities
     if op == Operation.PREVIEW:
         return document_headers(JSONResponse(preview_payload(doc, joined, entities, policy)), doc, entities)
+    review_count = len(doc.review_boxes()) if getattr(doc, "scanned", None) else 0
+    if any(index >= review_count for index in keep_review):
+        raise DocumentError(422, "INVALID_REVIEW_KEEP", "`review_keep` contains an unknown needs_review id.")
     response = await render_document(op, doc, joined, entities, policy, state["deadline"], slot.release,
-                                     state["stream_done"], face_style=face_style)
+                                     state["stream_done"], keep_review, face_style)
     state["streaming"] = isinstance(response, StreamingResponse)
     return response
 
@@ -278,6 +287,26 @@ def parse_face_style(raw: str | None) -> str:
         return FaceStyle(raw or FaceStyle.BLACK).value
     except ValueError:
         raise DocumentError(422, "INVALID_FACE_STYLE", "`face_style` must be black, pixelate or blur.") from None
+
+
+def parse_review_keep(raw: str | None) -> frozenset[int]:
+    """Why: a client that reviewed the doubtful regions of a sync /preview (e.g. the desktop app's
+    screenshot review) needs the same choice the job render offers, and the field is untrusted.
+    What: JSON array of non-negative ints -> frozenset; absent/empty -> nothing kept (all painted);
+    anything else is a 422 INVALID_REVIEW_KEEP before any work. Ids are checked against the
+    OCR'd needs_review regions later (unknown id -> 422).
+    Test: None -> frozenset(); "[1, 0]" -> {0, 1}; "[-1]", "[true]", "{}", "x" -> 422.
+    """
+    if not raw:
+        return frozenset()
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        items = None
+    if (not isinstance(items, list) or len(items) > MAX_USER_ENTITIES
+            or any(type(i) is not int or i < 0 for i in items)):
+        raise DocumentError(422, "INVALID_REVIEW_KEEP", "`review_keep` must be a JSON array of needs_review ids.")
+    return frozenset(items)
 
 
 def detection_window(deadline: float) -> tuple[int, int, float]:

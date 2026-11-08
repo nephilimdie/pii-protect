@@ -227,6 +227,25 @@ def test_photo_jpeg_exif_orientation_and_gps_removed(img):
     assert img.fake.sizes == [(PHOTO.size, "RGB")]  # OCR saw the upright frame (colour)
 
 
+def test_sync_redact_review_keep_leaves_only_kept_regions_visible(img):
+    source = png(SCREENSHOT.image)
+    kept = _post(img, "redact", source, review_keep="[1]")  # the user checked the signature
+    assert kept.status_code == 200, kept.text
+    _assert_redacted(Image.open(io.BytesIO(kept.content)), SCREENSHOT, kept_review=(1,))
+    both = _post(img, "redact", source, review_keep="[0, 1]")
+    _assert_redacted(Image.open(io.BytesIO(both.content)), SCREENSHOT, kept_review=(0, 1))  # text PII still black
+    _assert_redacted(Image.open(io.BytesIO(_post(img, "redact", source, review_keep="[]").content)), SCREENSHOT)
+    calls = img.fake.calls
+    for bad in ("[-1]", "[true]", "[1.0]", '{"0": 1}', "1", "x"):
+        r = _post(img, "redact", source, review_keep=bad)
+        assert r.status_code == 422 and r.json()["error"] == "INVALID_REVIEW_KEEP", bad
+    assert img.fake.calls == calls  # a malformed field is refused before any OCR
+    unknown = _post(img, "redact", source, review_keep="[2]")
+    assert unknown.status_code == 422 and unknown.json()["error"] == "INVALID_REVIEW_KEEP"
+    assert unknown.headers["content-type"].startswith("application/json")  # never an image
+    assert _post(img, "preview", source, review_keep="x").status_code == 200  # ignored outside redact
+
+
 def test_preview_payload_has_scanned_pdf_shape(img):
     r = _post(img, "preview", png(SCREENSHOT.image))
     assert r.status_code == 200, r.text
