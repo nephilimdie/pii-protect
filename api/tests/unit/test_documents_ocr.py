@@ -177,6 +177,14 @@ def test_scanned_page_text_offsets_and_line_boxes():
     assert page.normalized((100, 250, 500, 1000)) == [0.1, 0.25, 0.5, 1.0]
 
 
+def test_scanned_page_does_not_cover_unrelated_content_between_distant_words():
+    page = ScannedPage.from_ocr(_result([
+        ("Mario", (10, 10, 60, 30), 0, 0), ("Rossi", (70, 10, 120, 30), 0, 0),
+        ("Altro", (400, 10, 460, 30), 0, 0),
+    ]))
+    assert page.boxes(0, len(page.text)) == [(10, 10, 120, 30), (400, 10, 460, 30)]
+
+
 def test_to_device_scales_and_pads():
     assert to_device((10, 10, 20, 30), 0.5, 0.5, 100, 100, True) == (2, 2, 13, 18)
     assert to_device((0, 0, 100, 100), 1, 1, 50, 50, True) == (0, 0, 50, 50)  # clipped

@@ -241,12 +241,13 @@ class PdfDocument(ScannedPages):
         return image, dpi
 
     def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset(),
-               face_style: str = FaceStyle.BLACK, cover: Covers | None = None) -> bytes:
-        return b"".join(self.render_stream(edits, None, keep_review, face_style, cover))
+               face_style: str = FaceStyle.BLACK, cover: Covers | None = None,
+               keep_visual: frozenset[int] = frozenset()) -> bytes:
+        return b"".join(self.render_stream(edits, None, keep_review, face_style, cover, keep_visual))
 
     def render_stream(self, edits: list[SegmentEdit], deadline: float | None = None,
                       keep_review: frozenset[int] = frozenset(), face_style: str = FaceStyle.BLACK,
-                      cover: Covers | None = None) -> Iterator[bytes]:
+                      cover: Covers | None = None, keep_visual: frozenset[int] = frozenset()) -> Iterator[bytes]:
         """Yields the output PDF in pieces (header, one chunk per page, trailer ending in %%EOF).
         Any failure raises before the trailer, so an incomplete body never ends in %%EOF.
         `keep_review`: ids of review_boxes() left visible; `cover`: user-drawn areas painted black
@@ -258,6 +259,7 @@ class PdfDocument(ScannedPages):
         for edit in edits:
             by_page[edit.segment].append(edit)
         review = self.review_by_page(keep_review)
+        visual = self.visual_keep_by_page(keep_visual)
         writer = ImagePdfWriter()
         yield writer.start()
         with PDFIUM_LOCK:
@@ -268,7 +270,7 @@ class PdfDocument(ScannedPages):
                     raise PdfRenderTimeout()
                 if index in self.scanned:
                     image = self._render_scanned(source, index, plan, by_page.get(index, []), review.get(index, []),
-                                                 face_style, cover.get(index, ()))
+                                                 face_style, cover.get(index, ()), visual.get(index, frozenset()))
                 else:
                     image = self._render_page(source, index, plan, by_page.get(index, []), cover.get(index, ()))
                 yield writer.add_page(image, plan.frame, plan.rotation)
@@ -309,7 +311,8 @@ class PdfDocument(ScannedPages):
                 bitmap.close()
 
     def _render_scanned(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit],
-                        review: list, face_style: str = "black", cover=()) -> PageImage:
+                        review: list, face_style: str = "black", cover=(),
+                        keep_visual: frozenset[int] = frozenset()) -> PageImage:
         """Scanned page: render as displayed (the frame OCR saw), paint entity and review boxes,
         rotate back into the /MediaBox frame. Only pixels leave: no OCR text is written."""
         with PDFIUM_LOCK:
@@ -322,7 +325,7 @@ class PdfDocument(ScannedPages):
                     bitmap.close()
             finally:
                 page.close()
-        paint(image, self.scanned[index], edits, review, face_style, cover)
+        paint(image, self.scanned[index], edits, review, face_style, cover, keep_visual)
         if plan.rotation in _UNROTATE:
             image = image.transpose(_UNROTATE[plan.rotation])
         return _encode(image)
