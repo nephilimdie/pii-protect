@@ -18,7 +18,7 @@ from PIL import Image, ImageCms, ImageOps
 from app.documents.chunking import DetectionCancelled
 from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 from app.documents.ocr_client import OcrClient
-from app.documents.ocr_layout import FaceStyle, ScannedPage, ScannedPages, paint
+from app.documents.ocr_layout import Covers, FaceStyle, ScannedPage, ScannedPages, paint
 
 # PIL logs every parsed EXIF tag (GPS included) at DEBUG: never let that reach the engine's logs.
 logging.getLogger("PIL").setLevel(max(logging.getLogger("PIL").level, logging.INFO))
@@ -86,7 +86,7 @@ class ImageDocument(ScannedPages):
     (GPS, device, timestamps) is PII too; the output must contain neither.
     What: one-page document whose single segment is the OCR text (``run_ocr``); preview boxes
     and needs_review regions have the scanned-PDF shape (page 1, page fractions); ``render``
-    paints entity + not-kept review boxes on the clean frame and re-encodes it in the input
+    paints entity + not-kept review boxes (+ user ``cover`` areas) on the clean frame and re-encodes it in the input
     format (PNG lossless, JPEG/WebP quality 92) with no metadata. Redact only.
     Test: a JPEG with EXIF orientation 6 and GPS -> output upright, ``getexif()`` empty, the
     pixels under the detected words black.
@@ -162,11 +162,11 @@ class ImageDocument(ScannedPages):
             raise DocumentError(422, "OCR_NO_TEXT_FOUND", "No text could be recognized in this image.")
 
     def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset(),
-               face_style: str = FaceStyle.BLACK) -> bytes:
+               face_style: str = FaceStyle.BLACK, cover: Covers | None = None) -> bytes:
         if self.ocr_pending:
             raise RuntimeError("image was not OCR'd")  # never return an unreviewed image
         image = self._decode()
-        paint(image, self.scanned[0], edits, self.review_by_page(keep_review).get(0, []), face_style)
+        paint(image, self.scanned[0], edits, self.review_by_page(keep_review).get(0, []), face_style, (cover or {}).get(0, ()))
         buffer = io.BytesIO()
         image.save(buffer, format=_PIL_FORMAT[self.format], **_ENCODE[self.format])
         return buffer.getvalue()

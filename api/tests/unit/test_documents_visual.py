@@ -218,12 +218,22 @@ def test_marks_are_requested_parsed_painted_and_absorb_review_ink(vis):
     vis.fake.marks = [("SIGNATURE", SIG, False), ("STAMP", STAMP, True)]
     body = _post(vis, "preview", image_tests.png(image_tests.SCREENSHOT.image)).json()
     assert vis.fake.mark_fields == ["signature,stamp"]
-    assert [(v["type"], v["needs_review"]) for v in body["visual_entities"]][-2:] == [("SIGNATURE", False), ("STAMP", True)]
-    assert [b["reason"] for b in body["needs_review"]] == ["low_confidence"]  # the ink region is inside SIG
+    assert [(v["type"], v["needs_review"]) for v in body["visual_entities"]][-1] == ("SIGNATURE", False)
+    # the ink region is inside SIG; the uncertain stamp is a review region of its own, listed last
+    assert [b["reason"] for b in body["needs_review"]] == ["low_confidence", "uncertain_mark"]
     r = _post(vis, "redact", image_tests.png(image_tests.SCREENSHOT.image))
     out = Image.open(io.BytesIO(r.content))
-    assert all(_dark(out, box) for box in (SIG, STAMP, FACE))
-    assert {"SIGNATURE", "STAMP"} <= set(r.headers["x-pii-types"].split(","))
+    assert all(_dark(out, box) for box in (SIG, STAMP, FACE))  # legacy default: every review region covered
+    assert "SIGNATURE" in r.headers["x-pii-types"].split(",") and "STAMP" not in r.headers["x-pii-types"]
+
+
+def test_uncertain_mark_is_shown_by_default_only_when_asked(vis):
+    vis.fake.marks = [("SIGNATURE", SIG, False), ("STAMP", STAMP, True)]
+    source = image_tests.png(image_tests.SCREENSHOT.image)
+    shown = Image.open(io.BytesIO(_post(vis, "redact", source, review_default="visible").content))
+    assert not _dark(shown, STAMP) and _dark(shown, SIG) and _dark(shown, QR)  # sure marks/codes stay painted
+    covered = Image.open(io.BytesIO(_post(vis, "redact", source, review_default="visible", review_cover="[1]").content))
+    assert _dark(covered, STAMP)
 
 
 def test_marks_not_requested_when_visual_pii_is_off(vis, monkeypatch):
@@ -261,18 +271,26 @@ def _edge_energy(image: Image.Image) -> float:
     return float(np.abs(np.diff(a, axis=0)).mean() + np.abs(np.diff(a, axis=1)).mean())
 
 
+def _obscured(image: Image.Image, box, style: str) -> Image.Image:
+    from app.documents.ocr_layout import obscure
+
+    out = image.copy()
+    tile, mask, origin = obscure(image, box, style)
+    out.paste(tile, origin, mask)
+    return out
+
+
 @pytest.mark.parametrize("style", ["pixelate", "blur"])
 def test_face_style_is_irreversible(style):
-    from app.documents.ocr_layout import STYLE_CELLS, obscure
+    from app.documents.ocr_layout import STYLE_CELLS
 
     box = (100, 50, 300, 250)
     original = _face_image()
-    first, second = original.copy(), original.copy()
-    obscure(first, box, style)
-    obscure(second, box, style)
+    first, second = _obscured(original, box, style), _obscured(original, box, style)
     face, face2 = first.crop(box), second.crop(box)
     assert face.tobytes() != face2.tobytes()  # fresh noise on every render
-    assert first.crop((0, 0, 100, 300)).tobytes() == original.crop((0, 0, 100, 300)).tobytes()  # only the box
+    far = (0, 0, 20, 300) if style == "blur" else (0, 0, 100, 300)  # blur fades out around the face box
+    assert first.crop(far).tobytes() == original.crop(far).tobytes()
     assert _edge_energy(face) < 0.1 * _edge_energy(original.crop(box))  # no fine detail survives
     # nothing finer than the cell grid: shrinking to the grid and back loses (almost) nothing
     grid = face.resize((STYLE_CELLS, STYLE_CELLS), Image.Resampling.BOX)
@@ -283,6 +301,22 @@ def test_face_style_is_irreversible(style):
     assert error < (2 if style == "pixelate" else 12), error
     if style == "pixelate":
         assert len(face.getcolors(10_000)) <= STYLE_CELLS * STYLE_CELLS
+
+
+def test_blur_is_a_soft_oval_not_a_pasted_rectangle():
+    """Founder 2026-11-09: a blurred face must read as a soft, see-through blur, not an opaque block."""
+    import numpy as np
+
+    box = (100, 50, 300, 250)
+    original = Image.new("RGB", (400, 300), (40, 120, 200))
+    original.paste(_face_image().crop(box), box)
+    blurred = np.asarray(_obscured(original, box, "blur").convert("L"), dtype=np.float32)
+    before = np.asarray(original.convert("L"), dtype=np.float32)
+    row = blurred[150, :]  # across the face's middle: the background blends into the blur gradually
+    assert np.abs(np.diff(row[30:110])).max() < 12  # no hard step at the box edge (x=100)
+    assert np.abs(blurred[150, 60:100] - before[150, 60:100]).max() > 5  # the fade reaches outside the box
+    corner = blurred[0:20, 0:20]
+    assert np.array_equal(corner, before[0:20, 0:20])  # far background untouched
 
 
 def test_face_style_keeps_everything_else_black(vis):
