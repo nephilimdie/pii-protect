@@ -127,8 +127,10 @@ No image plugin ships with the engine (the former `pseudora.image_ocr` plugin wa
 removed; scanned PDFs **and photos/screenshots (JPEG, PNG, WebP)** are handled by the
 zero-retention document endpoints `/v1/documents/{preview,redact}` and document jobs with
 the internal OCR service: EXIF orientation applied, every metadata block (EXIF incl. GPS,
-XMP, ICC, comments) dropped, entities and fail-closed `needs_review` regions painted black,
-output in the input format, redact only; HEIC/HEIF is refused with
+XMP, ICC, comments) dropped, entities painted black and uncertain `needs_review` regions
+(unreadable text, unread ink, unsure signatures/stamps) painted by default or, with
+`review_default=visible`, left visible unless listed in `review_cover`; user-drawn
+`cover_boxes` are painted into the pixels; output in the input format, redact only; HEIC/HEIF is refused with
 `415 IMAGE_FORMAT_UNSUPPORTED` — see `openapi.yaml`).
 Size and pixel limits are controlled by `PII_IMAGE_MAX_BYTES` and
 `PII_IMAGE_MAX_PIXELS`. Remote URLs, PDFs, faces and signatures are not accepted by

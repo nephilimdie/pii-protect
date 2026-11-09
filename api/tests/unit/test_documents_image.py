@@ -246,6 +246,55 @@ def test_sync_redact_review_keep_leaves_only_kept_regions_visible(img):
     assert _post(img, "preview", source, review_keep="x").status_code == 200  # ignored outside redact
 
 
+def _frac(layout: Layout, box) -> list[float]:
+    w, h = layout.size
+    return [box[0] / w, box[1] / h, box[2] / w, box[3] / h]
+
+
+def test_sync_redact_review_default_visible_review_cover_and_user_areas(img):
+    source = png(SCREENSHOT.image)
+    shown = _post(img, "redact", source, review_default="visible")
+    assert shown.status_code == 200, shown.text
+    _assert_redacted(Image.open(io.BytesIO(shown.content)), SCREENSHOT, kept_review=(0, 1))  # text PII still black
+    one = _post(img, "redact", source, review_default="visible", review_cover="[1]")
+    _assert_redacted(Image.open(io.BytesIO(one.content)), SCREENSHOT, kept_review=(0,))
+    area = SCREENSHOT.box("Ciao")
+    drawn = _post(img, "redact", source, review_default="visible",
+                  cover_boxes=json.dumps([{"page": 1, "bbox": _frac(SCREENSHOT, area)}]))
+    out = Image.open(io.BytesIO(drawn.content))
+    assert _mean(out, area) < 20 and _mean(out, SCREENSHOT.box("bonifico.")) > 120  # only the user's area
+    calls = img.fake.calls
+    for field, value, code in (("review_default", "sometimes", "INVALID_REVIEW_DEFAULT"),
+                               ("review_cover", "[-1]", "INVALID_REVIEW_COVER"), ("review_cover", "x", "INVALID_REVIEW_COVER"),
+                               ("cover_boxes", '[{"page": 1, "bbox": [0.5, 0.1, 0.4, 0.2]}]', "INVALID_COVER_BOXES"),
+                               ("cover_boxes", '[{"page": 0, "bbox": [0.1, 0.1, 0.4, 0.2]}]', "INVALID_COVER_BOXES"),
+                               ("cover_boxes", '{"page": 1}', "INVALID_COVER_BOXES")):
+        r = _post(img, "redact", source, **{field: value})
+        assert r.status_code == 422 and r.json()["error"] == code, (field, value, r.text)
+    assert img.fake.calls == calls  # malformed fields are refused before any OCR
+    for fields, code in (({"review_default": "visible", "review_keep": "[0]"}, "INVALID_REVIEW_KEEP"),
+                         ({"review_default": "visible", "review_cover": "[2]"}, "INVALID_REVIEW_COVER"),
+                         ({"cover_boxes": '[{"page": 2, "bbox": [0.1, 0.1, 0.4, 0.2]}]'}, "INVALID_COVER_BOXES"),
+                         ({"cover_boxes": json.dumps([{"page": 1, "bbox": [0, 0, 0.1, 0.1]}] * 201)}, "INVALID_COVER_BOXES")):
+        r = _post(img, "redact", source, **fields)
+        assert r.status_code == 422 and r.json()["error"] == code, (fields, r.text)
+        assert r.headers["content-type"].startswith("application/json")  # never an image
+
+
+def test_image_job_render_review_default_visible_with_user_area(img_jobs):
+    job_id = _create(img_jobs, png(SCREENSHOT.image)).json()["job_id"]
+    assert _wait(img_jobs, job_id)["status"] == "ready"
+    bad = _render(img_jobs, job_id, review_default="visible", review_keep=[0])
+    assert bad.status_code == 422 and bad.json()["error"] == "INVALID_RENDER_REQUEST"
+    assert _render(img_jobs, job_id, cover_boxes=[{"page": 1, "bbox": [0.5, 0.5, 0.4, 0.6]}]).status_code == 422
+    area = SCREENSHOT.box("Ciao")
+    rendered = _render(img_jobs, job_id, review_default="visible", review_cover=[0],
+                       cover_boxes=[{"page": 1, "bbox": _frac(SCREENSHOT, area)}])
+    assert rendered.status_code == 200, rendered.text
+    out = Image.open(io.BytesIO(rendered.content))
+    assert _mean(out, SCREENSHOT.low) < 20 and _mean(out, SCREENSHOT.ink) > 120 and _mean(out, area) < 20
+
+
 def test_preview_payload_has_scanned_pdf_shape(img):
     r = _post(img, "preview", png(SCREENSHOT.image))
     assert r.status_code == 200, r.text

@@ -25,7 +25,7 @@ STYLE_CELLS = 8  # pixelate/blur keep at most 8 x 8 colour cells of a face (no i
 STYLE_NOISE = 24  # +/- per cell (pixelate: per channel; blur: one luminance shift), fresh OS randomness
 STYLE_LEVELS = 16  # cell colours are then quantized to multiples of 16
 BLUR_FEATHER = 0.18  # of the face's longest side: soft edge of the blur ellipse, outside the face box
-BLUR_GRAIN = 5.0  # sigma of per-pixel grain on the blur (frosted look; adds no face information)
+BLUR_GRAIN = 3.0  # sigma of per-pixel grain on the blur (frosted look; adds no face information)
 
 
 class FaceStyle(StrEnum):

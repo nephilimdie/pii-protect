@@ -10,6 +10,7 @@ unrecognized-ink region. Pixel sampling on the output proves what was blacked ou
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import re
@@ -350,6 +351,32 @@ def test_scanned_job_lifecycle_with_review_keep(ocr_jobs):
     _assert_scan_redacted(pages[1][2], review_kept=(1,))
     _assert_scan_redacted(pages[2][2])
     assert _get(ocr_jobs, job_id).status_code == 404 and len(ocr_jobs.store) == 0
+
+
+def test_scanned_job_review_default_visible_and_user_area_on_text_page(ocr_jobs):
+    job_id = _create(ocr_jobs, make_scan_pdf(pages=2, text_first_page=True), domain="hr_payroll").json()["job_id"]
+    assert _wait(ocr_jobs, job_id)["status"] == "ready"
+    rendered = _render(ocr_jobs, job_id, review_default="visible", review_cover=[3],
+                       cover_boxes=[{"page": 1, "bbox": [0.1, 0.1, 0.5, 0.2]}])
+    assert rendered.status_code == 200, rendered.text
+    pages = _pages(rendered.content)
+    _assert_scan_redacted(pages[1][2], review_kept=(0, 1))  # page 2: both doubtful regions left visible
+    assert _mean(pages[2][2], LOW_CONF) > 120 and _mean(pages[2][2], INK) < 20  # page 3: the user covered id 3
+    text_page = pages[0][2]
+    w, h = text_page.size
+    assert ImageStat.Stat(text_page.crop((round(0.12 * w), round(0.12 * h), round(0.48 * w), round(0.18 * h)))).mean[0] < 20
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 270])
+def test_user_area_lands_where_the_user_saw_it_on_a_rotated_scan(ocr, rotation):
+    area = [0.6, 0.05, 0.9, 0.12]  # top-right corner of the DISPLAYED page (blank paper)
+    r = _post(ocr, "redact", make_scan_pdf(rotation=rotation), cover_boxes=json.dumps([{"page": 1, "bbox": area}]))
+    assert r.status_code == 200, r.text
+    [(_, _, image)] = _pages(r.content)
+    w, h = image.size
+    inner = (round(0.62 * w), round(0.06 * h), round(0.88 * w), round(0.11 * h))
+    assert ImageStat.Stat(image.crop(inner)).mean[0] < 20
+    _assert_scan_redacted(image)
 
 
 def test_scanned_job_ocr_failure_leaves_failed_tombstone(ocr_jobs):

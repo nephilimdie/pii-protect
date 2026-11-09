@@ -15,10 +15,11 @@ import threading
 import time
 import uuid
 from functools import lru_cache
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
+from pydantic import BaseModel, Field, StrictInt, TypeAdapter, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.anonymization.anonymizer import PiiAnonymizer
@@ -343,7 +344,7 @@ class CoverBox(BaseModel):
 
 
 _COVER_BOXES = TypeAdapter(list[CoverBox])
-_IDS = TypeAdapter(list[int])
+_IDS = TypeAdapter(list[Annotated[StrictInt, Field(ge=0)]])
 
 
 def parse_json_field(raw: str | None, adapter: TypeAdapter, code: str, message: str):

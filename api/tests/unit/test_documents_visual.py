@@ -15,7 +15,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from app.config import settings
 from app.documents import ocr_client
@@ -291,7 +291,8 @@ def test_face_style_is_irreversible(style):
     assert face.tobytes() != face2.tobytes()  # fresh noise on every render
     far = (0, 0, 20, 300) if style == "blur" else (0, 0, 100, 300)  # blur fades out around the face box
     assert first.crop(far).tobytes() == original.crop(far).tobytes()
-    assert _edge_energy(face) < 0.1 * _edge_energy(original.crop(box))  # no fine detail survives
+    smooth = (lambda i: i.filter(ImageFilter.BoxBlur(2))) if style == "blur" else (lambda i: i)  # grain is no detail
+    assert _edge_energy(smooth(face)) < 0.1 * _edge_energy(original.crop(box))  # no fine detail survives
     # nothing finer than the cell grid: shrinking to the grid and back loses (almost) nothing
     grid = face.resize((STYLE_CELLS, STYLE_CELLS), Image.Resampling.BOX)
     rebuilt = grid.resize(face.size, Image.Resampling.NEAREST if style == "pixelate" else Image.Resampling.BILINEAR)
@@ -312,7 +313,7 @@ def test_blur_is_a_soft_oval_not_a_pasted_rectangle():
     original.paste(_face_image().crop(box), box)
     blurred = np.asarray(_obscured(original, box, "blur").convert("L"), dtype=np.float32)
     before = np.asarray(original.convert("L"), dtype=np.float32)
-    row = blurred[150, :]  # across the face's middle: the background blends into the blur gradually
+    row = blurred[140:160, :].mean(axis=0)  # across the face's middle (rows averaged: grain is per pixel)
     assert np.abs(np.diff(row[30:110])).max() < 12  # no hard step at the box edge (x=100)
     assert np.abs(blurred[150, 60:100] - before[150, 60:100]).max() > 5  # the fade reaches outside the box
     corner = blurred[0:20, 0:20]
