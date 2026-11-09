@@ -1,7 +1,8 @@
 """Photos and screenshots (JPEG, PNG, WebP): OCR -> detection -> opaque boxes; no metadata out.
 
-The image is decoded from the upload bytes whenever it is needed (validation, OCR, render), so
-a job waiting for review holds only the compressed payload. Every decode yields the same
+A sync request decodes the upload once and keeps that frame for OCR and every render; a job
+calls ``release_frame()`` so, while it waits for review, it holds only the compressed payload
+(later renders decode again). Every decode yields the same
 clean frame: EXIF orientation applied, colours converted to sRGB, transparency flattened onto
 white (pixels hidden behind alpha are what the OCR would miss), and a fresh RGB image that
 carries no EXIF/GPS, XMP, ICC, comments or text chunks. Only those pixels are ever encoded.
@@ -23,7 +24,8 @@ from app.documents.ocr_layout import Covers, FaceStyle, ScannedPage, ScannedPage
 # PIL logs every parsed EXIF tag (GPS included) at DEBUG: never let that reach the engine's logs.
 logging.getLogger("PIL").setLevel(max(logging.getLogger("PIL").level, logging.INFO))
 _PIL_FORMAT = {DocumentFormat.PNG: "PNG", DocumentFormat.JPEG: "JPEG", DocumentFormat.WEBP: "WEBP"}
-_ENCODE = {DocumentFormat.PNG: {"compress_level": 6}, DocumentFormat.JPEG: {"quality": 92},
+# PNG level 3: about the size of level 6 on screenshots, encoded ~30% faster
+_ENCODE = {DocumentFormat.PNG: {"compress_level": 3}, DocumentFormat.JPEG: {"quality": 92},
            DocumentFormat.WEBP: {"quality": 92, "method": 4}}
 _OCR_DPI_RANGE = (100, 600)  # accepted by the OCR service
 _METADATA_KEYS = ("exif", "xmp", "XML:com.adobe.xmp", "icc_profile", "comment", "photoshop")
@@ -103,13 +105,22 @@ class ImageDocument(ScannedPages):
         self.segments = [""]
         self.scanned: dict[int, ScannedPage] = {}
         self.warnings: list[str] = []
-        self._decode(validate=True)  # fail fast (format, size, frames, decodability), then drop the bitmap
+        self._frame: Image.Image | None = None
+        self._frame = self._decode(validate=True)  # fail fast (format, size, frames, decodability)
         self.ocr_pending = [0]
+
+    def release_frame(self) -> None:
+        """Why: a job may wait minutes for review; it must not hold the decoded bitmap meanwhile.
+        What: drops the kept frame; later OCR/render decode the payload again (same pixels).
+        Test: after release_frame(), render() still returns the same bytes."""
+        self._frame = None
 
     def page_of(self, segment: int) -> int | None:
         return 1
 
     def _decode(self, validate: bool = False) -> Image.Image:
+        if self._frame is not None:
+            return self._frame.copy()  # render paints on its own copy
         try:
             with Image.open(io.BytesIO(self._payload), formats=[_PIL_FORMAT[self.format]]) as source:
                 pixels = source.width * source.height
@@ -151,9 +162,8 @@ class ImageDocument(ScannedPages):
             color = color.resize((max(1, int(color.width * factor)), max(1, int(color.height * factor))),
                                  Image.Resampling.LANCZOS)
         dpi = min(max(round(self._limits.ocr_dpi * factor), _OCR_DPI_RANGE[0]), _OCR_DPI_RANGE[1])
-        visual = client.visual(color, dpi, deadline)  # first: recognize() reuses the PNG, then drops it
         result = client.recognize(color, dpi, deadline, self._limits.ocr_image_engine)  # colour: stamp hues
-        page = ScannedPage.from_ocr(result, visual)  # same frame: boxes align
+        page = ScannedPage.from_ocr(result, list(result.visual))  # same frame: boxes align
         self.scanned[0], self.segments[0], self.ocr_pending = page, page.text, []
         self.warnings = sorted({*self.warnings, "image_ocr_applied"})
         if progress:

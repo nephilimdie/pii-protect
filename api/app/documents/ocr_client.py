@@ -1,4 +1,4 @@
-"""Client for the internal OCR service (ocr-service/, ``POST /v1/ocr`` and ``/v1/visual-pii``).
+"""Client for the internal OCR service (ocr-service/, ``POST /v1/ocr`` with marks and visual detectors).
 
 One rendered page per request. Every failure is a content-free DocumentError, so callers
 fail closed (no document is ever returned without OCR). Page bytes, OCR text and the
@@ -10,7 +10,6 @@ from __future__ import annotations
 import io
 import logging
 import math
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -61,6 +60,7 @@ class OcrResult:
     ink_regions: list[BBox]
     skew: float = 0.0  # degrees the service straightened the text by (pads boxes on tilted photos)
     marks: tuple[VisualHit, ...] = ()  # SIGNATURE / STAMP found on the page (always painted)
+    visual: tuple[VisualHit, ...] = ()  # faces, codes, plates (the ``detectors`` asked for)
 
 
 VISUAL_TYPES = {"FACE": "FACE", "QR_CODE": "BARCODE", "BARCODE": "BARCODE", "LICENSE_PLATE": "LICENSE_PLATE",
@@ -82,11 +82,14 @@ def _bbox(raw: object, width: int, height: int) -> BBox:
     return x0, y0, x1, y1
 
 
-def parse_result(body: object, width: int, height: int) -> OcrResult:
+def parse_result(body: object, width: int, height: int, visual: bool = False) -> OcrResult:
     """Why: the OCR answer decides what gets blacked out; a malformed answer must never be
     trusted partially. What: validates the one-page response (sizes match the sent image,
-    every box inside it) and returns an OcrResult; raises ValueError otherwise.
-    Test: a response with 2 pages, a box outside the image or a non-int coordinate raises.
+    every box inside it) and returns an OcrResult; raises ValueError otherwise. With ``visual``
+    (detectors were asked for) the page must carry a ``visual`` list: an older OCR service that
+    ignored the field would otherwise silently skip faces.
+    Test: a response with 2 pages, a box outside the image, a non-int coordinate or (visual)
+    no ``visual`` list raises.
     """
     if not isinstance(body, dict) or not isinstance(body.get("pages"), list) or len(body["pages"]) != 1:
         raise ValueError("pages")
@@ -105,17 +108,9 @@ def parse_result(body: object, width: int, height: int) -> OcrResult:
     skew = page.get("skew", 0.0)
     if not isinstance(skew, (int, float)) or not -45 <= skew <= 45:
         raise ValueError("skew")
-    return OcrResult(width, height, words, lines, *regions, float(skew), tuple(_hits(page.get("marks", []), width, height)))
-
-
-def parse_visual(body: object, width: int, height: int) -> list[VisualHit]:
-    """Why: like OCR boxes, visual boxes decide what is blacked out: all-or-nothing validation.
-    What: checks the frame matches the sent image and every box is inside it with a known type.
-    Test: an unknown type, a box outside the image or a size mismatch raises ValueError.
-    """
-    if not isinstance(body, dict) or body.get("width") != width or body.get("height") != height:
-        raise ValueError("size")
-    return _hits(body.get("boxes", []), width, height)
+    found = tuple(_hits(page.get("visual"), width, height)) if visual else ()
+    return OcrResult(width, height, words, lines, *regions, float(skew), tuple(_hits(page.get("marks", []), width, height)),
+                     found)
 
 
 def _hits(raws: object, width: int, height: int) -> list[VisualHit]:
@@ -133,15 +128,13 @@ def _hits(raws: object, width: int, height: int) -> list[VisualHit]:
 class OcrClient:
     """Why: the OCR service is a separate, CPU-bound container that answers 503 BUSY when its
     workers are full; the engine must wait politely, bounded by the document deadline.
-    What: ``recognize(image, dpi, deadline, engine)`` posts one PNG page with X-Internal-Key
-    (``engine`` overrides the client default for this page, e.g. rapidocr for photos);
-    (with ``marks=signature,stamp`` whenever visual PII is on: SIGNATURE/STAMP come back on the
-    OCR page; send colour pages so stamps can be told by hue; one PNG encode serves both calls);
-    ``visual(image, dpi, deadline)`` finds faces/codes/plates (``[]`` when ``visual_detectors``
-    is empty, i.e. PII_VISUAL_PII_ENABLED is off; ``scan=True`` skips plates on scanned PDF pages:
-    their plate text is in the OCR text already, and the plate detector re-OCRs the whole page,
-    3.3 s per A4 page on prod). Both honour
-    503 Retry-After (capped) and retries connection errors with backoff, up to ``max_retries``;
+    What: ``recognize(image, dpi, deadline, engine, scan)`` posts one PNG page with X-Internal-Key
+    (``engine`` overrides the client default for this page, e.g. rapidocr for photos). Whenever
+    visual PII is on (``visual_detectors`` not empty) the same call carries ``marks=signature,stamp``
+    and ``detectors``: the service runs faces/codes next to the OCR and reads plates from the OCR
+    words, so one upload and one decode serve everything (send colour pages so stamps can be told
+    by hue). ``scan=True`` drops plates on scanned PDF pages: their plate text is in the OCR text
+    already. Honours 503 Retry-After (capped) and retries connection errors with backoff, up to ``max_retries``;
     maps everything else to 503/504/422 DocumentErrors. Thread-safe (one pooled httpx client).
     Test: an httpx.MockTransport answering 503 twice then 200 -> one result and two sleeps.
     """
@@ -156,39 +149,21 @@ class OcrClient:
         self._fields = {"lang": lang, "engine": engine}
         self.visual_detectors = visual_detectors
         self._sleep, self._clock = sleep, clock
-        self._local = threading.local()
 
-    def recognize(self, image: Image.Image, dpi: int, deadline: float, engine: str | None = None) -> OcrResult:
-        # signatures/stamps ride on the OCR call (same decode + words) whenever visual PII is on
-        data = {**self._fields, "dpi": str(dpi), **({"engine": engine} if engine else {}),
-                **({"marks": MARKS} if self.visual_detectors else {})}
-        try:
-            return self._post("/v1/ocr", image, dpi, data, deadline,
-                              lambda body: parse_result(body, image.width, image.height))
-        finally:
-            self._local.last = None  # never keep a page (PII) alive in a pooled worker thread
-
-    def visual(self, image: Image.Image, dpi: int, deadline: float, scan: bool = False) -> list[VisualHit]:
+    def recognize(self, image: Image.Image, dpi: int, deadline: float, engine: str | None = None,
+                  scan: bool = False) -> OcrResult:
         wanted = ",".join(d for d in self.visual_detectors.split(",") if d and not (scan and d == "plate"))
-        if not wanted:
-            return []
-        return self._post("/v1/visual-pii", image, dpi, {"detectors": wanted}, deadline,
-                          lambda body: parse_visual(body, image.width, image.height))
-
-    def _png(self, image: Image.Image, dpi: int) -> bytes:
-        """One PNG encode per page: visual() then recognize() of the same image (same thread) share it;
-        recognize() drops it."""
-        last = getattr(self._local, "last", None)
-        if last is not None and last[0] is image and last[1] == dpi:
-            return last[2]
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG", compress_level=_PNG_LEVEL, dpi=(dpi, dpi))
-        self._local.last = (image, dpi, buffer.getvalue())
-        return self._local.last[2]
+        data = {**self._fields, "dpi": str(dpi), **({"engine": engine} if engine else {}),
+                **({"marks": MARKS} if self.visual_detectors else {}), **({"detectors": wanted} if wanted else {})}
+        return self._post("/v1/ocr", image, dpi, data, deadline,
+                          lambda body: parse_result(body, image.width, image.height, bool(wanted)))
 
     def _post(self, path: str, image: Image.Image, dpi: int, data: dict[str, str], deadline: float,
               parse: Callable[[object], T]) -> T:
-        files = {"file": ("page.png", self._png(image, dpi), "image/png")}
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG", compress_level=_PNG_LEVEL, dpi=(dpi, dpi))
+        files = {"file": ("page.png", buffer.getvalue(), "image/png")}
+        del buffer
         for attempt in range(self._retries + 1):
             remaining = deadline - self._clock()
             if remaining <= 0:
