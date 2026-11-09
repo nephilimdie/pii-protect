@@ -86,6 +86,9 @@ class RenderRequest(BaseModel):
     include_terms: list[IncludeTerm] = Field(default_factory=list, max_length=500)
     entities: list[UserEntity] | None = Field(default=None, max_length=MAX_USER_ENTITIES)
     review_keep: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)  # needs_review ids left visible
+    review_default: Literal["cover", "visible"] = "cover"  # visible: all needs_review shown except review_cover
+    review_cover: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)
+    cover_boxes: list[docs.CoverBox] = Field(default_factory=list, max_length=docs.MAX_COVER_BOXES)  # user areas
     face_style: Literal["black", "pixelate", "blur"] = "black"  # faces on images/scans; black is the safest
 
 
@@ -276,9 +279,11 @@ async def render_document_job(
         else:
             entities = corrected_entities(joined.text, detected, body.exclude,
                                           [(t.text, t.type) for t in body.include_terms])
-        review_count = len(doc.review_boxes()) if getattr(doc, "scanned", None) else 0
-        if any(index < 0 or index >= review_count for index in body.review_keep):
-            raise DocumentError(422, "INVALID_RENDER_REQUEST", "`review_keep` contains an unknown needs_review id.")
+        keep, covers = docs.review_plan(doc, frozenset(body.review_keep), body.review_default, body.review_cover,
+                                        body.cover_boxes if body.mode == docs.Operation.REDACT else [],
+                                        "INVALID_RENDER_REQUEST")
+        if body.cover_boxes and body.mode != docs.Operation.REDACT:
+            raise DocumentError(422, "INVALID_RENDER_REQUEST", "`cover_boxes` needs mode redact.")
     except DocumentError as exc:
         raise docs._error(exc.status, exc.code, exc.message, exc.headers, exc.extra) from None
     job.status = JobStatus.RENDERING
@@ -292,8 +297,7 @@ async def render_document_job(
     try:
         response = await docs.render_document(body.mode, doc, joined, entities, policy,
                                               time.monotonic() + settings.document_timeout_seconds,
-                                              lambda: store.delete(job), delivered, frozenset(body.review_keep),
-                                              body.face_style)
+                                              lambda: store.delete(job), delivered, keep, body.face_style, covers)
     except Exception as exc:
         store.delete(job)
         logger.warning("document job render failed closed: %s", type(exc).__name__)

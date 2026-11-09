@@ -13,12 +13,12 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 from app.documents.chunking import DetectionCancelled
 from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 from app.documents.ocr_client import OcrClient
-from app.documents.ocr_layout import FaceStyle, ScannedPage, ScannedPages, paint
+from app.documents.ocr_layout import Covers, FaceStyle, ScannedPage, ScannedPages, cover_pixels, paint
 from app.documents.pdf_writer import ImagePdfWriter, PageImage
 
 # PDFium is not thread-safe: every call into it goes through this lock. It is taken
@@ -37,6 +37,7 @@ _OCR_NO_TEXT = DocumentError(422, "OCR_NO_TEXT_FOUND", "No text could be recogni
 _OCR_DPI_RANGE = (100, 600)  # accepted by the OCR service
 # Displayed (rotated) bitmap -> unrotated /MediaBox frame, for each page /Rotate.
 _UNROTATE = {90: Image.Transpose.ROTATE_90, 180: Image.Transpose.ROTATE_180, 270: Image.Transpose.ROTATE_270}
+_SHOW = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180, 270: Image.Transpose.ROTATE_90}  # inverse
 
 
 class PdfRenderTimeout(Exception):
@@ -240,14 +241,17 @@ class PdfDocument(ScannedPages):
         return image, dpi
 
     def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset(),
-               face_style: str = FaceStyle.BLACK) -> bytes:
-        return b"".join(self.render_stream(edits, None, keep_review, face_style))
+               face_style: str = FaceStyle.BLACK, cover: Covers | None = None) -> bytes:
+        return b"".join(self.render_stream(edits, None, keep_review, face_style, cover))
 
     def render_stream(self, edits: list[SegmentEdit], deadline: float | None = None,
-                      keep_review: frozenset[int] = frozenset(), face_style: str = FaceStyle.BLACK) -> Iterator[bytes]:
+                      keep_review: frozenset[int] = frozenset(), face_style: str = FaceStyle.BLACK,
+                      cover: Covers | None = None) -> Iterator[bytes]:
         """Yields the output PDF in pieces (header, one chunk per page, trailer ending in %%EOF).
         Any failure raises before the trailer, so an incomplete body never ends in %%EOF.
-        `keep_review`: ids of review_boxes() the user checked and wants left visible."""
+        `keep_review`: ids of review_boxes() left visible; `cover`: user-drawn areas painted black
+        (fractions of the displayed page, any page)."""
+        cover = cover or {}
         if self.ocr_pending:
             raise RuntimeError("scanned pages were not OCR'd")  # never render an unreviewed scan
         by_page: dict[int, list[SegmentEdit]] = defaultdict(list)
@@ -264,16 +268,16 @@ class PdfDocument(ScannedPages):
                     raise PdfRenderTimeout()
                 if index in self.scanned:
                     image = self._render_scanned(source, index, plan, by_page.get(index, []), review.get(index, []),
-                                                 face_style)
+                                                 face_style, cover.get(index, ()))
                 else:
-                    image = self._render_page(source, index, plan, by_page.get(index, []))
+                    image = self._render_page(source, index, plan, by_page.get(index, []), cover.get(index, ()))
                 yield writer.add_page(image, plan.frame, plan.rotation)
             yield writer.finish()
         finally:
             with PDFIUM_LOCK:
                 source.close()
 
-    def _render_page(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit]) -> PageImage:
+    def _render_page(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit], cover=()) -> PageImage:
         # Render in the unrotated (/MediaBox) frame and re-apply /Rotate on the new page,
         # so both the displayed orientation and the page's rotation attribute survive.
         undo = (360 - plan.rotation) % 360
@@ -292,13 +296,20 @@ class PdfDocument(ScannedPages):
             finally:
                 page.close()
         try:
-            return _encode(bitmap.to_pil())  # PIL/zlib only: runs outside the PDFium lock
+            image = bitmap.to_pil()  # PIL/zlib only: runs outside the PDFium lock
+            if cover:  # user areas are fractions of the DISPLAYED page; this bitmap is the /MediaBox frame
+                shown = image.transpose(_SHOW[plan.rotation]) if plan.rotation in _SHOW else image.copy()
+                draw = ImageDraw.Draw(shown)
+                for x0, y0, x1, y1 in cover_pixels(cover, shown.width, shown.height):
+                    draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill="black")
+                image = shown.transpose(_UNROTATE[plan.rotation]) if plan.rotation in _UNROTATE else shown
+            return _encode(image)
         finally:
             with PDFIUM_LOCK:
                 bitmap.close()
 
     def _render_scanned(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit],
-                        review: list, face_style: str = "black") -> PageImage:
+                        review: list, face_style: str = "black", cover=()) -> PageImage:
         """Scanned page: render as displayed (the frame OCR saw), paint entity and review boxes,
         rotate back into the /MediaBox frame. Only pixels leave: no OCR text is written."""
         with PDFIUM_LOCK:
@@ -311,7 +322,7 @@ class PdfDocument(ScannedPages):
                     bitmap.close()
             finally:
                 page.close()
-        paint(image, self.scanned[index], edits, review, face_style)
+        paint(image, self.scanned[index], edits, review, face_style, cover)
         if plan.rotation in _UNROTATE:
             image = image.transpose(_UNROTATE[plan.rotation])
         return _encode(image)

@@ -374,6 +374,19 @@ def _dark(image) -> int:
     return sum(image.point(lambda v: 255 if v < 128 else 0).histogram()[255:])
 
 
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_pdf_user_area_is_painted_where_the_user_saw_it(env, rotation):
+    area = [0.55, 0.05, 0.9, 0.15]  # displayed top-right: blank paper on every rotation
+    r = _post(env, "redact", make_pdf(rotation=rotation), cover_boxes=json.dumps([{"page": 1, "bbox": area}]))
+    assert r.status_code == 200, r.text
+    _, _, after = _displayed(r.content)
+    w, h = after.size
+    assert ImageStat.Stat(after.crop((round(0.57 * w), round(0.07 * h), round(0.88 * w), round(0.13 * h)))).mean[0] < 20
+    assert ImageStat.Stat(after.crop((round(0.57 * w), round(0.8 * h), round(0.88 * w), round(0.9 * h)))).mean[0] > 240
+    txt = _post(env, "redact", "Mario Rossi".encode(), filename="a.txt", cover_boxes=json.dumps([{"page": 1, "bbox": area}]))
+    assert txt.status_code == 422 and txt.json()["error"] == "INVALID_COVER_BOXES"
+
+
 @pytest.mark.parametrize("rotation", [90, 180, 270])
 def test_pdf_redact_preserves_rotation_size_and_box_position(env, rotation):
     source = make_pdf(rotation=rotation)

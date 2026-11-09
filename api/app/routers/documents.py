@@ -15,9 +15,11 @@ import threading
 import time
 import uuid
 from functools import lru_cache
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field, StrictInt, TypeAdapter, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.anonymization.anonymizer import PiiAnonymizer
@@ -28,7 +30,7 @@ from app.documents.admission import AdmissionSlot, DocumentAdmission
 from app.documents.chunking import detection_executor
 from app.documents.models import IMAGE_FORMATS, MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
 from app.documents.ocr_client import get_ocr_client
-from app.documents.ocr_layout import FaceStyle
+from app.documents.ocr_layout import Covers, FaceStyle
 from app.documents.service import (
     MAX_USER_ENTITIES,
     load_document,
@@ -69,9 +71,17 @@ _FORM_FIELDS = {
                    "description": "redact only, images and scanned pages: how faces are hidden. black (default) is "
                                   "the safest; pixelate/blur keep at most 8x8 noisy, quantized colour cells per face "
                                   "(irreversible). Everything else is always painted black."},
-    "review_keep": {"type": "string", "description": "redact only, images and scanned pages: JSON array of "
-                                                     "`needs_review` ids (from /preview) to leave un-redacted. "
-                                                     "Default: every needs_review region is painted."},
+    "review_keep": {"type": "string", "description": "redact only, images and scanned pages, review_default=cover: "
+                                                     "JSON array of `needs_review` ids (from /preview) to leave "
+                                                     "un-redacted. Default: every needs_review region is painted."},
+    "review_default": {"type": "string", "enum": ["cover", "visible"], "default": "cover",
+                       "description": "redact only: `cover` (default, legacy) paints every needs_review region not in "
+                                      "review_keep; `visible` leaves them all visible except the ids in review_cover."},
+    "review_cover": {"type": "string", "description": "redact only, review_default=visible: JSON array of "
+                                                      "`needs_review` ids the user chose to cover."},
+    "cover_boxes": {"type": "string", "description": "redact only, PDFs and images: JSON array (max 200) of user-drawn "
+                                                     "areas {page (1-based), bbox: [x0, y0, x1, y1] fractions of the "
+                                                     "displayed page} painted black in the output pixels."},
 }
 _OPENAPI_FORM = {"requestBody": {"required": True, "content": {"multipart/form-data": {
     "schema": {"type": "object", "required": ["file"], "properties": _FORM_FIELDS}}}}}
@@ -168,7 +178,7 @@ class _StreamAborted(Exception):
 
 
 def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozenset[int] = frozenset(),
-                face_style: str = FaceStyle.BLACK) -> StreamingResponse:
+                face_style: str = FaceStyle.BLACK, covers: Covers | None = None) -> StreamingResponse:
     """Why: a 200-page redaction must not be assembled in memory, yet a failure after the headers
     are sent can no longer change the status code.
     What: renders and sends one page at a time; on any failure the body stops before the PDF
@@ -177,7 +187,7 @@ def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozens
     Test: make page 2 of 3 fail; the client sees a transport error and the received bytes do
     not end with `%%EOF`.
     """
-    pages = doc.render_stream(edits, deadline, keep_review, face_style)
+    pages = doc.render_stream(edits, deadline, keep_review, face_style, covers)
     step_lock = threading.Lock()  # close() must never race a next() still running in a thread
 
     def step():
@@ -242,7 +252,15 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
                    db: AsyncSession, anonymizer: PiiAnonymizer, tenant_id: str | None,
                    usage: UsageService, state: dict, slot: AdmissionSlot) -> Response:
     face_style = parse_face_style(fields.get("face_style"))  # before any work: a bad value costs nothing
-    keep_review = parse_review_keep(fields.get("review_keep")) if op == Operation.REDACT else frozenset()
+    redact = op == Operation.REDACT
+    keep_review = parse_review_keep(fields.get("review_keep")) if redact else frozenset()
+    review_cover = parse_json_field(fields.get("review_cover") if redact else None, _IDS, "INVALID_REVIEW_COVER",
+                                    "`review_cover` must be a JSON array of needs_review ids.")
+    cover_boxes = parse_json_field(fields.get("cover_boxes") if redact else None, _COVER_BOXES, "INVALID_COVER_BOXES",
+                                   "`cover_boxes` must be a JSON array of {page, bbox: [x0, y0, x1, y1]} fractions.")
+    review_default = (fields.get("review_default") if redact else None) or "cover"
+    if review_default not in REVIEW_DEFAULTS:
+        raise DocumentError(422, "INVALID_REVIEW_DEFAULT", "`review_default` must be cover or visible.")
     doc = await asyncio.to_thread(load_document, payload, _limits())
     state["format"], state["pages"] = doc.format, doc.pages
     if op == Operation.PSEUDONYMIZE:
@@ -271,11 +289,9 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     state["entities"] = entities
     if op == Operation.PREVIEW:
         return document_headers(JSONResponse(preview_payload(doc, joined, entities, policy)), doc, entities)
-    review_count = len(doc.review_boxes()) if getattr(doc, "scanned", None) else 0
-    if any(index >= review_count for index in keep_review):
-        raise DocumentError(422, "INVALID_REVIEW_KEEP", "`review_keep` contains an unknown needs_review id.")
+    keep_review, covers = review_plan(doc, keep_review, review_default, review_cover, cover_boxes)
     response = await render_document(op, doc, joined, entities, policy, state["deadline"], slot.release,
-                                     state["stream_done"], keep_review, face_style)
+                                     state["stream_done"], keep_review, face_style, covers)
     state["streaming"] = isinstance(response, StreamingResponse)
     return response
 
@@ -307,6 +323,66 @@ def parse_review_keep(raw: str | None) -> frozenset[int]:
             or any(type(i) is not int or i < 0 for i in items)):
         raise DocumentError(422, "INVALID_REVIEW_KEEP", "`review_keep` must be a JSON array of needs_review ids.")
     return frozenset(items)
+
+
+MAX_COVER_BOXES = 200
+REVIEW_DEFAULTS = ("cover", "visible")
+
+
+class CoverBox(BaseModel):
+    """A user-drawn area to paint: 1-based page, [x0, y0, x1, y1] fractions of the displayed page."""
+
+    page: int = Field(ge=1)
+    bbox: tuple[float, float, float, float]
+
+    @model_validator(mode="after")
+    def _ordered(self) -> CoverBox:
+        x0, y0, x1, y1 = self.bbox
+        if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+            raise ValueError("bbox")
+        return self
+
+
+_COVER_BOXES = TypeAdapter(list[CoverBox])
+_IDS = TypeAdapter(list[Annotated[StrictInt, Field(ge=0)]])
+
+
+def parse_json_field(raw: str | None, adapter: TypeAdapter, code: str, message: str):
+    """Untrusted JSON form field -> validated value; absent/empty -> []; anything else 422 ``code``."""
+    if not raw:
+        return []
+    try:
+        return adapter.validate_json(raw)
+    except ValidationError:
+        raise DocumentError(422, code, message) from None
+
+
+def review_plan(doc, keep: frozenset[int], default: str, cover_ids: list[int],
+                boxes: list[CoverBox], code: str | None = None) -> tuple[frozenset[int], Covers]:
+    """Why: whether doubtful regions are covered is the user's choice (founder decision 2026-11-09:
+    shown by default in the new clients), and the areas they draw themselves must be real pixels
+    in the output, never an overlay; legacy clients (no review_default) keep "all covered".
+    What: -> (needs_review ids left visible, user areas by 0-based page). `cover`: ``keep`` as
+    sent; `visible`: every id except ``cover_ids`` (``keep`` must then be empty). Unknown ids,
+    pages out of range, >MAX_COVER_BOXES areas or areas on a DOCX/TXT -> 422 (``code``, default
+    per field: INVALID_REVIEW_KEEP / INVALID_REVIEW_COVER / INVALID_COVER_BOXES).
+    Test: 3 regions, visible + cover_ids [1] -> keep {0, 2}; a box on page 2 of a 1-page image -> 422.
+    """
+    count = len(doc.review_boxes()) if getattr(doc, "scanned", None) else 0
+    if any(i < 0 or i >= count for i in keep) or (default == "visible" and keep):
+        raise DocumentError(422, code or "INVALID_REVIEW_KEEP",
+                            "`review_keep` contains an unknown needs_review id (or is sent with review_default=visible).")
+    if len(cover_ids) > MAX_USER_ENTITIES or any(i < 0 or i >= count for i in cover_ids):
+        raise DocumentError(422, code or "INVALID_REVIEW_COVER", "`review_cover` contains an unknown needs_review id.")
+    paged = doc.format == DocumentFormat.PDF or doc.format in IMAGE_FORMATS
+    if boxes and (not paged or len(boxes) > MAX_COVER_BOXES or any(b.page > (doc.pages or 0) for b in boxes)):
+        raise DocumentError(422, code or "INVALID_COVER_BOXES",
+                            f"`cover_boxes` takes at most {MAX_COVER_BOXES} areas on existing pages of a PDF or image.")
+    covers: dict[int, list] = {}
+    for box in boxes:
+        covers.setdefault(box.page - 1, []).append(box.bbox)
+    visible = frozenset(range(count)) - set(cover_ids) if default == "visible" else keep - set(cover_ids)
+    return visible, covers
 
 
 def detection_window(deadline: float) -> tuple[int, int, float]:
@@ -343,20 +419,20 @@ def preview_payload(doc, joined: JoinedText, entities: list, policy: dict) -> di
 
 async def render_document(op: str, doc, joined: JoinedText, entities: list, policy: dict, deadline: float,
                           release, done, keep_review: frozenset[int] = frozenset(),
-                          face_style: str = FaceStyle.BLACK) -> Response:
+                          face_style: str = FaceStyle.BLACK, covers: Covers | None = None) -> Response:
     """Why: sync redact/pseudonymize and job render must produce byte-identical files.
     What: streamed PDF redaction (`release`/`done` run when the body ends) or an in-memory
     DOCX/TXT/image redaction (images keep the `keep_review` regions visible) / pseudonymization
     ZIP, with the X-Pii-* headers. `face_style` (black|pixelate|blur) applies to faces on images
-    and scanned PDF pages.
+    and scanned PDF pages; `covers` (user areas by 0-based page) to every PDF page and images.
     Test: covered by the redact/pseudonymize endpoint tests and the job render tests.
     """
     if op == Operation.REDACT and doc.format == DocumentFormat.PDF:
         response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done, keep_review,
-                                         face_style)
+                                         face_style, covers)
     elif op == Operation.REDACT:
-        # images: needs_review the user kept + how faces are hidden
-        review = (keep_review, face_style) if doc.format in IMAGE_FORMATS else ()
+        # images: needs_review left visible + how faces are hidden + the user's own areas
+        review = (keep_review, face_style, covers) if doc.format in IMAGE_FORMATS else ()
         content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), *review)
         response = Response(content, media_type=MEDIA_TYPES[doc.format],
                             headers={"Content-Disposition": f'attachment; filename="redacted.{doc.format}"'})
