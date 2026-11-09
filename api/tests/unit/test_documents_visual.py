@@ -345,7 +345,9 @@ def test_review_region_around_a_face_is_the_faces_own_ink():
     face = VisualHit("FACE", (100, 50, 300, 250), 0.9, False)
     around = OcrResult(1000, 800, [], [], [], [(90, 40, 320, 270)])
     assert ScannedPage.from_ocr(around, [face]).review == ()
-    elsewhere = OcrResult(1000, 800, [], [], [], [(250, 200, 900, 700)])  # only ~7% near the face
+    portrait = OcrResult(1000, 800, [], [], [], [(20, 10, 700, 790)])  # the whole photo the face is in
+    assert ScannedPage.from_ocr(portrait, [face]).review == ()
+    elsewhere = OcrResult(1000, 800, [], [], [], [(250, 200, 900, 700)])  # only ~7% near the face, face not inside
     assert ScannedPage.from_ocr(elsewhere, [face]).review == (("unrecognized_ink", (250, 200, 900, 700)),)
 
 
