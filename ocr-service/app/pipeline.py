@@ -7,17 +7,24 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
 from app.config import Settings
+from app.detectors import grow
 from app.detectors.marks import MARKS, MarkWord, find_marks
+from app.detectors.plates import find_plates
 from app.engines import Engine, RawWord, remaining
 from app.errors import ErrorCode, OcrError
 from app.imageops import PASSES, Transform, estimate_skew, ink_without_text, merge_boxes, rotate, to_gray
 from app.inputs import Document, PageImage
 from app.schemas import BBox, Line, OcrResponse, Page, VisualBox, Word
+
+if TYPE_CHECKING:
+    from app.visual import VisualPipeline
 
 ENGINES = ("tesseract", "rapidocr", "auto")
 MAX_REGION_SHARE = 0.25  # merged review regions never exceed a quarter of the page (no page-wide unions)
@@ -56,9 +63,10 @@ class Pipeline:
     Test: with a fake engine returning one word, ``run`` yields one page with one word and line.
     """
 
-    def __init__(self, settings: Settings, engines: Mapping[str, Engine]) -> None:
+    def __init__(self, settings: Settings, engines: Mapping[str, Engine], visual: VisualPipeline | None = None) -> None:
         self._s = settings
         self._engines = engines
+        self._visual = visual
 
     def _engine(self, name: str) -> Engine:
         """Why: a configured-but-missing engine is an operator error, not a client one. What: lookup.
@@ -93,11 +101,28 @@ class Pipeline:
             best = candidate if candidate.score > best.score else best
         return best
 
-    def ocr_page(self, page: PageImage, engine: str, lang: str, deadline: float, marks: tuple[str, ...] = ()) -> Page:
+    def ocr_page(self, page: PageImage, engine: str, lang: str, deadline: float, marks: tuple[str, ...] = (),
+                 detectors: tuple[str, ...] = ()) -> Page:
         """Why/What: one page end-to-end; all boxes are reported in the page frame the caller
         sees (EXIF-upright, original resolution), as axis-aligned envelopes that over-cover.
+        ``detectors`` (face, code, plate) fill ``visual`` in the same request: face and code run
+        in a second thread while the page is OCR'd (one upload, one decode); plates are read from
+        this OCR's words instead of a second whole-page OCR pass. Any failure fails the page.
         Test: a page rotated by 3 degrees yields word boxes that contain the unrotated words.
         """
+        side = tuple(name for name in detectors if name != "plate")
+        if side and self._visual is None:
+            raise OcrError(503, ErrorCode.NOT_READY, "Visual detectors are not available.")
+        with ThreadPoolExecutor(1, thread_name_prefix="ocr-visual") as pool:  # exit waits: no stray work
+            pending = pool.submit(self._visual.run, page, side, deadline) if side and self._visual else None
+            result = self._ocr_page(page, engine, lang, deadline, marks, "plate" in detectors)
+            if detectors:
+                found = pending.result().boxes if pending else []
+                result.visual = [*found, *(result.visual or [])]
+        return result
+
+    def _ocr_page(self, page: PageImage, engine: str, lang: str, deadline: float, marks: tuple[str, ...],
+                  plates: bool) -> Page:
         remaining(deadline)
         gray = to_gray(page.image)
         work, transform = rotate(gray, estimate_skew(gray, self._s.max_skew_degrees),
@@ -121,9 +146,18 @@ class Pipeline:
                 box = (max(0, int(hit.bbox[0] * page.scale)), max(0, int(hit.bbox[1] * page.scale)),
                        min(page.width, math.ceil(hit.bbox[2] * page.scale)), min(page.height, math.ceil(hit.bbox[3] * page.scale)))
                 found.append(VisualBox(type=hit.type, bbox=box, score=round(hit.score, 3), needs_review=hit.needs_review))  # type: ignore[arg-type]
+        plate_boxes = None
+        if plates:  # same words, same frame: grown to the plate border like /v1/visual-pii does
+            raw = [RawWord(w.text, w.conf, b, w.line, w.block) for w, b in zip(best.words, work_boxes)]  # type: ignore[arg-type]
+            plate_boxes = []
+            for hit in find_plates(raw, self._s.plate_review_conf):
+                x0, y0, x1, y1 = transform.box(grow(hit.bbox, 0.08, 0.35, *work.size))
+                box = (max(0, x0 - 1), max(0, y0 - 1), min(page.width, x1 + 1), min(page.height, y1 + 1))  # deskew rounding
+                plate_boxes.append(VisualBox(type=hit.type, bbox=box, score=round(min(1.0, max(0.0, hit.score)), 3),  # type: ignore[arg-type]
+                                             needs_review=hit.needs_review))
         return Page(index=page.index, width=page.width, height=page.height, dpi=page.dpi, engine=best.engine,
                     words=words, lines=build_lines(words), low_conf_regions=low_conf, ink_without_text_regions=ink,
-                    skew=round((transform.angle + 45) % 90 - 45, 2), marks=found)
+                    skew=round((transform.angle + 45) % 90 - 45, 2), marks=found, visual=plate_boxes)
 
     def _upright(self, gray: Image.Image, page: PageImage, engine: str, lang: str,
                  deadline: float) -> tuple[Attempt, Image.Image, Transform] | None:
@@ -143,9 +177,16 @@ class Pipeline:
         work, transform = rotate(gray, angle, Transform.identity(page.width, page.height, page.scale))
         return self._best(work, engine, lang, page.dpi, deadline), work, transform
 
-    def run(self, document: Document, engine: str, lang: str, deadline: float, marks: tuple[str, ...] = ()) -> OcrResponse:
-        """Why/What: OCR all pages in order, one bitmap alive at a time. Test: see class."""
-        return OcrResponse(pages=[self.ocr_page(page, engine, lang, deadline, marks) for page in document.pages()])
+    def run(self, document: Document, engine: str, lang: str, deadline: float, marks: tuple[str, ...] = (),
+            detectors: tuple[str, ...] = ()) -> OcrResponse:
+        """Why/What: OCR all pages in order, one bitmap alive at a time; ``detectors`` only for a
+        single page (an image or one PDF page), else 422. Test: see class."""
+        pages = []
+        for page in document.pages():
+            if detectors and pages:
+                raise OcrError(422, ErrorCode.INVALID_PARAMETER, "detectors needs a single page (an image or `pages`).")
+            pages.append(self.ocr_page(page, engine, lang, deadline, marks, detectors))
+        return OcrResponse(pages=pages)
 
 
 def parse_marks(raw: str | None) -> tuple[str, ...]:

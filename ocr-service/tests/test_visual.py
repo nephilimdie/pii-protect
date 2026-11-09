@@ -21,7 +21,7 @@ from app.engines import RawWord
 from app.errors import OcrError
 from app.main import build_detectors, create_app
 from app.visual import parse_detectors
-from conftest import AUTH, FakeEngine, make_settings, pdf, png
+from conftest import AUTH, FakeEngine, make_settings, pdf, png, post
 from synth import font
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -264,3 +264,57 @@ def test_all_detectors_together_one_request(real_vclient: TestClient) -> None:
     body, ms = timed(real_vclient, scene, "face,code,plate")
     assert sorted(b["type"] for b in body["boxes"]) == ["FACE", "LICENSE_PLATE", "QR_CODE"], body
     print(f"\nPERF face+code+plate 1200x800: {ms:.0f} ms")
+
+
+# --- /v1/ocr with ``detectors``: one upload, OCR and face/code in parallel, plates from the OCR words ----
+
+def test_ocr_with_detectors_returns_visual_on_the_page(vclient: TestClient) -> None:
+    response = post(vclient, png(Image.new("RGB", (400, 300), "white")), detectors="face,code")
+    assert response.status_code == 200, response.text
+    (page,) = response.json()["pages"]
+    assert [b["type"] for b in page["visual"]] == ["FACE", "QR_CODE"]
+    assert page["words"]  # the OCR result is unchanged
+
+
+def test_ocr_without_detectors_keeps_the_old_shape(vclient: TestClient) -> None:
+    (page,) = post(vclient, png(Image.new("RGB", (400, 300), "white"))).json()["pages"]
+    assert page["visual"] is None
+
+
+def test_ocr_detectors_fail_closed(vclient: TestClient) -> None:
+    data = png(Image.new("RGB", (64, 64), "white"))
+    assert post(vclient, data, detectors="eyes").json()["error"] == "INVALID_PARAMETER"
+    two = pdf(Image.new("RGB", (200, 200), "white"), Image.new("RGB", (200, 200), "white"), resolution=100)
+    assert post(vclient, two, detectors="face").json()["error"] == "INVALID_PARAMETER"  # one page only
+
+
+def test_ocr_detector_crash_fails_the_request() -> None:
+    class Broken(FakeDetector):
+        def detect(self, image: Image.Image) -> list[Hit]:
+            raise RuntimeError("face model crashed")
+
+    app = create_app(make_settings(), {"tesseract": FakeEngine()}, {"face": Broken([]), "code": FakeDetector([])})
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = post(client, png(Image.new("RGB", (64, 64), "white")), detectors="face")
+    assert response.status_code == 500 and "visual" not in response.text
+
+
+def test_plates_from_the_ocr_words_match_the_visual_endpoint(real_vclient: TestClient) -> None:
+    image, _ = plate_image()
+    data = png(image)
+    response = post(real_vclient, data, detectors="plate", engine="rapidocr")
+    assert response.status_code == 200, response.text
+    (hit,) = response.json()["pages"][0]["visual"]
+    assert hit["type"] == "LICENSE_PLATE" and covers_plate_text(hit), hit
+
+
+def test_all_detectors_in_the_ocr_call(real_vclient: TestClient) -> None:
+    scene, _ = plate_image()
+    scene.paste(mona().resize((220, 328)), (40, 40))
+    scene.paste(qr_image(scale=4, border=4), (900, 60))
+    started = time.perf_counter()
+    response = post(real_vclient, png(scene), detectors="face,code,plate", engine="rapidocr", marks="signature,stamp")
+    assert response.status_code == 200, response.text
+    page = response.json()["pages"][0]
+    assert sorted(b["type"] for b in page["visual"]) == ["FACE", "LICENSE_PLATE", "QR_CODE"], page["visual"]
+    print(f"\nPERF ocr+face+code+plate 1200x800: {(time.perf_counter() - started) * 1000:.0f} ms")

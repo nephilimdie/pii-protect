@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     tessdata_variant: str = Field(default="fast", pattern=r"^(fast|best)$")
     rapidocr_model_dir: Path = Path("/opt/ocr-models/rapidocr")
     rapidocr_max_side: int = Field(default=2000, ge=320, le=8000)
+    # recognition threads shared by the whole process (lines of one page run in parallel; under
+    # load the shared pool degrades to about one line per core, never more threads than this)
+    rapidocr_rec_threads: int = Field(default=4, ge=1, le=64)
 
     low_conf_threshold: float = Field(default=60.0, ge=0, le=100)
     adaptive_conf_threshold: float = Field(default=80.0, ge=0, le=100)

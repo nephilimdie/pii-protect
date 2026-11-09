@@ -491,3 +491,24 @@ def test_real_ocr_redacts_screenshot_and_photo(real, name, payload, layout):
     for token in SECRETS:
         assert _mean(out, layout.box(token)) < 40, (name, token)
     _assert_no_metadata(r.content)
+
+
+def test_sync_image_redact_decodes_the_upload_once(img, monkeypatch):
+    """Validation, OCR and both renders (image + review layer) share one decoded frame."""
+    from app.documents import image_handler
+
+    opened = []  # exif_transpose runs once per decode (Image.open is also the OCR fake's)
+    real = image_handler.ImageOps.exif_transpose
+    monkeypatch.setattr(image_handler.ImageOps, "exif_transpose", lambda *a, **k: opened.append(1) or real(*a, **k))
+    r = _post(img, "redact", png(SCREENSHOT.image), image_result="json", image_review_layer="1")
+    assert r.status_code == 200, r.text
+    assert len(opened) == 1 and "review" in r.json()
+
+
+def test_job_image_keeps_no_decoded_frame_while_waiting(img_jobs):
+    from app.documents.image_handler import ImageDocument
+
+    doc = ImageDocument(png(SCREENSHOT.image), "png", documents_module._limits())
+    assert doc._frame is not None
+    doc.release_frame()
+    assert doc._frame is None and doc._decode().size == SCREENSHOT.size  # decodes again, same frame

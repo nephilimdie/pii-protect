@@ -132,3 +132,18 @@ def test_sideways_page_is_turned_upright_by_osd(real_client: TestClient, turn: i
         px, py = to_turned((x0 + x1) / 2, (y0 + y1) / 2)
         hits += any(b[0] <= px <= b[2] and b[1] <= py <= b[3] for b in boxes(result))
     assert hits / len(PAGE.words) >= 0.95, turn
+
+
+def test_parallel_line_recognition_is_identical_to_sequential(real_engines: dict[str, object]) -> None:
+    """Lines of one page are read on a shared pool; the words (text, conf, boxes, order) must not change."""
+    import time
+
+    from app.engines.rapid import RapidOcr
+    from app.imageops import to_gray
+
+    settings = make_settings()
+    gray = to_gray(PAGE.image)
+    deadline = time.monotonic() + 120
+    sequential = RapidOcr(settings.rapidocr_model_dir, settings.rapidocr_max_side, 1).recognize(gray, "ita", 300, deadline)
+    parallel = RapidOcr(settings.rapidocr_model_dir, settings.rapidocr_max_side, 4).recognize(gray, "ita", 300, deadline)
+    assert len(sequential) > 20 and parallel == sequential

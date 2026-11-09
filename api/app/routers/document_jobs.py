@@ -193,6 +193,7 @@ async def create_document_job(
             upload = await read_document_upload(request, settings.document_upload_max_bytes)
             job = store.reserve(owner, len(upload.payload))
             doc = await asyncio.to_thread(load_document, upload.payload, docs._limits())
+            getattr(doc, "release_frame", lambda: None)()  # a waiting job keeps only the compressed payload
             joined = JoinedText(doc.segments)
             docs.check_text_length(len(joined.text), settings.document_job_max_text_chars)
             scanned = len(docs.ocr_pending(doc))

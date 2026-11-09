@@ -8,6 +8,7 @@ DB text detection (threshold -> components -> unclip) and CTC greedy decoding.
 from __future__ import annotations
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -40,7 +41,7 @@ class RapidOcr:
 
     name = "rapidocr"
 
-    def __init__(self, model_dir: Path, max_side: int = 2000) -> None:
+    def __init__(self, model_dir: Path, max_side: int = 2000, rec_threads: int = 1) -> None:
         options = ort.SessionOptions()
         options.intra_op_num_threads = 1
         options.inter_op_num_threads = 1
@@ -53,6 +54,8 @@ class RapidOcr:
         self._alphabet = ["", *characters, " "]  # CTC blank first, space last (PP-OCR convention)
         self._max_side = max_side
         self._model_dir = model_dir
+        # one pool per process: concurrent requests share it, so threads never exceed rec_threads
+        self._pool = ThreadPoolExecutor(rec_threads, thread_name_prefix="ocr-rec") if rec_threads > 1 else None
 
     def ready(self) -> dict[str, object]:
         """Why: readiness reports model presence. What: ok + alphabet size. Test: alphabet == 6625."""
@@ -112,11 +115,18 @@ class RapidOcr:
         multilingual and resolution-normalised). Test: deadline in the past raises 504.
         """
         remaining(deadline)
-        words: list[RawWord] = []
-        for line_id, box in enumerate(self.detect(gray)):
+        boxes = self.detect(gray)
+
+        def read(box: tuple[float, float, float, float]) -> list[tuple[str, float, float, float]]:
             remaining(deadline)
+            return self._read_line(gray, box)
+
+        # ORT run() is thread-safe; map keeps line order, so the words are identical to a sequential read
+        lines = list(self._pool.map(read, boxes)) if self._pool and len(boxes) > 1 else [read(b) for b in boxes]
+        words: list[RawWord] = []
+        for line_id, (box, chars) in enumerate(zip(boxes, lines)):
             current: list[tuple[str, float, float, float]] = []
-            for item in [*self._read_line(gray, box), (" ", 1.0, box[2], box[2])]:
+            for item in [*chars, (" ", 1.0, box[2], box[2])]:
                 if item[0] != " ":
                     current.append(item)
                     continue

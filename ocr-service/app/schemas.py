@@ -62,6 +62,7 @@ class Page(BaseModel):
     ink_without_text_regions: list[BBox]
     skew: float = 0.0  # residual tilt (degrees, CCW) the text was straightened by; callers pad tilted boxes
     marks: list[VisualBox] = []  # SIGNATURE / STAMP boxes (only when requested with the ``marks`` field)
+    visual: list[VisualBox] | None = None  # FACE / codes / LICENSE_PLATE (only with the ``detectors`` field)
 
 
 class OcrResponse(BaseModel):

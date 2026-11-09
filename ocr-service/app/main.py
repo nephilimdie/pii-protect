@@ -39,7 +39,8 @@ def build_engines(settings: Settings) -> dict[str, Engine]:
     if (settings.rapidocr_model_dir / "det.onnx").is_file():
         from app.engines.rapid import RapidOcr
 
-        engines["rapidocr"] = RapidOcr(settings.rapidocr_model_dir, settings.rapidocr_max_side)
+        engines["rapidocr"] = RapidOcr(settings.rapidocr_model_dir, settings.rapidocr_max_side,
+                                       settings.rapidocr_rec_threads)
     return engines
 
 
@@ -217,14 +218,17 @@ def create_app(settings: Settings | None = None, engines: Mapping[str, Engine] |
             languages = languages_of() if callable(languages_of) else frozenset({"ita", "eng"})
             dpi, lang, engine, pages = _options(fields, settings, languages)
             marks = parse_marks(fields.get("marks"))
-            pipeline = Pipeline(settings, engines_now)
+            wanted = parse_detectors(fields["detectors"]) if "detectors" in fields else ()
+            pipeline = Pipeline(settings, engines_now,
+                                VisualPipeline(settings, state["detectors"], engines_now))  # type: ignore[arg-type]
 
             def work() -> bytes:
                 document = open_document(data, settings, dpi, pages)
-                return pipeline.run(document, engine, lang, deadline, marks).model_dump_json().encode()
+                return pipeline.run(document, engine, lang, deadline, marks, wanted).model_dump_json().encode()
 
             payload = await anyio.to_thread.run_sync(work, limiter=limiter)
-            logger.info("ocr ok engine=%s marks=%s ms=%d", engine, ",".join(marks) or "-", (time.monotonic() - started) * 1000)
+            logger.info("ocr ok engine=%s marks=%s detectors=%s ms=%d", engine, ",".join(marks) or "-",
+                        ",".join(wanted) or "-", (time.monotonic() - started) * 1000)
             return Response(payload, media_type="application/json")
 
     @app.post("/v1/visual-pii")
