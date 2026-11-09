@@ -8,11 +8,12 @@
 # Test: `sh scripts/fetch_models.sh /tmp/ocr-models` then `ls /tmp/ocr-models/*/*`; a
 # tampered file makes `sha256sum -c` fail and the script exit non-zero.
 set -eu
+# Direct content hosts (github.com/<repo>/raw/ redirects answered 504 on 2026-11-09); bytes are sha256-pinned.
 DEST=${1:?usage: fetch_models.sh DEST_DIR}
 TESSDATA_TAG=4.1.0
 WHEEL_URL=https://files.pythonhosted.org/packages/ba/12/1e5497183bdbe782dbb91bad1d0d2297dba4d2831b2652657f7517bfc6df/rapidocr_onnxruntime-1.4.4-py3-none-any.whl
 WHEEL_SHA=971d7d5f223a7a808662229df1ef69893809d8457d834e6373d3854bc1782cbf
-YUNET_URL=https://github.com/opencv/opencv_zoo/raw/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+YUNET_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 YUNET_SHA=8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
 
 sha_check() { # sha256 path
@@ -27,7 +28,7 @@ fetch() { # url sha dest
 mkdir -p "$DEST/tessdata/fast" "$DEST/tessdata/best" "$DEST/rapidocr" "$DEST/yunet"
 fetch "$YUNET_URL" "$YUNET_SHA" "$DEST/yunet/face_detection_yunet_2023mar.onnx"
 while read -r variant lang sha; do
-  fetch "https://github.com/tesseract-ocr/tessdata_${variant}/raw/${TESSDATA_TAG}/${lang}.traineddata" "$sha" \
+  fetch "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${variant}/${TESSDATA_TAG}/${lang}.traineddata" "$sha" \
     "$DEST/tessdata/$variant/$lang.traineddata"
 done <<LIST
 fast ita b8f89e1e785118dac4d51ae042c029a64edb5c3ee42ef73027a6d412748d8827
