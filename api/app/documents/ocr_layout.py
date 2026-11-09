@@ -22,10 +22,15 @@ TILT_MIN_DEG = 0.5  # below this a page counts as straight
 TILT_ERROR_DEG = 1.0  # assumed error of the service's skew estimate
 TILT_END_PAD = 0.3  # of the line height, left/right: a first/last glyph clipped by a tilted word box
 STYLE_CELLS = 8  # pixelate/blur keep at most 8 x 8 colour cells of a face (no identity survives that)
-STYLE_NOISE = 24  # +/- per cell (pixelate: per channel; blur: one luminance shift), fresh OS randomness
-STYLE_LEVELS = 16  # cell colours are then quantized to multiples of 16
-BLUR_FEATHER = 0.18  # of the face's longest side: soft edge of the blur ellipse, outside the face box
-BLUR_GRAIN = 3.0  # sigma of per-pixel grain on the blur (frosted look; adds no face information)
+STYLE_NOISE = 24  # pixelate: +/- per cell and channel, fresh OS randomness
+STYLE_LEVELS = 16  # pixelate: cell colours quantized to multiples of 16
+BLUR_CELLS = 12  # blur: at most 12 cells across the face (soft, still no identity: noise + quantization)
+BLUR_NOISE = 10  # +/- one luminance shift per blur cell
+BLUR_LEVELS = 8  # blur cell colours quantized to multiples of 8
+BLUR_AXIS = 0.6  # blur ellipse semi-axes as a share of the face box sides (just past the inscribed oval)
+BLUR_FEATHER = 0.15  # of the face's longest side: the soft edge where the blur fades into the photo
+BLUR_GRAIN = 2.0  # sigma of per-pixel grain on the blur (adds no face information)
+FACE_ABSORB = 0.5  # a review region at least half inside a face box grown by 50% per side is the face's own ink
 
 
 class FaceStyle(StrEnum):
@@ -34,6 +39,19 @@ class FaceStyle(StrEnum):
     BLACK = "black"
     PIXELATE = "pixelate"
     BLUR = "blur"
+
+
+def _grown(box: BBox, share: float) -> BBox:
+    dx, dy = (box[2] - box[0]) * share, (box[3] - box[1]) * share
+    return box[0] - dx, box[1] - dy, box[2] + dx, box[3] + dy
+
+
+def _overlap(box: BBox, other: BBox) -> float:
+    """Share of ``box``'s area inside ``other``."""
+    w = min(box[2], other[2]) - max(box[0], other[0])
+    h = min(box[3], other[3]) - max(box[1], other[1])
+    area = (box[2] - box[0]) * (box[3] - box[1])
+    return w * h / area if w > 0 and h > 0 and area > 0 else 0.0
 
 
 def _inside(inner: BBox, outer: BBox) -> bool:
@@ -96,9 +114,13 @@ class ScannedPage:
             block = words[-1].block_id
         # a review region wholly inside a signature/stamp box goes with that mark: painted with a sure
         # one; with an uncertain one (itself a review region, listed last) covered or shown together
+        # likewise one mostly around a face is that face's own ink (hair, eyes): the face is obscured
+        # anyway, and painting the rest black would frame the blurred face in a black box
         marks = [hit.bbox for hit in result.marks]
+        faces = [_grown(hit.bbox, FACE_ABSORB) for hit in visual or () if hit.type == "FACE"]
         review = tuple((reason, box) for reason, boxes in zip(REVIEW_REASONS, (result.low_conf_regions, result.ink_regions))
-                       for box in boxes if not any(_inside(box, mark) for mark in marks))
+                       for box in boxes if not any(_inside(box, mark) for mark in marks)
+                       and not any(_overlap(box, face) >= 0.5 for face in faces))
         review += tuple((UNCERTAIN_MARK, hit.bbox) for hit in result.marks if hit.needs_review)
         return cls(result.width, result.height, "".join(parts), tuple(spans), review,
                    (*(visual or ()), *(hit for hit in result.marks if not hit.needs_review)), result.skew)
@@ -194,50 +216,53 @@ Frac = tuple[float, float, float, float]  # a box as fractions of the displayed 
 Covers = Mapping[int, Sequence[Frac]]  # user-drawn areas to paint, by 0-based page
 
 
-def _cells(region: Image.Image, longest: int, rng: np.random.Generator, shared: bool) -> Image.Image:
-    """At most STYLE_CELLS cells per ``longest`` px of ``region``: box averages, +/-STYLE_NOISE
-    (``shared``: one shift for R, G and B, so no colour blotches), quantized to STYLE_LEVELS."""
-    w, h = region.size
-    cells = (max(1, round(STYLE_CELLS * w / longest)), max(1, round(STYLE_CELLS * h / longest)))
+def _cells(region: Image.Image, cells: tuple[int, int], rng: np.random.Generator, noise: int, levels: int,
+           shared: bool) -> Image.Image:
+    """``region`` as ``cells`` box averages, +/-``noise`` (``shared``: one shift for R, G and B, so no
+    colour blotches), quantized to multiples of ``levels``."""
     grid = np.asarray(region.resize(cells, Image.Resampling.BOX), dtype=np.int16)
-    grid = grid + rng.integers(-STYLE_NOISE, STYLE_NOISE + 1, grid.shape[:2] if shared else grid.shape).reshape(
-        (*grid.shape[:2], -1))
-    return Image.fromarray((np.clip(grid, 0, 255) // STYLE_LEVELS * STYLE_LEVELS + STYLE_LEVELS // 2).astype(np.uint8), "RGB")
+    grid = grid + rng.integers(-noise, noise + 1, grid.shape[:2] if shared else grid.shape).reshape((*grid.shape[:2], -1))
+    return Image.fromarray((np.clip(grid, 0, 255) // levels * levels + levels // 2).astype(np.uint8), "RGB")
 
 
 def obscure(image: Image.Image, box: BBox, style: str) -> tuple[Image.Image, Image.Image | None, tuple[int, int]]:
     """Why: some users want a face to read as "a person" instead of a black box, but a mosaic
     or blur must never be reversible (deblurring and super-resolution recover small mosaics).
-    What: computes, from ``image``'s pixels, a (tile, mask, origin) to paste. PIXELATE: the box
-    as at most STYLE_CELLS x STYLE_CELLS hard blocks (per-channel noise, quantized), no mask.
-    BLUR: a soft oval — the ellipse through the box corners plus a BLUR_FEATHER edge — made of
-    at most STYLE_CELLS cells per face side (pre-blurred, one noisy quantized shift per cell),
-    smoothly enlarged, with fine grain; the mask is opaque on the whole face box and fades to
-    0 outside the ellipse, so no original pixel survives inside the box. Fresh OS randomness.
+    What: computes, from ``image``'s ORIGINAL pixels, a (tile, footprint mask, origin) to paste.
+    PIXELATE: the box as at most STYLE_CELLS x STYLE_CELLS hard blocks (per-channel noise,
+    quantized), no mask. BLUR: a soft oval (semi-axes BLUR_AXIS of the box sides, BLUR_FEATHER
+    edge) of at most BLUR_CELLS cells across the face (lightly pre-blurred box averages, one
+    noisy quantized luminance shift per cell), smoothly enlarged, fine grain, already blended
+    over the original photo, so pasted over anything (e.g. a covered review region) it never
+    shows a black underlay; the mask is its footprint. Fresh OS randomness on every call.
     Test: test_documents_visual.py: a pixelated face has <= 64 colours; a blurred one has no
-    edge energy, no hard rectangle edge, the far background untouched; two renders differ.
+    edge energy inside the oval, fades into the photo (no hard edge, no black), far pixels intact.
     """
     x0, y0, x1, y1 = box
     w, h = x1 - x0, y1 - y0
     longest = max(w, h, 1)
     rng = np.random.default_rng()
     if style == FaceStyle.PIXELATE:
-        return _cells(image.crop(box), longest, rng, False).resize((w, h), Image.Resampling.NEAREST), None, (x0, y0)
-    cx, cy, ax, ay = (x0 + x1) / 2, (y0 + y1) / 2, max(w, 1) / math.sqrt(2), max(h, 1) / math.sqrt(2)
+        cells = (max(1, round(STYLE_CELLS * w / longest)), max(1, round(STYLE_CELLS * h / longest)))
+        tile = _cells(image.crop(box), cells, rng, STYLE_NOISE, STYLE_LEVELS, False)
+        return tile.resize((w, h), Image.Resampling.NEAREST), None, (x0, y0)
+    cx, cy, ax, ay = (x0 + x1) / 2, (y0 + y1) / 2, max(w, 1) * BLUR_AXIS, max(h, 1) * BLUR_AXIS
     feather = BLUR_FEATHER * longest
     ox0, oy0 = max(0, math.floor(cx - ax - feather)), max(0, math.floor(cy - ay - feather))
     ox1, oy1 = min(image.width, math.ceil(cx + ax + feather)), min(image.height, math.ceil(cy + ay + feather))
     region = image.crop((ox0, oy0, ox1, oy1))
-    small = _cells(region.filter(ImageFilter.GaussianBlur(longest / 8)), longest, rng, True)
-    smooth = small.resize(region.size, Image.Resampling.BICUBIC).filter(ImageFilter.GaussianBlur(longest / STYLE_CELLS * 0.75))
-    grain = rng.normal(0, BLUR_GRAIN, (region.height, region.width, 1))
-    tile = Image.fromarray(np.clip(np.asarray(smooth, dtype=np.float32) + grain, 0, 255).astype(np.uint8), "RGB")
+    cell = longest / BLUR_CELLS
+    cells = (max(1, round(region.width / cell)), max(1, round(region.height / cell)))
+    small = _cells(region.filter(ImageFilter.GaussianBlur(cell / 2)), cells, rng, BLUR_NOISE, BLUR_LEVELS, True)
+    smooth = small.resize(region.size, Image.Resampling.BICUBIC).filter(ImageFilter.GaussianBlur(cell * 0.6))
+    blurred = np.asarray(smooth, dtype=np.float32) + rng.normal(0, BLUR_GRAIN, (region.height, region.width, 1))
     yy, xx = np.mgrid[oy0:oy1, ox0:ox1].astype(np.float32) + 0.5
     outside = (np.hypot((xx - cx) / ax, (yy - cy) / ay) - 1) * min(ax, ay) / feather  # 0 on the ellipse, 1 at the fade end
     alpha = np.clip(1 - outside, 0, 1)
-    alpha = alpha * alpha * (3 - 2 * alpha)
-    alpha[(xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)] = 1.0  # never an original pixel inside the face box
-    return tile, Image.fromarray(np.round(alpha * 255).astype(np.uint8), "L"), (ox0, oy0)
+    alpha = (alpha * alpha * (3 - 2 * alpha))[..., None]
+    mixed = blurred * alpha + np.asarray(region, dtype=np.float32) * (1 - alpha)  # over the photo, never over black
+    tile = Image.fromarray(np.clip(mixed, 0, 255).astype(np.uint8), "RGB")
+    return tile, Image.fromarray(np.where(alpha[..., 0] > 0, 255, 0).astype(np.uint8), "L"), (ox0, oy0)
 
 
 def cover_pixels(cover: Sequence[Frac], width: int, height: int) -> list[BBox]:
