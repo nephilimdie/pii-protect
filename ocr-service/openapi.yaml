@@ -61,6 +61,14 @@ paths:
                   type: string
                   pattern: '^(signature|stamp)(,(signature|stamp))?$'
                   description: Also report handwritten signatures and stamps (`signature,stamp`) in `marks`. Uses the same decoded page and OCR words (~0.2 s per A4 page). Send colour pages for coloured-stamp detection.
+                detectors:
+                  type: string
+                  pattern: '^(face|code|plate)(,(face|code|plate)){0,2}$'
+                  description: >
+                    Single page only (an image, or one PDF page via `pages`; otherwise 422). Also run
+                    visual PII and return it in the page's `visual`: face and code run in a second
+                    thread while the page is OCR'd (one upload, one decode); plate is read from this
+                    OCR's words (no second OCR pass). Same boxes and padding as /v1/visual-pii.
       responses:
         "200":
           description: Every requested page, in order.
@@ -210,6 +218,11 @@ components:
           type: number
           default: 0
           description: Residual tilt (degrees, CCW, -45..45) the page was straightened by. Word boxes are envelopes; callers pad boxes on tilted pages.
+        visual:
+          type: array
+          nullable: true
+          items: {$ref: "#/components/schemas/VisualBox"}
+          description: FACE, QR_CODE/BARCODE and LICENSE_PLATE boxes; null unless the request sets `detectors`.
         marks:
           type: array
           default: []

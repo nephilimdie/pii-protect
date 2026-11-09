@@ -1,7 +1,7 @@
-"""Visual PII (faces, QR/barcodes, plates) from the OCR service's /v1/visual-pii on images and
-scanned PDF pages, plus the tilt-aware padding of OCR line boxes.
+"""Visual PII (faces, QR/barcodes, plates) from the OCR service's /v1/ocr ``detectors`` on images
+and scanned PDF pages, plus the tilt-aware padding of OCR line boxes.
 
-A fake service answers /v1/ocr with the known text layout and /v1/visual-pii with one face,
+A fake service answers /v1/ocr with the known text layout and, for ``detectors``, one face,
 one QR code and one plate (scaled to the image it receives). Pixel sampling on the output
 proves those regions are black; the preview proves the contract (visual_entities, types).
 """
@@ -19,7 +19,7 @@ from PIL import Image, ImageFilter
 
 from app.config import settings
 from app.documents import ocr_client
-from app.documents.ocr_client import OcrClient, VisualHit, parse_visual
+from app.documents.ocr_client import OcrClient, VisualHit, parse_result
 from app.documents.models import SegmentEdit
 from app.documents.ocr_layout import ScannedPage, paint, to_device
 from app.routers import documents as documents_module
@@ -33,7 +33,7 @@ SCAN_FACE = (900, 100, 1150, 400)  # in SCAN_SIZE pixels (top-right photo on an 
 
 
 class FakeVisual:
-    """Routes /v1/visual-pii to known boxes (scaled), everything else to the OCR fake."""
+    """The OCR fake plus marks, and known visual boxes (scaled) when ``detectors`` is sent."""
 
     def __init__(self, ocr, boxes: list[tuple[str, tuple[int, int, int, int], bool]], frame: tuple[int, int]) -> None:
         self.ocr, self.boxes, self.frame, self.calls, self.fail, self.modes = ocr, boxes, frame, [], None, []
@@ -41,27 +41,27 @@ class FakeVisual:
         self.mark_fields: list[str | None] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        if request.url.path != "/v1/visual-pii":
-            response = self.ocr(request)
-            field = re.search(rb'name="marks"\r\n\r\n([\w,]+)', request.content)
-            self.mark_fields.append(field.group(1).decode() if field else None)
-            body = response.json()
-            page = body["pages"][0]
-            f = page["width"] / self.frame[0]
-            page["marks"] = [{"type": kind, "bbox": [round(v * f) for v in box], "score": 0.9, "needs_review": review}
-                             for kind, box, review in self.marks]
-            return httpx.Response(200, json=body)
         body = request.content
-        self.calls.append(body.split(b'name="detectors"\r\n\r\n', 1)[1].split(b"\r\n", 1)[0].decode())
-        if self.fail:
-            return httpx.Response(503, json={"error": "NOT_READY", "message": "face detector missing"})
-        image = Image.open(io.BytesIO(body[body.index(b"\x89PNG"):]))
-        self.modes.append(image.mode)
-        f = image.width / self.frame[0]
-        return httpx.Response(200, json={"width": image.width, "height": image.height, "boxes": [
-            {"type": kind, "bbox": [min(round(v * f), image.width if i % 2 == 0 else image.height)
-                                    for i, v in enumerate(box)], "score": 0.9, "needs_review": review}
-            for kind, box, review in self.boxes]})
+        wanted = re.search(rb'name="detectors"\r\n\r\n([\w,]+)', body)
+        if wanted:
+            self.calls.append(wanted.group(1).decode())
+            if self.fail:
+                return httpx.Response(503, json={"error": "NOT_READY", "message": "face detector missing"})
+        response = self.ocr(request)
+        field = re.search(rb'name="marks"\r\n\r\n([\w,]+)', body)
+        self.mark_fields.append(field.group(1).decode() if field else None)
+        result = response.json()
+        page = result["pages"][0]
+        f = page["width"] / self.frame[0]
+        page["marks"] = [{"type": kind, "bbox": [round(v * f) for v in box], "score": 0.9, "needs_review": review}
+                         for kind, box, review in self.marks]
+        if wanted:
+            self.modes.append(Image.open(io.BytesIO(body[body.index(b"\x89PNG"):])).mode)
+            page["visual"] = [
+                {"type": kind, "bbox": [min(round(v * f), page["width"] if i % 2 == 0 else page["height"])
+                                        for i, v in enumerate(box)], "score": 0.9, "needs_review": review}
+                for kind, box, review in self.boxes]
+        return httpx.Response(200, json=result)
 
 
 def _client(fake, monkeypatch, detectors: str = "face,code,plate") -> OcrClient:
@@ -90,13 +90,18 @@ def _dark(image: Image.Image, box, f: float = 1.0) -> bool:
 # ── units ────────────────────────────────────────────────────────────────────
 
 def test_parse_visual_maps_qr_to_barcode_and_rejects_bad_answers():
-    good = {"width": 100, "height": 50, "boxes": [{"type": "QR_CODE", "bbox": [1, 2, 30, 40], "score": 1.0,
-                                                    "needs_review": False}]}
-    assert parse_visual(good, 100, 50) == [VisualHit("BARCODE", (1, 2, 30, 40), 1.0, False)]
-    for bad in ({**good, "width": 99}, {**good, "boxes": [{"type": "EYES", "bbox": [0, 0, 1, 1]}]},
-                {**good, "boxes": [{"type": "FACE", "bbox": [0, 0, 101, 10]}]}, {**good, "boxes": [{"type": "FACE"}]}):
+    def page(visual):
+        return {"pages": [{"width": 100, "height": 50, "words": [], "lines": [], **visual}]}
+
+    qr = {"type": "QR_CODE", "bbox": [1, 2, 30, 40], "score": 1.0, "needs_review": False}
+    assert parse_result(page({"visual": [qr]}), 100, 50, visual=True).visual == (
+        VisualHit("BARCODE", (1, 2, 30, 40), 1.0, False),)
+    assert parse_result(page({}), 100, 50).visual == ()  # not asked: not required
+    # an OCR service that ignored ``detectors`` (no list) must not mean "no faces": fail closed
+    for bad in ({}, {"visual": None}, {"visual": [{"type": "EYES", "bbox": [0, 0, 1, 1]}]},
+                {"visual": [{"type": "FACE", "bbox": [0, 0, 101, 10]}]}, {"visual": [{"type": "FACE"}]}):
         with pytest.raises(ValueError):
-            parse_visual(bad, 100, 50)
+            parse_result(page(bad), 100, 50, visual=True)
 
 
 def test_tilt_pads_line_boxes_only_on_tilted_pages():
