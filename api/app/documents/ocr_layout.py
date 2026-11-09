@@ -127,14 +127,35 @@ class ScannedPage:
                    (*(visual or ()), *(hit for hit in result.marks if not hit.needs_review)), result.skew)
 
     def boxes(self, start: int, end: int) -> list[BBox]:
-        """One box per line segment covering every word that overlaps [start, end) (whole words)."""
-        lines: dict[int, list[int]] = {}
+        """Cover whole OCR words, joining only neighbours rather than spanning a column gap.
+
+        OCR occasionally puts text from distant columns in the same logical line. A single
+        union box then hides everything between them. Gaps up to half a word height are
+        merged so ordinary spaces in a name do not disclose individual word lengths.
+        """
+        lines: dict[int, list[BBox]] = defaultdict(list)
         for span in self.spans:
             if span.start < end and span.end > start:
-                box = lines.setdefault(span.line, list(span.bbox))
-                box[0], box[1] = min(box[0], span.bbox[0]), min(box[1], span.bbox[1])
-                box[2], box[3] = max(box[2], span.bbox[2]), max(box[3], span.bbox[3])
-        return [(b[0], b[1], b[2], b[3]) for b in lines.values()]
+                lines[span.line].append(span.bbox)
+        out: list[BBox] = []
+        for words in lines.values():
+            merged: list[int] | None = None
+            for box in sorted(words, key=lambda b: (b[0], b[1])):
+                if merged is not None:
+                    gap = box[0] - merged[2]
+                    height = max(merged[3] - merged[1], box[3] - box[1])
+                    overlap_y = min(merged[3], box[3]) - max(merged[1], box[1])
+                    if overlap_y > 0 and gap <= height / 2:
+                        merged[0] = min(merged[0], box[0])
+                        merged[1] = min(merged[1], box[1])
+                        merged[2] = max(merged[2], box[2])
+                        merged[3] = max(merged[3], box[3])
+                        continue
+                    out.append(tuple(merged))
+                merged = list(box)
+            if merged is not None:
+                out.append(tuple(merged))
+        return out
 
     def normalized(self, box: BBox) -> list[float]:
         """Box as fractions of the displayed page (top-left origin), for drawing in any viewer."""
@@ -201,6 +222,16 @@ class ScannedPages:
 
     def visual_types(self) -> set[str]:
         return {hit.type for page in self.scanned.values() for hit in page.visual}
+
+    def visual_keep_by_page(self, keep: frozenset[int]) -> dict[int, frozenset[int]]:
+        """Map globally numbered visual IDs to each scanned page's local hit indexes."""
+        out: dict[int, frozenset[int]] = {}
+        next_id = 0
+        for index in sorted(self.scanned):
+            count = len(self.scanned[index].visual)
+            out[index] = frozenset(i for i in range(count) if next_id + i in keep)
+            next_id += count
+        return out
 
     def review_by_page(self, keep: frozenset[int]) -> dict[int, list[BBox]]:
         out: dict[int, list[BBox]] = defaultdict(list)
@@ -278,7 +309,8 @@ def cover_pixels(cover: Sequence[Frac], width: int, height: int) -> list[BBox]:
 
 
 def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], review: list[BBox],
-          face_style: str = FaceStyle.BLACK, cover: Sequence[Frac] = ()) -> None:
+          face_style: str = FaceStyle.BLACK, cover: Sequence[Frac] = (),
+          keep_visual: frozenset[int] = frozenset()) -> None:
     """Why: the only thing that hides PII in a scan is opaque pixels over the OCR boxes.
     What: paints solid black over every edited span's line boxes, the given review regions, every
     visual hit (faces, codes, plates, sure signatures and stamps: never optional) and the user's
@@ -297,15 +329,16 @@ def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], revie
             if x1 > x0 and y1 > y0:
                 draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))
 
+    visual = [hit for i, hit in enumerate(page.visual) if i not in keep_visual]
     styled = face_style != FaceStyle.BLACK
-    faces = [to_device(h.bbox, fx, fy, image.width, image.height, False) for h in page.visual if styled and h.type == "FACE"]
+    faces = [to_device(h.bbox, fx, fy, image.width, image.height, False) for h in visual if styled and h.type == "FACE"]
     # obscured from the ORIGINAL pixels, then pasted over the review regions (on photos the unread-ink
     # region usually overlaps the face): nothing readable survives inside a face box either way
     obscured = [obscure(image, box, face_style) for box in faces if box[2] > box[0] and box[3] > box[1]]
     fill(review, False)
     for tile, mask, origin in obscured:
         image.paste(tile, origin, mask)
-    fill([hit.bbox for hit in page.visual if not (styled and hit.type == "FACE")], False)  # codes, plates, marks
+    fill([hit.bbox for hit in visual if not (styled and hit.type == "FACE")], False)  # codes, plates, marks
     fill([box for edit in edits for box in page.boxes(edit.start, edit.end)], True)  # text PII: always on top
     for x0, y0, x1, y1 in cover_pixels(cover, image.width, image.height):
         draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))

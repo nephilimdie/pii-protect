@@ -87,6 +87,11 @@ _FORM_FIELDS = {
                      "and review metadata together after one analysis."},
     "image_review_layer": {"type": "string", "enum": ["1"], "description": "With image_result=json, also render the "
                            "uncertain areas visible for an opt-in review UI, without re-running OCR."},
+    "image_confirmed_layer": {"type": "string", "enum": ["1"], "description": "With image_result=json, include a sensitive "
+                              "review layer where confirmed detections are visible but uncertain regions remain covered. "
+                              "Use only in a trusted editor; never send it to an AI service or a web page."},
+    "visual_exclude": {"type": "string", "description": "redact only, images and scanned PDFs: JSON array of visual "
+                       "detection IDs deliberately left visible after human review (from visual_entities)."},
 }
 _OPENAPI_FORM = {"requestBody": {"required": True, "content": {"multipart/form-data": {
     "schema": {"type": "object", "required": ["file"], "properties": _FORM_FIELDS}}}}}
@@ -183,7 +188,8 @@ class _StreamAborted(Exception):
 
 
 def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozenset[int] = frozenset(),
-                face_style: str = FaceStyle.BLACK, covers: Covers | None = None) -> StreamingResponse:
+                face_style: str = FaceStyle.BLACK, covers: Covers | None = None,
+                visual_keep: frozenset[int] = frozenset()) -> StreamingResponse:
     """Why: a 200-page redaction must not be assembled in memory, yet a failure after the headers
     are sent can no longer change the status code.
     What: renders and sends one page at a time; on any failure the body stops before the PDF
@@ -192,7 +198,7 @@ def _stream_pdf(doc, edits, deadline: float, release, done, keep_review: frozens
     Test: make page 2 of 3 fail; the client sees a transport error and the received bytes do
     not end with `%%EOF`.
     """
-    pages = doc.render_stream(edits, deadline, keep_review, face_style, covers)
+    pages = doc.render_stream(edits, deadline, keep_review, face_style, covers, visual_keep)
     step_lock = threading.Lock()  # close() must never race a next() still running in a thread
 
     def step():
@@ -270,6 +276,10 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         raise DocumentError(422, "INVALID_IMAGE_RESULT", "image_result=json is supported only for image redaction.")
     if fields.get("image_review_layer") not in (None, "1") or (fields.get("image_review_layer") and fields.get("image_result") != "json"):
         raise DocumentError(422, "INVALID_IMAGE_RESULT", "image_review_layer requires image_result=json.")
+    if fields.get("image_confirmed_layer") not in (None, "1") or (fields.get("image_confirmed_layer") and fields.get("image_result") != "json"):
+        raise DocumentError(422, "INVALID_IMAGE_RESULT", "image_confirmed_layer requires image_result=json.")
+    visual_exclude = parse_json_field(fields.get("visual_exclude") if redact else None, _IDS,
+                                      "INVALID_VISUAL_EXCLUDE", "`visual_exclude` must be an array of visual detection ids.")
     doc = await asyncio.to_thread(load_document, payload, _limits())
     state["format"], state["pages"] = doc.format, doc.pages
     if op == Operation.PSEUDONYMIZE:
@@ -298,11 +308,13 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     state["entities"] = entities
     if op == Operation.PREVIEW:
         return document_headers(JSONResponse(preview_payload(doc, joined, entities, policy)), doc, entities)
+    visual_keep = validate_visual_exclude(doc, visual_exclude)
     keep_review, covers = review_plan(doc, keep_review, review_default, review_cover, cover_boxes)
     if fields.get("image_result") is not None:
         if doc.format not in IMAGE_FORMATS:
             raise DocumentError(422, "INVALID_IMAGE_RESULT", "image_result=json is supported only for image redaction.")
-        content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), keep_review, face_style, covers)
+        content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), keep_review, face_style, covers,
+                                          visual_keep)
         result = preview_payload(doc, joined, entities, policy)
         result["char_count"] = len(joined.text)
         result.pop("text", None)
@@ -313,12 +325,17 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
             regions = doc.review_boxes()
             if 0 < len(regions) <= MAX_COVER_BOXES:
                 ids = frozenset(region["id"] for region in regions)
-                shown = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), ids, face_style, covers)
+                shown = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), ids, face_style, covers,
+                                                visual_keep)
                 result["review"] = {"regions": regions, "content_type": MEDIA_TYPES[doc.format],
                                     "image_base64": base64.b64encode(shown).decode("ascii")}
+        if fields.get("image_confirmed_layer") == "1" and result["protected_areas"]:
+            result["confirmed_review"] = {"content_type": MEDIA_TYPES[doc.format],
+                                          "image_base64": base64.b64encode(
+                                              await asyncio.to_thread(doc.render_confirmed_layer)).decode("ascii")}
         return document_headers(JSONResponse(result, headers={"Cache-Control": "no-store"}), doc, entities)
     response = await render_document(op, doc, joined, entities, policy, state["deadline"], slot.release,
-                                     state["stream_done"], keep_review, face_style, covers)
+                                     state["stream_done"], keep_review, face_style, covers, visual_keep)
     state["streaming"] = isinstance(response, StreamingResponse)
     return response
 
@@ -412,6 +429,14 @@ def review_plan(doc, keep: frozenset[int], default: str, cover_ids: list[int],
     return visible, covers
 
 
+def validate_visual_exclude(doc, ids: list[int]) -> frozenset[int]:
+    """Only the exact visual detections from this analysis may be left visible."""
+    known = {item["id"] for item in doc.visual_entities()} if getattr(doc, "scanned", None) else set()
+    if len(ids) > MAX_USER_ENTITIES or any(i not in known for i in ids):
+        raise DocumentError(422, "INVALID_VISUAL_EXCLUDE", "`visual_exclude` contains an unknown visual id.")
+    return frozenset(ids)
+
+
 def detection_window(deadline: float) -> tuple[int, int, float]:
     return settings.document_detection_window_chars, settings.document_detection_window_overlap, deadline
 
@@ -429,16 +454,27 @@ def preview_payload(doc, joined: JoinedText, entities: list, policy: dict) -> di
     """
     boxes = getattr(doc, "entity_boxes", None)
     scanned = getattr(doc, "scanned", {})
+    found = [{"id": i, "start": e.start, "end": e.end, "type": e.pii_type, "text": e.text,
+              "confidence": round(e.score, 4), "page": doc.page_of(joined.segment_at(e.start)),
+              "boxes": boxes(joined.split(e.start, e.end)) if boxes else []}
+             for i, e in enumerate(entities)]
+    visual = doc.visual_entities() if scanned else []
+    protected_areas = [
+        {"id": f"text:{entity['id']}:{n}", "type": entity["type"], "source": "text", **box}
+        for entity in found for n, box in enumerate(entity["boxes"])
+    ] + [
+        {"id": f"visual:{hit['id']}", "type": hit["type"], "source": "visual",
+         "page": hit["page"], "bbox": hit["bbox"]}
+        for hit in visual
+    ]
     return {
         "format": doc.format, "pages": doc.pages, "text": joined.text,
         "entity_count": len(entities), "pii_types_found": found_types(doc, entities),
-        "entities": [{"id": i, "start": e.start, "end": e.end, "type": e.pii_type, "text": e.text,
-                      "confidence": round(e.score, 4), "page": doc.page_of(joined.segment_at(e.start)),
-                      "boxes": boxes(joined.split(e.start, e.end)) if boxes else []}
-                     for i, e in enumerate(entities)],
+        "entities": found,
+        "protected_areas": protected_areas,
         "ocr_pages": [index + 1 for index in sorted(scanned)],
         "needs_review": doc.review_boxes() if scanned else [],
-        "visual_entities": doc.visual_entities() if scanned else [],
+        "visual_entities": visual,
         "policy": {"id": policy["policy_id"], "version": policy["policy_version"], "hash": policy["policy_hash"]},
         "warnings": doc.warnings, "sanitized": list(doc.SANITIZED),
     }
@@ -446,7 +482,8 @@ def preview_payload(doc, joined: JoinedText, entities: list, policy: dict) -> di
 
 async def render_document(op: str, doc, joined: JoinedText, entities: list, policy: dict, deadline: float,
                           release, done, keep_review: frozenset[int] = frozenset(),
-                          face_style: str = FaceStyle.BLACK, covers: Covers | None = None) -> Response:
+                          face_style: str = FaceStyle.BLACK, covers: Covers | None = None,
+                          visual_keep: frozenset[int] = frozenset()) -> Response:
     """Why: sync redact/pseudonymize and job render must produce byte-identical files.
     What: streamed PDF redaction (`release`/`done` run when the body ends) or an in-memory
     DOCX/TXT/image redaction (images keep the `keep_review` regions visible) / pseudonymization
@@ -456,10 +493,10 @@ async def render_document(op: str, doc, joined: JoinedText, entities: list, poli
     """
     if op == Operation.REDACT and doc.format == DocumentFormat.PDF:
         response: Response = _stream_pdf(doc, redaction_edits(joined, entities), deadline, release, done, keep_review,
-                                         face_style, covers)
+                                         face_style, covers, visual_keep)
     elif op == Operation.REDACT:
         # images: needs_review left visible + how faces are hidden + the user's own areas
-        review = (keep_review, face_style, covers) if doc.format in IMAGE_FORMATS else ()
+        review = (keep_review, face_style, covers, visual_keep) if doc.format in IMAGE_FORMATS else ()
         content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), *review)
         response = Response(content, media_type=MEDIA_TYPES[doc.format],
                             headers={"Content-Disposition": f'attachment; filename="redacted.{doc.format}"'})

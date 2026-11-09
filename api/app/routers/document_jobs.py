@@ -83,6 +83,7 @@ class IncludeTerm(BaseModel):
 class RenderRequest(BaseModel):
     mode: Literal["redact", "pseudonymize"]
     exclude: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)
+    visual_exclude: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)
     include_terms: list[IncludeTerm] = Field(default_factory=list, max_length=500)
     entities: list[UserEntity] | None = Field(default=None, max_length=MAX_USER_ENTITIES)
     review_keep: list[int] = Field(default_factory=list, max_length=MAX_USER_ENTITIES)  # needs_review ids left visible
@@ -285,6 +286,9 @@ async def render_document_job(
                                         "INVALID_RENDER_REQUEST")
         if body.cover_boxes and body.mode != docs.Operation.REDACT:
             raise DocumentError(422, "INVALID_RENDER_REQUEST", "`cover_boxes` needs mode redact.")
+        if body.visual_exclude and body.mode != docs.Operation.REDACT:
+            raise DocumentError(422, "INVALID_RENDER_REQUEST", "`visual_exclude` needs mode redact.")
+        visual_keep = docs.validate_visual_exclude(doc, body.visual_exclude)
     except DocumentError as exc:
         raise docs._error(exc.status, exc.code, exc.message, exc.headers, exc.extra) from None
     job.status = JobStatus.RENDERING
@@ -298,7 +302,8 @@ async def render_document_job(
     try:
         response = await docs.render_document(body.mode, doc, joined, entities, policy,
                                               time.monotonic() + settings.document_timeout_seconds,
-                                              lambda: store.delete(job), delivered, keep, body.face_style, covers)
+                                              lambda: store.delete(job), delivered, keep, body.face_style, covers,
+                                              visual_keep)
     except Exception as exc:
         store.delete(job)
         logger.warning("document job render failed closed: %s", type(exc).__name__)

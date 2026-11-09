@@ -132,6 +132,18 @@ XMP, ICC, comments) dropped, entities painted black and uncertain `needs_review`
 `review_default=visible`, left visible unless listed in `review_cover`; user-drawn
 `cover_boxes` are painted into the pixels; output in the input format, redact only; HEIC/HEIF is refused with
 `415 IMAGE_FORMAT_UNSUPPORTED` — see `openapi.yaml`).
+
+Image previews and JSON redactions include `protected_areas`: IDs, PII types and
+normalized boxes, but no OCR values. `visual_exclude` (array of IDs) can leave a
+confirmed visual detection visible on a render; unknown IDs are rejected. Text
+entities use the existing `exclude` choice in document jobs. Both choices are
+explicit and default to covering. For a one-pass image JSON redaction,
+`image_confirmed_layer=1` requests a sensitive `confirmed_review` image that may
+be used to restore selected confirmed boxes in a trusted client. Never expose
+this layer to a host web page or persist it; when composing, reapply the already
+protected pixels of every other detection that overlaps a restored box. The
+normal image response never contains this layer. OCR word boxes on the same
+line are merged only across nearby words, preserving intervening content.
 Size and pixel limits are controlled by `PII_IMAGE_MAX_BYTES` and
 `PII_IMAGE_MAX_PIXELS`. Remote URLs, PDFs, faces and signatures are not accepted by
 this contract.

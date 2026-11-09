@@ -143,6 +143,20 @@ def test_image_preview_lists_visual_entities(vis):
                                                                abs=0.002)
     assert {"FACE", "BARCODE", "LICENSE_PLATE"} <= set(body["pii_types_found"])
     assert len(body["needs_review"]) == 2  # text review regions keep their ids (review_keep unchanged)
+    assert {area["type"] for area in body["protected_areas"] if area["source"] == "visual"} >= {
+        "FACE", "BARCODE", "LICENSE_PLATE"}
+    assert all("text" not in area for area in body["protected_areas"])
+
+
+def test_visual_exclude_only_accepts_known_detection_ids(vis):
+    source = image_tests.png(image_tests.SCREENSHOT.image)
+    invalid = _post(vis, "redact", source, visual_exclude="[99]")
+    assert invalid.status_code == 422 and invalid.json()["error"] == "INVALID_VISUAL_EXCLUDE"
+    valid = _post(vis, "redact", source, visual_exclude="[0]")
+    assert valid.status_code == 200, valid.text
+    out = Image.open(io.BytesIO(valid.content))
+    assert not _dark(out, FACE)
+    assert all(_dark(out, box) for box in (QR, PLATE))
 
 
 def test_photo_with_only_a_face_is_redacted_not_rejected(vis):

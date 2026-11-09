@@ -235,6 +235,20 @@ def test_image_json_result_contains_protected_pixels_and_review_without_ocr_text
     assert img.fake.calls == 2
 
 
+def test_image_confirmed_review_layer_is_opt_in_and_metadata_has_no_ocr_values(img):
+    source = png(SCREENSHOT.image)
+    ordinary = _post(img, "redact", source, image_result="json")
+    assert ordinary.status_code == 200 and "confirmed_review" not in ordinary.json()
+    response = _post(img, "redact", source, image_result="json", image_confirmed_layer="1")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["protected_areas"]
+    assert all("text" not in area and area["type"] for area in body["protected_areas"])
+    assert Image.open(io.BytesIO(base64.b64decode(body["confirmed_review"]["image_base64"]))).size == SCREENSHOT.size
+    invalid = _post(img, "redact", source, image_confirmed_layer="1")
+    assert invalid.status_code == 422 and invalid.json()["error"] == "INVALID_IMAGE_RESULT"
+
+
 def test_photo_jpeg_exif_orientation_and_gps_removed(img):
     img.fake.layout = PHOTO
     source = photo_jpeg()

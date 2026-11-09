@@ -172,11 +172,22 @@ class ImageDocument(ScannedPages):
             raise DocumentError(422, "OCR_NO_TEXT_FOUND", "No text could be recognized in this image.")
 
     def render(self, edits: list[SegmentEdit], keep_review: frozenset[int] = frozenset(),
-               face_style: str = FaceStyle.BLACK, cover: Covers | None = None) -> bytes:
+               face_style: str = FaceStyle.BLACK, cover: Covers | None = None,
+               keep_visual: frozenset[int] = frozenset()) -> bytes:
         if self.ocr_pending:
             raise RuntimeError("image was not OCR'd")  # never return an unreviewed image
         image = self._decode()
-        paint(image, self.scanned[0], edits, self.review_by_page(keep_review).get(0, []), face_style, (cover or {}).get(0, ()))
+        paint(image, self.scanned[0], edits, self.review_by_page(keep_review).get(0, []), face_style,
+              (cover or {}).get(0, ()), keep_visual)
         buffer = io.BytesIO()
         image.save(buffer, format=_PIL_FORMAT[self.format], **_ENCODE[self.format])
         return buffer.getvalue()
+
+    def render_confirmed_layer(self) -> bytes:
+        """Opt-in review layer: only confirmed detections are visible, all uncertain ink stays covered.
+
+        This is sensitive image data. It is returned only by an explicit JSON review request;
+        the default redacted image and clipboard never contain these original pixels.
+        """
+        all_visual = frozenset(range(len(self.scanned[0].visual)))
+        return self.render([], frozenset(), FaceStyle.BLACK, None, all_visual)
