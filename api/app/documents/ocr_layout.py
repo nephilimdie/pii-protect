@@ -114,13 +114,14 @@ class ScannedPage:
             block = words[-1].block_id
         # a review region wholly inside a signature/stamp box goes with that mark: painted with a sure
         # one; with an uncertain one (itself a review region, listed last) covered or shown together
-        # likewise one mostly around a face is that face's own ink (hair, eyes): the face is obscured
-        # anyway, and painting the rest black would frame the blurred face in a black box
+        # likewise one mostly around a face (hair, eyes) or holding a whole face (a portrait photo on a
+        # form) is that face's own picture: the face is obscured anyway, and painting the rest black
+        # would frame the blurred face in a black box (founder, 2026-11-09)
         marks = [hit.bbox for hit in result.marks]
-        faces = [_grown(hit.bbox, FACE_ABSORB) for hit in visual or () if hit.type == "FACE"]
+        faces = [hit.bbox for hit in visual or () if hit.type == "FACE"]
         review = tuple((reason, box) for reason, boxes in zip(REVIEW_REASONS, (result.low_conf_regions, result.ink_regions))
                        for box in boxes if not any(_inside(box, mark) for mark in marks)
-                       and not any(_overlap(box, face) >= 0.5 for face in faces))
+                       and not any(_overlap(box, _grown(face, FACE_ABSORB)) >= 0.5 or _inside(face, box) for face in faces))
         review += tuple((UNCERTAIN_MARK, hit.bbox) for hit in result.marks if hit.needs_review)
         return cls(result.width, result.height, "".join(parts), tuple(spans), review,
                    (*(visual or ()), *(hit for hit in result.marks if not hit.needs_review)), result.skew)

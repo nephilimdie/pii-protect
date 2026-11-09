@@ -115,7 +115,7 @@ components:
                   blocks with fresh per-channel noise, quantized. `blur`: a soft oval over the face (semi-axes
                   0.6 of the box sides, feathered into the surrounding photo, never over black) made of at most
                   12 cells across the face, each with fresh luminance noise and quantized, smoothly enlarged.
-                  An unread-ink/low-confidence region lying mostly around a face is treated as that face's own
+                  An unread-ink/low-confidence region lying mostly around a face, or holding a whole face (a portrait), is that face's own
                   ink and not listed in needs_review. Every other box
                   (text, codes, plates, signatures, stamps, covered needs_review, cover_boxes) is solid
                   black. Invalid -> 422 INVALID_FACE_STYLE before any work.
