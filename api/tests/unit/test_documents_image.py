@@ -9,6 +9,7 @@ the raw bytes prove no metadata survived. `test_real_ocr_*` need PII_OCR_TEST_UR
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import logging
@@ -211,6 +212,27 @@ def test_screenshot_png_redact_end_to_end(img):
     _assert_no_metadata(r.content)
     assert img.fake.sizes == [((1280, 720), "RGB")]  # native resolution, colour (stamp hues)
     assert img.fake.engines == ["rapidocr"]  # PII_OCR_IMAGE_ENGINE default (scanned PDFs keep `auto`)
+
+
+def test_image_json_result_contains_protected_pixels_and_review_without_ocr_text(img):
+    r = _post(img, "redact", png(SCREENSHOT.image), image_result="json", review_default="visible")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["format"] == "png" and data["char_count"] > 0
+    assert data["needs_review"] and data["entities"]
+    assert "text" not in data and all("text" not in entity for entity in data["entities"])
+    out = base64.b64decode(data["image_base64"], validate=True)
+    _assert_redacted(Image.open(io.BytesIO(out)), SCREENSHOT, kept_review=(0, 1))
+    assert img.fake.calls == 1
+    layered = _post(img, "redact", png(SCREENSHOT.image), image_result="json", image_review_layer="1")
+    assert layered.status_code == 200, layered.text
+    assert layered.json()["review"]["regions"] == layered.json()["needs_review"]
+    shown = base64.b64decode(layered.json()["review"]["image_base64"], validate=True)
+    _assert_redacted(Image.open(io.BytesIO(shown)), SCREENSHOT, kept_review=(0, 1))
+    assert img.fake.calls == 2  # one analysis per request, not one per render
+    bad = _post(img, "redact", png(SCREENSHOT.image), image_result="xml")
+    assert bad.status_code == 422 and bad.json()["error"] == "INVALID_IMAGE_RESULT"
+    assert img.fake.calls == 2
 
 
 def test_photo_jpeg_exif_orientation_and_gps_removed(img):

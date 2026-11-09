@@ -9,6 +9,7 @@ independent of PII_FAILURE_MODE.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import threading
@@ -82,6 +83,10 @@ _FORM_FIELDS = {
     "cover_boxes": {"type": "string", "description": "redact only, PDFs and images: JSON array (max 200) of user-drawn "
                                                      "areas {page (1-based), bbox: [x0, y0, x1, y1] fractions of the "
                                                      "displayed page} painted black in the output pixels."},
+    "image_result": {"type": "string", "enum": ["json"], "description": "Images only: return the protected image "
+                     "and review metadata together after one analysis."},
+    "image_review_layer": {"type": "string", "enum": ["1"], "description": "With image_result=json, also render the "
+                           "uncertain areas visible for an opt-in review UI, without re-running OCR."},
 }
 _OPENAPI_FORM = {"requestBody": {"required": True, "content": {"multipart/form-data": {
     "schema": {"type": "object", "required": ["file"], "properties": _FORM_FIELDS}}}}}
@@ -261,6 +266,10 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     review_default = (fields.get("review_default") if redact else None) or "cover"
     if review_default not in REVIEW_DEFAULTS:
         raise DocumentError(422, "INVALID_REVIEW_DEFAULT", "`review_default` must be cover or visible.")
+    if fields.get("image_result") not in (None, "json") or (fields.get("image_result") and not redact):
+        raise DocumentError(422, "INVALID_IMAGE_RESULT", "image_result=json is supported only for image redaction.")
+    if fields.get("image_review_layer") not in (None, "1") or (fields.get("image_review_layer") and fields.get("image_result") != "json"):
+        raise DocumentError(422, "INVALID_IMAGE_RESULT", "image_review_layer requires image_result=json.")
     doc = await asyncio.to_thread(load_document, payload, _limits())
     state["format"], state["pages"] = doc.format, doc.pages
     if op == Operation.PSEUDONYMIZE:
@@ -290,6 +299,24 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
     if op == Operation.PREVIEW:
         return document_headers(JSONResponse(preview_payload(doc, joined, entities, policy)), doc, entities)
     keep_review, covers = review_plan(doc, keep_review, review_default, review_cover, cover_boxes)
+    if fields.get("image_result") is not None:
+        if doc.format not in IMAGE_FORMATS:
+            raise DocumentError(422, "INVALID_IMAGE_RESULT", "image_result=json is supported only for image redaction.")
+        content = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), keep_review, face_style, covers)
+        result = preview_payload(doc, joined, entities, policy)
+        result["char_count"] = len(joined.text)
+        result.pop("text", None)
+        for entity in result["entities"]:
+            entity.pop("text", None)
+        result["image_base64"] = base64.b64encode(content).decode("ascii")
+        if fields.get("image_review_layer") == "1":
+            regions = doc.review_boxes()
+            if 0 < len(regions) <= MAX_COVER_BOXES:
+                ids = frozenset(region["id"] for region in regions)
+                shown = await asyncio.to_thread(doc.render, redaction_edits(joined, entities), ids, face_style, covers)
+                result["review"] = {"regions": regions, "content_type": MEDIA_TYPES[doc.format],
+                                    "image_base64": base64.b64encode(shown).decode("ascii")}
+        return document_headers(JSONResponse(result, headers={"Cache-Control": "no-store"}), doc, entities)
     response = await render_document(op, doc, joined, entities, policy, state["deadline"], slot.release,
                                      state["stream_done"], keep_review, face_style, covers)
     state["streaming"] = isinstance(response, StreamingResponse)

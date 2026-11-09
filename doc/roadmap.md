@@ -88,6 +88,10 @@ Commercial marketplace operations remain outside the core: accounts, payments, e
 
 ## Backlog (unscheduled)
 
+### Aspetto degli oscuramenti (futuro)
+
+- [ ] Consentire di scegliere colore e dimensione/margine degli oscuramenti di testo e immagini, con anteprima nelle interfacce e valori di default conservativi. La scelta estetica non deve rendere leggibili i dati: i riquadri opachi restano opachi, i volti usano una sfocatura che non espone dettagli riconoscibili e le aree aggiunte dall'utente vengono applicate ai pixel del file esportato. Validare i parametri nel motore e mantenere la stessa configurazione tra Cloud, estensione e app desktop.
+
 ### Futuro: modello PII proprietario
 
 - [ ] Valutare un token classifier Pseudora con dati autorizzati e licenze tracciate.
