@@ -154,6 +154,20 @@ def test_no_glyph_pixel_of_a_redacted_word_survives_and_covers_hug_lines():
         assert group[-1] - group[0] + 1 < 44  # shorter than the line pitch
 
 
+def test_misgrouped_ocr_line_does_not_expand_a_signature_cover_to_other_fields():
+    image = Image.new("RGB", (700, 250), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((40, 30), "Andrew", font=FONT, fill="black")
+    draw.text((350, 170), "DD123456", font=FONT, fill="black")
+    original = image.copy()
+    page = _fit([("Andrew", (35, 25, 150, 70), 0), ("DD123456", (345, 165, 530, 210), 0)], image.size)
+
+    paint(image, page, [_edit(page, "Andrew")], [])
+
+    assert visible_ink(image, (35, 25, 150, 70)) == 0.0
+    assert np.array_equal(np.asarray(image)[150:230], np.asarray(original)[150:230])
+
+
 def test_area_cover_is_opaque_over_the_whole_box_and_rounded_outside():
     image = Image.new("RGB", (300, 200), (0, 0, 0))
     paint_area(image, (50, 40, 250, 160), "FIRMA")

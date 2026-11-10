@@ -350,7 +350,7 @@ def text_runs(page: ScannedPage, edits: list[SegmentEdit], gray: np.ndarray, fx:
               fy: float) -> tuple[list[Run], list[BBox]]:
     """Why: text covers must hug the glyphs of each line (not the loose OCR box) and know which
     visible words sit next to them. What: (one Run per edited line box: to_device-padded, tilt-aware,
-    vertical band = union of glyph_band over every word of that OCR line, labelled with the entity
+    vertical band = union of glyph_band over the edited words of that OCR line, labelled with the entity
     type; output-pixel boxes of the words no edit touches). ``gray``: the ORIGINAL pixels.
     Test: an edit over one word of a line whose OCR box is twice the glyph height -> the run's band
     is the glyph rows plus padding, not the OCR box.
@@ -361,16 +361,15 @@ def text_runs(page: ScannedPage, edits: list[SegmentEdit], gray: np.ndarray, fx:
         return (math.floor(box[0] * fx), math.floor(box[1] * fy),
                 min(width, math.ceil(box[2] * fx)), min(height, math.ceil(box[3] * fy)))
 
-    bands: dict[int, tuple[int, int]] = {}
     runs = []
     for edit in edits:
         for line, box in page.line_boxes(edit.start, edit.end):
-            if line not in bands:
-                rows = [glyph_band(gray, scaled(span.bbox)) for span in page.spans if span.line == line]
-                bands[line] = (min(r[0] for r in rows), max(r[1] for r in rows))
-            x0, y0, x1, y1 = to_device(box, fx, fy, width, height, True, page.skew, bands[line])
+            rows = [glyph_band(gray, scaled(span.bbox)) for span in page.spans
+                    if span.line == line and span.start < edit.end and span.end > edit.start]
+            band = (min(r[0] for r in rows), max(r[1] for r in rows))
+            x0, y0, x1, y1 = to_device(box, fx, fy, width, height, True, page.skew, band)
             if x1 > x0 and y1 > y0:
-                runs.append(Run(x0, y0, x1, y1, bands[line][1] - bands[line][0], label_for(edit.label)))
+                runs.append(Run(x0, y0, x1, y1, band[1] - band[0], label_for(edit.label)))
     shown = [scaled(span.bbox) for span in page.spans
              if not any(span.start < edit.end and span.end > edit.start for edit in edits)]
     return runs, shown
