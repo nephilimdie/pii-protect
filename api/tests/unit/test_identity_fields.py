@@ -64,3 +64,4 @@ def test_numbered_context_refines_generic_date_and_account_labels():
     result = supplement_identity_fields(_doc(CARD), joined, detected)
     assert len(result) == len({(item.start, item.end) for item in result})
     assert {item.pii_type for item in result} >= {"DATE_OF_BIRTH", "DRIVER_LICENSE"}
+    assert all(item.source == "document_layout" for item in result if item.pii_type in {"DATE_OF_BIRTH", "DRIVER_LICENSE"})

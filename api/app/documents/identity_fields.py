@@ -71,7 +71,7 @@ def supplement_identity_fields(doc: object, joined: JoinedText, detected: list[P
             if exact is not None:
                 if pii_type in {"DATE_OF_BIRTH", "DRIVER_LICENSE"}:
                     original = normalized[exact]
-                    normalized[exact] = PiiEntity(first, last, pii_type, value, original.score, original.source)
+                    normalized[exact] = PiiEntity(first, last, pii_type, value, original.score, "document_layout")
                 continue
             if any(first < entity.end and last > entity.start for entity in (*normalized, *extra)):
                 continue
