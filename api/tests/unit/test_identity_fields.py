@@ -53,3 +53,15 @@ def test_inline_field_numbers_and_second_page_offsets():
     result = supplement_identity_fields(doc, joined, [])
     assert {item.pii_type for item in result} == {"PERSON", "DATE_OF_BIRTH", "LOCATION", "DRIVER_LICENSE"}
     assert all(joined.text[item.start:item.end] == item.text for item in result)
+
+
+def test_numbered_context_refines_generic_date_and_account_labels():
+    joined = JoinedText([CARD])
+    detected = []
+    for value, pii_type in (("14/03/1979", "DATE"), ("U1R7K4Q9Z2", "ACCOUNT_NUMBER")):
+        start = CARD.index(value)
+        detected.append(PiiEntity(start, start + len(value), pii_type, value, 0.9))
+    result = supplement_identity_fields(_doc(CARD), joined, detected)
+    assert len(result) == len({(item.start, item.end) for item in result})
+    assert {item.pii_type for item in result} >= {"DATE_OF_BIRTH", "DRIVER_LICENSE"}
+    assert all(item.source == "document_layout" for item in result if item.pii_type in {"DATE_OF_BIRTH", "DRIVER_LICENSE"})
