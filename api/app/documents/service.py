@@ -82,7 +82,9 @@ def parse_user_entities(raw: str, text: str) -> list[PiiEntity]:
 
 
 def redaction_edits(joined: JoinedText, entities: list[PiiEntity]) -> list[SegmentEdit]:
-    return [replace(edit, label=e.pii_type) for e in entities for edit in joined.edits([(e.start, e.end, REDACTION_MARK)])]
+    """Redaction marks per entity; each edit carries the entity type (the cover's tag, never the content)."""
+    return [replace(edit, label=e.pii_type) for e in entities
+            for edit in joined.edits([(e.start, e.end, REDACTION_MARK)])]
 
 
 def pseudonymization_edits(

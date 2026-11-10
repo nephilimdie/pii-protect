@@ -31,14 +31,15 @@ HATCH_MIX = 0.22
 RIM = (99, 102, 241)  # #6366F1: 1 px inner rim, keeps touching covers of adjacent lines apart
 RIM_MIX = 0.45
 LABEL_INK = (238, 240, 255)  # #EEF0FF: entity-type label
-PILL_RADIUS = 0.4  # of the pill height
+PILL_RADIUS = 0.35  # of the pill height
 AREA_RADIUS = 0.12  # of an area's shorter side, at most AREA_RADIUS_MAX px
 AREA_RADIUS_MAX = 14
-BUCKET = 1.75  # pill widths are multiples of 1.75 x the line's glyph height
-JITTER = 0.25  # + up to 0.25 x glyph height, a function of the bucket only
+BUCKET = 1.5  # pill widths are multiples of 1.5 x the line's glyph height
+JITTER = 0.2  # + up to 0.2 x glyph height, a function of the bucket only
 LABEL_SIZE = 0.42  # label font size, of the pill height
 LABEL_MIN_PX = 9  # smaller labels are not drawn
 SUPERSAMPLE = 4  # anti-aliased rounded edges
+COVER_BLUE = 8  # cover_share: every cover colour has blue >= 8 above red and green
 SAME_LINE = 0.5  # runs whose band centres are closer than half a glyph height share a line
 NEIGHBOUR_GAP = 0.25  # of the glyph height: room kept before a visible neighbouring word
 
@@ -123,10 +124,11 @@ def _merged(runs: list[Run], reach: float) -> list[Run]:
 def pill_boxes(runs: Sequence[Run], width: int, height: int,
                neighbours: Sequence[BBox] = ()) -> list[tuple[BBox, int, str, BBox]]:
     """Why: the founder's ID-card sample read as one black slab; covers must hug each line yet hide length.
-    What: (box, radius, label, solid) per cover (``solid``: the padded run, always opaque): runs normalized per line, merged when their rounded ends
-    would touch, widened by the radius on both ends (so the rounded caps lie outside the padded box)
-    and to ``bucket_width``; the extra width goes first into free room to the right, then to the
-    left (before visible ``neighbours`` words, if any), then wherever the image allows.
+    What: (box, radius, label, solid) per cover (``solid``: the padded run, always opaque): runs
+    normalized per line, merged when their rounded ends would touch, widened by the radius on both
+    ends where there is room (rounded caps lie outside the padded box) and to ``bucket_width``;
+    the extra width goes first into free room to the right, then to the left (before visible
+    ``neighbours`` words, if any), then evenly wherever the image allows.
     Test: a 100 px run at x 50 on a 20 px line -> box contains [50, 150] grown by the radius, width
     == bucket_width(...); a run touching the right edge grows leftwards.
     """
@@ -139,16 +141,20 @@ def pill_boxes(runs: Sequence[Run], width: int, height: int,
         glyph = max(r.glyph for r in line)
         others = sorted(b for b in neighbours if abs((b[1] + b[3]) / 2 - (y0 + y1) / 2) < SAME_LINE * glyph)
         for run in _merged(line, 2 * radius):
-            a, b = max(0, run.x0 - radius), min(width, run.x1 + radius)
-            extra = min(width, bucket_width(b - a, glyph)) - (b - a)
             gap = NEIGHBOUR_GAP * glyph
-            right_free = min((o[0] - gap for o in others if o[0] >= run.x1), default=width) - b
-            left_free = a - max((o[2] + gap for o in others if o[2] <= run.x0), default=0)
-            grow_right = min(extra, max(0, int(right_free)))
-            grow_left = min(extra - grow_right, max(0, int(left_free)))
-            rest = extra - grow_right - grow_left
-            more_right = min(rest, width - b - grow_right)
+            middle = (run.x0 + run.x1) / 2
+            right_edge = min((o[0] - gap for o in others if (o[0] + o[2]) / 2 > middle), default=width)
+            left_edge = max((o[2] + gap for o in others if (o[0] + o[2]) / 2 < middle), default=0)
+            # rounded caps sit outside the padded run, but never over a visible neighbour (square corner then)
+            a = max(0, run.x0 - min(radius, max(0, int(run.x0 - left_edge))))
+            b = min(width, run.x1 + min(radius, max(0, int(right_edge - run.x1))))
+            extra = min(width, bucket_width(b - a, glyph)) - (b - a)
+            grow_right = min(extra, max(0, int(right_edge - b)))
+            grow_left = min(extra - grow_right, max(0, int(a - left_edge)))
+            rest = extra - grow_right - grow_left  # no free room left: overflow evenly, within the image
+            more_right = min(width - b - grow_right, rest - rest // 2)
             grow_left = min(a, grow_left + rest - more_right)
+            more_right = min(width - b - grow_right, extra - grow_right - grow_left)
             out.append(((a - grow_left, y0, b + grow_right + more_right, y1), radius, run.label,
                         (run.x0, y0, run.x1, y1)))
     return out
@@ -199,8 +205,8 @@ def draw_cover(image: Image.Image, box: BBox, radius: int, label: str = "", soli
     alpha[max(0, sy0 - y0):max(0, sy1 - y0), max(0, sx0 - x0):max(0, sx1 - x0)] = 1.0  # opacity guarantee
     fill = _texture(w, h, x0, y0, h)
     inner = alpha >= 1.0
-    rim = inner & ~(np.pad(inner, 1, constant_values=False)[2:, 1:-1] & np.pad(inner, 1, constant_values=False)[:-2, 1:-1]
-                    & np.pad(inner, 1, constant_values=False)[1:-1, 2:] & np.pad(inner, 1, constant_values=False)[1:-1, :-2])
+    padded = np.pad(inner, 1, constant_values=False)
+    rim = inner & ~(padded[2:, 1:-1] & padded[:-2, 1:-1] & padded[1:-1, 2:] & padded[1:-1, :-2])
     if w > 6 and h > 6:
         fill[rim] = fill[rim] * (1 - RIM_MIX) + np.asarray(RIM, np.float32) * RIM_MIX
     region = np.asarray(image.crop(box), dtype=np.float32)
@@ -228,3 +234,31 @@ def paint_area(image: Image.Image, box: BBox, label: str = "") -> None:
     if box[2] > box[0] and box[3] > box[1]:
         grown, radius = area_box(box, image.width, image.height)
         draw_cover(image, grown, radius, label, box)
+
+
+def _cover_mask(image: Image.Image, box: BBox) -> tuple[np.ndarray, np.ndarray]:
+    x0, y0 = max(0, int(box[0])), max(0, int(box[1]))
+    x1, y1 = min(image.width, int(box[2])), min(image.height, int(box[3]))
+    rgb = np.asarray(image.convert("RGB").crop((x0, y0, max(x0, x1), max(y0, y1))), dtype=np.int16)
+    return rgb, rgb[..., 2] - np.maximum(rgb[..., 0], rgb[..., 1]) >= COVER_BLUE
+
+
+def cover_share(image: Image.Image, box: BBox) -> float:
+    """Why: tests and audits must tell "covered" from "dark" now that covers are not black.
+    What: the share of ``box``'s pixels (clipped to the image; empty -> 1.0) that are cover fill:
+    blue at least COVER_BLUE above both red and green (gradient, hatch, rim and label all are;
+    black/grey ink, paper and white are not).
+    Test: a box fully inside a paint_area cover -> 1.0; the same box on the untouched page -> 0.0."""
+    rgb, cover = _cover_mask(image, box)
+    return float(cover.mean()) if cover.size else 1.0
+
+
+def visible_ink(image: Image.Image, box: BBox) -> float:
+    """Why: a text cover hugs the glyphs, not the loose OCR box; what matters is that no ink shows.
+    What: the share of ``box``'s pixels (clipped) that are dark (grey < 128) and not cover fill.
+    Test: a redacted word's OCR box -> 0.0; the same box before redaction -> > 0."""
+    rgb, cover = _cover_mask(image, box)
+    if not cover.size:
+        return 0.0
+    grey = rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114
+    return float(((grey < 128) & ~cover).mean())

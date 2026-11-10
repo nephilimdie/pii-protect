@@ -297,8 +297,9 @@ class PdfDocument(ScannedPages):
                 # never drawn: anything we cannot inspect must not reach the output.
                 bitmap = page.render(scale=plan.scale, rotation=undo, may_draw_forms=False,
                                      draw_annots=False, rev_byteorder=True)
-                turned = plan.rotation in (90, 270)  # covers are laid out on the DISPLAYED page (text runs left to right)
-                runs = self._runs(page, edits, *((bitmap.height, bitmap.width) if turned else (bitmap.width, bitmap.height)))
+                turned = plan.rotation in (90, 270)  # covers are laid out on the DISPLAYED page
+                runs, shown_words, vertical = self._runs(
+                    page, edits, *((bitmap.height, bitmap.width) if turned else (bitmap.width, bitmap.height)))
             finally:
                 page.close()
         try:
@@ -310,9 +311,13 @@ class PdfDocument(ScannedPages):
             return _encode(image)
         lossless = _is_gray(image)  # a text page stays crisp: lossless colour instead of JPEG
         shown = image.transpose(_SHOW[plan.rotation]) if plan.rotation in _SHOW else image
-        paint_pills(shown, runs)
         for box in cover_pixels(cover, shown.width, shown.height):  # fractions of the displayed page
             paint_area(shown, box)
+        if vertical:  # text runs top-bottom: lay the pills out on the transposed page
+            shown = shown.transpose(Image.Transpose.TRANSPOSE)
+        paint_pills(shown, runs, shown_words)
+        if vertical:
+            shown = shown.transpose(Image.Transpose.TRANSPOSE)
         return _encode(shown.transpose(_UNROTATE[plan.rotation]) if plan.rotation in _UNROTATE else shown, lossless)
 
     def _render_scanned(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit],
@@ -336,32 +341,57 @@ class PdfDocument(ScannedPages):
         return _encode(image)
 
     @staticmethod
-    def _runs(page, edits: list[SegmentEdit], width: int, height: int) -> list[Run]:
-        """One padded Run per text line of each edit, in pixels of the displayed page (``width`` x ``height``)."""
+    def _runs(page, edits: list[SegmentEdit], width: int,
+              height: int) -> tuple[list[Run], list[tuple[int, int, int, int]], bool]:
+        """(one padded Run per text line of each edit, boxes of the visible words, vertical) in pixels
+        of the displayed page (``width`` x ``height``); the words let covers grow into free room first.
+        When the page's text runs top-bottom (median step between glyphs is vertical) every box is
+        given transposed (x <-> y), so lines still run along x for the pill layout."""
         if not edits:
-            return []
+            return [], [], False
         textpage = page.get_textpage()
         x, y = ctypes.c_int(), ctypes.c_int()
+        device = (width, height)  # PDFium maps to the displayed page; width/height may be transposed below
 
         def to_device(px: float, py: float) -> tuple[int, int]:
-            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, width, height, 0, px, py, ctypes.byref(x), ctypes.byref(y))
+            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, *device, 0, px, py, ctypes.byref(x), ctypes.byref(y))
             return x.value, y.value
 
-        runs = []
+        def box(index: int) -> tuple[int, int, int, int]:
+            left, bottom, right, top = textpage.get_charbox(index, loose=True)
+            (x1, y1), (x2, y2) = to_device(left, top), to_device(right, bottom)
+            if vertical:
+                (x1, y1), (x2, y2) = (y1, x1), (y2, x2)
+            return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
+
+        runs, shown, vertical = [], [], False
         try:
+            count = textpage.count_chars()
+            centres = [((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) for b in
+                       (box(i) for i in range(min(count, 400)) if not _char(textpage, i).isspace())]
+            steps = [(abs(q[0] - p[0]), abs(q[1] - p[1])) for p, q in zip(centres, centres[1:])]
+            if steps:
+                mid = len(steps) // 2
+                vertical = sorted(dy for _, dy in steps)[mid] > sorted(dx for dx, _ in steps)[mid]
+            if vertical:
+                width, height = height, width
             for edit in edits:
-                boxes = []
-                for index in range(edit.start, edit.end):
-                    if _char(textpage, index).isspace():
-                        continue
-                    left, bottom, right, top = textpage.get_charbox(index, loose=True)
-                    (x1, y1), (x2, y2) = to_device(left, top), to_device(right, bottom)
-                    boxes.append((min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)))
+                boxes = [box(i) for i in range(edit.start, edit.end) if not _char(textpage, i).isspace()]
                 for left, top, right, bottom in _line_boxes(boxes):
                     x0, y0 = max(0, int(left) - _BOX_PAD_PX), max(0, int(top) - _BOX_PAD_PX)
                     x1, y1 = min(width, int(right) + 1 + _BOX_PAD_PX), min(height, int(bottom) + 1 + _BOX_PAD_PX)
                     if x1 > x0 and y1 > y0:
-                        runs.append(Run(x0, y0, x1, y1, bottom - top, label_for(edit.label)))
+                        tag = "" if vertical else label_for(edit.label)  # no mirrored tags on transposed pages
+                        runs.append(Run(x0, y0, x1, y1, bottom - top, tag))
+            hidden = {i for edit in edits for i in range(edit.start, edit.end)}
+            word: list[tuple[int, int, int, int]] = []
+            for i in range(count + 1):
+                visible = i < count and i not in hidden and not _char(textpage, i).isspace()
+                if visible:
+                    word.append(box(i))
+                elif word:
+                    shown.extend(tuple(int(v) for v in line) for line in _line_boxes(word))
+                    word = []
         finally:
             textpage.close()
-        return runs
+        return runs, shown, vertical

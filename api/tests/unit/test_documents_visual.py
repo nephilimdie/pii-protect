@@ -19,6 +19,7 @@ from PIL import Image, ImageFilter
 
 from app.config import settings
 from app.documents import ocr_client
+from app.documents.redaction_style import cover_share
 from app.documents.ocr_client import OcrClient, VisualHit, parse_result
 from app.documents.models import SegmentEdit
 from app.documents.ocr_layout import ScannedPage, paint, to_device
@@ -84,7 +85,7 @@ def vis(env, monkeypatch):  # noqa: F811
 
 
 def _dark(image: Image.Image, box, f: float = 1.0) -> bool:
-    return image_tests._mean(image, tuple(round(v * f) for v in box)) < 20
+    return cover_share(image, tuple(round(v * f) for v in box)) >= 0.97
 
 
 # ── units ────────────────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ def test_tilted_word_box_clipping_last_glyph_is_still_covered():
     image = Image.new("RGB", (1000, 1000), "white")
     image.paste((0, 0, 0), (300, 204, 310, 238))  # ink of the last glyph just outside the word box
     paint(image, page, [SegmentEdit(0, 0, 4, "")], [])
-    assert image.crop((296, 196, 314, 244)).convert("L").getextrema() == (0, 0)
+    assert cover_share(image, (296, 196, 314, 244)) == 1.0  # every pixel is cover fill
 
 
 # ── images ───────────────────────────────────────────────────────────────────
@@ -202,7 +203,7 @@ def test_scanned_pdf_page_face_is_painted(env, monkeypatch):  # noqa: F811
     pages = scan_tests._pages(r.content)
     for _, _, image in pages:
         scan_tests._assert_scan_redacted(image)
-        assert scan_tests._mean(image, SCAN_FACE) < 20
+        assert scan_tests._covered(image, SCAN_FACE)
     assert env.fake.calls == ["face,code", "face,code"] and "FACE" in r.headers["x-pii-types"]
 
 
@@ -395,7 +396,7 @@ def test_scanned_pdf_face_style_pixelate(env, monkeypatch):  # noqa: F811
     assert r.status_code == 200, r.text
     ((_, _, image),) = scan_tests._pages(r.content)
     scan_tests._assert_scan_redacted(image)
-    face = image.convert("RGB").crop(SCAN_FACE)
+    face = image.convert("L").crop(SCAN_FACE)
     assert len(face.getcolors(100_000)) <= 400  # 64 cells (+ JPEG/scale edges), not a black box either
 
 
@@ -411,7 +412,7 @@ def test_face_style_shows_through_an_overlapping_review_region():
         paint(out, page, [], [box for _, box in page.review], style)
         assert image_tests._mean(out, (110, 60, 290, 240)) > 30  # obscured, not black
         assert _edge_energy(out.crop((130, 80, 270, 220))) < 0.1 * _edge_energy(image.crop((130, 80, 270, 220)))
-        assert image_tests._mean(out, (600, 400, 900, 700)) < 5  # the rest of the review region stays black
+        assert image_tests._covered(out, (600, 400, 900, 700))  # the rest of the review region stays black
     black = image.copy()
     paint(black, page, [], [box for _, box in page.review])
-    assert image_tests._mean(black, (250, 200, 900, 700)) < 5 and image_tests._mean(black, (100, 50, 300, 250)) < 5
+    assert image_tests._covered(black, (250, 200, 900, 700)) and image_tests._covered(black, (100, 50, 300, 250))

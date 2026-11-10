@@ -22,6 +22,7 @@ import pytest
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 from app.config import settings
+from app.documents.redaction_style import cover_share, visible_ink
 from app.documents.image_handler import sniff_image
 from app.documents.models import DocumentError
 from app.documents.ocr_client import OcrClient
@@ -150,14 +151,24 @@ def _mean(image: Image.Image, box) -> float:
     return ImageStat.Stat(image.convert("L").crop(box)).mean[0]
 
 
+def _covered(image: Image.Image, box) -> bool:
+    """Every pixel (bar JPEG fringes) is redaction-cover fill, never original ink."""
+    return cover_share(image, box) >= 0.97
+
+
+def _hidden(image: Image.Image, box) -> bool:
+    """No original ink shows inside ``box`` (text covers hug the glyphs, not the loose OCR box)."""
+    return visible_ink(image, box) <= 0.002
+
+
 def _assert_redacted(image: Image.Image, layout: Layout, kept_review=(), dark: float = 20) -> None:
     assert image.size == layout.size and image.mode == "RGB"
     for token in SECRETS:
-        assert _mean(image, layout.box(token)) < dark, token  # opaque box over every PII word
+        assert _hidden(image, layout.box(token)), token  # no glyph pixel shows over every PII word
     for token in KEPT:
         assert _mean(image, layout.box(token)) > 120, token  # the rest stays readable
     for n, region in enumerate((layout.low, layout.ink)):
-        assert (_mean(image, region) > 120) if n in kept_review else (_mean(image, region) < dark), n
+        assert (_mean(image, region) > 120) if n in kept_review else _covered(image, region), n
 
 
 def _assert_no_metadata(payload: bytes) -> None:
@@ -298,7 +309,7 @@ def test_sync_redact_review_default_visible_review_cover_and_user_areas(img):
     drawn = _post(img, "redact", source, review_default="visible",
                   cover_boxes=json.dumps([{"page": 1, "bbox": _frac(SCREENSHOT, area)}]))
     out = Image.open(io.BytesIO(drawn.content))
-    assert _mean(out, area) < 20 and _mean(out, SCREENSHOT.box("bonifico.")) > 120  # only the user's area
+    assert _covered(out, area) and _mean(out, SCREENSHOT.box("bonifico.")) > 120  # only the user's area
     calls = img.fake.calls
     for field, value, code in (("review_default", "sometimes", "INVALID_REVIEW_DEFAULT"),
                                ("review_cover", "[-1]", "INVALID_REVIEW_COVER"), ("review_cover", "x", "INVALID_REVIEW_COVER"),
@@ -328,7 +339,7 @@ def test_image_job_render_review_default_visible_with_user_area(img_jobs):
                        cover_boxes=[{"page": 1, "bbox": _frac(SCREENSHOT, area)}])
     assert rendered.status_code == 200, rendered.text
     out = Image.open(io.BytesIO(rendered.content))
-    assert _mean(out, SCREENSHOT.low) < 20 and _mean(out, SCREENSHOT.ink) > 120 and _mean(out, area) < 20
+    assert _covered(out, SCREENSHOT.low) and _mean(out, SCREENSHOT.ink) > 120 and _covered(out, area)
 
 
 def test_preview_payload_has_scanned_pdf_shape(img):
@@ -503,7 +514,7 @@ def test_real_ocr_redacts_screenshot_and_photo(real, name, payload, layout):
     out = Image.open(io.BytesIO(r.content)).convert("RGB")
     assert out.size == layout.size
     for token in SECRETS:
-        assert _mean(out, layout.box(token)) < 40, (name, token)
+        assert _hidden(out, layout.box(token)), (name, token)
     _assert_no_metadata(r.content)
 
 

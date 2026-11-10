@@ -151,7 +151,7 @@ components:
                   redact only, PDFs (any page, text or scanned) and images: JSON array of at most 200
                   user-drawn areas `{"page": 1, "bbox": [x0, y0, x1, y1]}`, 1-based page, fractions of the
                   page as displayed (after /Rotate; images upright, like `needs_review`), 0 <= x0 < x1 <= 1.
-                  Each area is painted solid black (padded by 3 px) into the output pixels: a real
+                  Each area is painted with an opaque cover (padded by 3 px; style in doc/redaction-style.md) into the output pixels: a real
                   redaction, not an annotation. Malformed -> 422 INVALID_COVER_BOXES before any work;
                   a page the document does not have, or any area on DOCX/TXT -> 422 INVALID_COVER_BOXES.
 
@@ -1540,7 +1540,7 @@ paths:
           (default false): then each scanned page is OCR'd by the internal OCR service
           (at most `PII_OCR_MAX_PAGES`, default 20, sync; `PII_OCR_JOB_MAX_PAGES`, default 100,
           for jobs), its text runs through the same detection pipeline, and entities are
-          blacked out as one padded rectangle per text-line segment over the OCR word boxes.
+          covered by one opaque pill per text-line run (glyph-tight, width rounded up to hide length; doc/redaction-style.md).
           **Fail-closed:** OCR low-confidence regions and ink without recognized text
           (signatures, stamps, handwriting, pictures) are blacked out too and reported as
           `needs_review`; if the OCR service is down or fails, no document is returned
@@ -1804,7 +1804,7 @@ paths:
                 cover_boxes:
                   type: array
                   maxItems: 200
-                  description: "redact only: user-drawn areas painted black (see DocumentUpload `cover_boxes`)."
+                  description: "redact only: user-drawn areas painted opaque (see DocumentUpload `cover_boxes`)."
                   items:
                     type: object
                     required: [page, bbox]
