@@ -52,12 +52,13 @@ class DocumentError(Exception):
 
 @dataclass(frozen=True)
 class SegmentEdit:
-    """One replacement inside one segment (segment-local offsets)."""
+    """One replacement inside one segment (segment-local offsets); ``label``: entity type (covers' tag)."""
 
     segment: int
     start: int
     end: int
     replacement: str
+    label: str = ""
 
 
 @dataclass(frozen=True)

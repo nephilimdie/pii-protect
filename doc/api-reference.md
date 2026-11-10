@@ -127,7 +127,7 @@ No image plugin ships with the engine (the former `pseudora.image_ocr` plugin wa
 removed; scanned PDFs **and photos/screenshots (JPEG, PNG, WebP)** are handled by the
 zero-retention document endpoints `/v1/documents/{preview,redact}` and document jobs with
 the internal OCR service: EXIF orientation applied, every metadata block (EXIF incl. GPS,
-XMP, ICC, comments) dropped, entities painted black and uncertain `needs_review` regions
+XMP, ICC, comments) dropped, entities covered by opaque indigo pills (see [redaction-style.md](redaction-style.md)) and uncertain `needs_review` regions
 (unreadable text, unread ink, unsure signatures/stamps) painted by default or, with
 `review_default=visible`, left visible unless listed in `review_cover`; user-drawn
 `cover_boxes` are painted into the pixels; output in the input format, redact only; HEIC/HEIF is refused with

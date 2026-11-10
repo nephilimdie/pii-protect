@@ -13,19 +13,19 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops
 
 from app.documents.chunking import DetectionCancelled
 from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 from app.documents.ocr_client import OcrClient
 from app.documents.ocr_layout import Covers, FaceStyle, ScannedPage, ScannedPages, cover_pixels, paint
 from app.documents.pdf_writer import ImagePdfWriter, PageImage
+from app.documents.redaction_style import Run, label_for, paint_area, paint_pills
 
 # PDFium is not thread-safe: every call into it goes through this lock. It is taken
 # per page (not per document) so concurrent jobs interleave instead of queueing.
 PDFIUM_LOCK = threading.Lock()
 _BOX_PAD_PX = 2
-_BLACK = (0, 0, 0, 255)
 _JPEG_QUALITY = 85
 _FLATE_LEVEL = 6
 _GRAY_PROBE_REDUCE = 4  # colour check on a 1/16 thumbnail: cheap, and only decides the encoding
@@ -89,13 +89,20 @@ def plan_page(width_pt: float, height_pt: float, rotation: int, limits: Document
     return _PagePlan(rotation, frame, scale)
 
 
-def _encode(image) -> PageImage:
-    """Lossless Flate for grayscale pages (crisp text, ~half the JPEG size), JPEG for colour."""
-    probe = image.reduce(_GRAY_PROBE_REDUCE)
-    red, green, blue = probe.split()
-    if ImageChops.difference(red, green).getbbox() is None and ImageChops.difference(green, blue).getbbox() is None:
+def _is_gray(image) -> bool:
+    red, green, blue = image.reduce(_GRAY_PROBE_REDUCE).split()
+    return ImageChops.difference(red, green).getbbox() is None and ImageChops.difference(green, blue).getbbox() is None
+
+
+def _encode(image, lossless: bool = False) -> PageImage:
+    """Lossless Flate for grayscale pages (crisp text, ~half the JPEG size) and, with ``lossless``,
+    for colour too (a text page with covers), JPEG for other colour pages."""
+    if _is_gray(image):
         gray = image.convert("L")
         return PageImage(zlib.compress(gray.tobytes(), _FLATE_LEVEL), gray.width, gray.height, "DeviceGray", "FlateDecode")
+    if lossless:
+        rgb = image.convert("RGB")
+        return PageImage(zlib.compress(rgb.tobytes(), _FLATE_LEVEL), rgb.width, rgb.height, "DeviceRGB", "FlateDecode")
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=_JPEG_QUALITY)
     return PageImage(buffer.getvalue(), image.width, image.height, "DeviceRGB", "DCTDecode")
@@ -250,7 +257,7 @@ class PdfDocument(ScannedPages):
                       cover: Covers | None = None, keep_visual: frozenset[int] = frozenset()) -> Iterator[bytes]:
         """Yields the output PDF in pieces (header, one chunk per page, trailer ending in %%EOF).
         Any failure raises before the trailer, so an incomplete body never ends in %%EOF.
-        `keep_review`: ids of review_boxes() left visible; `cover`: user-drawn areas painted black
+        `keep_review`: ids of review_boxes() left visible; `cover`: user-drawn areas painted opaque
         (fractions of the displayed page, any page)."""
         cover = cover or {}
         if self.ocr_pending:
@@ -290,25 +297,28 @@ class PdfDocument(ScannedPages):
                 # never drawn: anything we cannot inspect must not reach the output.
                 bitmap = page.render(scale=plan.scale, rotation=undo, may_draw_forms=False,
                                      draw_annots=False, rev_byteorder=True)
-                for left, top, right, bottom in self._boxes(page, edits, bitmap.width, bitmap.height, undo // 90):
-                    left, top = max(0, left), max(0, top)
-                    right, bottom = min(bitmap.width, right), min(bitmap.height, bottom)
-                    if right > left and bottom > top:
-                        bitmap.fill_rect(_BLACK, left, top, right - left, bottom - top)
+                turned = plan.rotation in (90, 270)  # covers are laid out on the DISPLAYED page
+                runs, shown_words, vertical = self._runs(
+                    page, edits, *((bitmap.height, bitmap.width) if turned else (bitmap.width, bitmap.height)))
             finally:
                 page.close()
         try:
-            image = bitmap.to_pil()  # PIL/zlib only: runs outside the PDFium lock
-            if cover:  # user areas are fractions of the DISPLAYED page; this bitmap is the /MediaBox frame
-                shown = image.transpose(_SHOW[plan.rotation]) if plan.rotation in _SHOW else image.copy()
-                draw = ImageDraw.Draw(shown)
-                for x0, y0, x1, y1 in cover_pixels(cover, shown.width, shown.height):
-                    draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill="black")
-                image = shown.transpose(_UNROTATE[plan.rotation]) if plan.rotation in _UNROTATE else shown
-            return _encode(image)
+            image = bitmap.to_pil().convert("RGB")  # PIL/zlib only: runs outside the PDFium lock
         finally:
             with PDFIUM_LOCK:
                 bitmap.close()
+        if not runs and not cover:
+            return _encode(image)
+        lossless = _is_gray(image)  # a text page stays crisp: lossless colour instead of JPEG
+        shown = image.transpose(_SHOW[plan.rotation]) if plan.rotation in _SHOW else image
+        for box in cover_pixels(cover, shown.width, shown.height):  # fractions of the displayed page
+            paint_area(shown, box)
+        if vertical:  # text runs top-bottom: lay the pills out on the transposed page
+            shown = shown.transpose(Image.Transpose.TRANSPOSE)
+        paint_pills(shown, runs, shown_words)
+        if vertical:
+            shown = shown.transpose(Image.Transpose.TRANSPOSE)
+        return _encode(shown.transpose(_UNROTATE[plan.rotation]) if plan.rotation in _UNROTATE else shown, lossless)
 
     def _render_scanned(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit],
                         review: list, face_style: str = "black", cover=(),
@@ -331,29 +341,57 @@ class PdfDocument(ScannedPages):
         return _encode(image)
 
     @staticmethod
-    def _boxes(page, edits: list[SegmentEdit], width: int, height: int, rotate: int) -> list[tuple[int, int, int, int]]:
+    def _runs(page, edits: list[SegmentEdit], width: int,
+              height: int) -> tuple[list[Run], list[tuple[int, int, int, int]], bool]:
+        """(one padded Run per text line of each edit, boxes of the visible words, vertical) in pixels
+        of the displayed page (``width`` x ``height``); the words let covers grow into free room first.
+        When the page's text runs top-bottom (median step between glyphs is vertical) every box is
+        given transposed (x <-> y), so lines still run along x for the pill layout."""
         if not edits:
-            return []
+            return [], [], False
         textpage = page.get_textpage()
         x, y = ctypes.c_int(), ctypes.c_int()
+        device = (width, height)  # PDFium maps to the displayed page; width/height may be transposed below
 
         def to_device(px: float, py: float) -> tuple[int, int]:
-            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, width, height, rotate, px, py, ctypes.byref(x), ctypes.byref(y))
+            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, *device, 0, px, py, ctypes.byref(x), ctypes.byref(y))
             return x.value, y.value
 
-        rects = []
+        def box(index: int) -> tuple[int, int, int, int]:
+            left, bottom, right, top = textpage.get_charbox(index, loose=True)
+            (x1, y1), (x2, y2) = to_device(left, top), to_device(right, bottom)
+            if vertical:
+                (x1, y1), (x2, y2) = (y1, x1), (y2, x2)
+            return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
+
+        runs, shown, vertical = [], [], False
         try:
+            count = textpage.count_chars()
+            centres = [((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) for b in
+                       (box(i) for i in range(min(count, 400)) if not _char(textpage, i).isspace())]
+            steps = [(abs(q[0] - p[0]), abs(q[1] - p[1])) for p, q in zip(centres, centres[1:])]
+            if steps:
+                mid = len(steps) // 2
+                vertical = sorted(dy for _, dy in steps)[mid] > sorted(dx for dx, _ in steps)[mid]
+            if vertical:
+                width, height = height, width
             for edit in edits:
-                boxes = []
-                for index in range(edit.start, edit.end):
-                    if _char(textpage, index).isspace():
-                        continue
-                    left, bottom, right, top = textpage.get_charbox(index, loose=True)
-                    (x1, y1), (x2, y2) = to_device(left, top), to_device(right, bottom)
-                    boxes.append((min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)))
+                boxes = [box(i) for i in range(edit.start, edit.end) if not _char(textpage, i).isspace()]
                 for left, top, right, bottom in _line_boxes(boxes):
-                    rects.append((int(left) - _BOX_PAD_PX, int(top) - _BOX_PAD_PX,
-                                  int(right) + _BOX_PAD_PX, int(bottom) + _BOX_PAD_PX))
+                    x0, y0 = max(0, int(left) - _BOX_PAD_PX), max(0, int(top) - _BOX_PAD_PX)
+                    x1, y1 = min(width, int(right) + 1 + _BOX_PAD_PX), min(height, int(bottom) + 1 + _BOX_PAD_PX)
+                    if x1 > x0 and y1 > y0:
+                        tag = "" if vertical else label_for(edit.label)  # no mirrored tags on transposed pages
+                        runs.append(Run(x0, y0, x1, y1, bottom - top, tag))
+            hidden = {i for edit in edits for i in range(edit.start, edit.end)}
+            word: list[tuple[int, int, int, int]] = []
+            for i in range(count + 1):
+                visible = i < count and i not in hidden and not _char(textpage, i).isspace()
+                if visible:
+                    word.append(box(i))
+                elif word:
+                    shown.extend(tuple(int(v) for v in line) for line in _line_boxes(word))
+                    word = []
         finally:
             textpage.close()
-        return rects
+        return runs, shown, vertical

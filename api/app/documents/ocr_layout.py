@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageFilter
 
 from app.documents.models import SegmentEdit
 from app.documents.ocr_client import BBox, OcrResult, VisualHit
+from app.documents.redaction_style import Run, label_for, paint_area, paint_pills
 
 MIN_PAD_PX = 3
 LINE_PAD = 0.15  # of the line height, on every side
@@ -30,6 +31,7 @@ BLUR_LEVELS = 8  # blur cell colours quantized to multiples of 8
 BLUR_AXIS = 0.6  # blur ellipse semi-axes as a share of the face box sides (just past the inscribed oval)
 BLUR_FEATHER = 0.15  # of the face's longest side: the soft edge where the blur fades into the photo
 BLUR_GRAIN = 2.0  # sigma of per-pixel grain on the blur (adds no face information)
+INK_DELTA = 40  # glyph_band: a pixel this far from its word box's median grey is ink
 FACE_ABSORB = 0.5  # a review region at least half inside a face box grown by 50% per side is the face's own ink
 
 
@@ -127,18 +129,23 @@ class ScannedPage:
                    (*(visual or ()), *(hit for hit in result.marks if not hit.needs_review)), result.skew)
 
     def boxes(self, start: int, end: int) -> list[BBox]:
+        """Boxes of the text in [start, end) (see line_boxes), without their line ids."""
+        return [box for _, box in self.line_boxes(start, end)]
+
+    def line_boxes(self, start: int, end: int) -> list[tuple[int, BBox]]:
         """Cover whole OCR words, joining only neighbours rather than spanning a column gap.
 
         OCR occasionally puts text from distant columns in the same logical line. A single
         union box then hides everything between them. Gaps up to half a word height are
         merged so ordinary spaces in a name do not disclose individual word lengths.
+        Returns (OCR line id, box) pairs.
         """
         lines: dict[int, list[BBox]] = defaultdict(list)
         for span in self.spans:
             if span.start < end and span.end > start:
                 lines[span.line].append(span.bbox)
-        out: list[BBox] = []
-        for words in lines.values():
+        out: list[tuple[int, BBox]] = []
+        for line, words in lines.items():
             merged: list[int] | None = None
             for box in sorted(words, key=lambda b: (b[0], b[1])):
                 if merged is not None:
@@ -151,10 +158,10 @@ class ScannedPage:
                         merged[2] = max(merged[2], box[2])
                         merged[3] = max(merged[3], box[3])
                         continue
-                    out.append(tuple(merged))
+                    out.append((line, tuple(merged)))
                 merged = list(box)
             if merged is not None:
-                out.append(tuple(merged))
+                out.append((line, tuple(merged)))
         return out
 
     def normalized(self, box: BBox) -> list[float]:
@@ -163,7 +170,8 @@ class ScannedPage:
                 round(box[2] / self.width, 5), round(box[3] / self.height, 5)]
 
 
-def to_device(box: BBox, fx: float, fy: float, width: int, height: int, line: bool, skew: float = 0.0) -> BBox:
+def to_device(box: BBox, fx: float, fy: float, width: int, height: int, line: bool, skew: float = 0.0,
+              band: tuple[int, int] | None = None) -> BBox:
     """Why: OCR ran at its own DPI; the output page is rendered at the document DPI. On tilted
     photos the straightened word boxes can clip the first/last glyph (seen on prod: a sliver of
     a phone number's last digit), and the skew estimate itself has ~1 degree of error.
@@ -171,16 +179,39 @@ def to_device(box: BBox, fx: float, fy: float, width: int, height: int, line: bo
     at least MIN_PAD_PX; regions: MIN_PAD_PX), clipped to the image. Lines on a page tilted by
     >= TILT_MIN_DEG also get TILT_END_PAD of the line height left/right and half the box width
     times sin(TILT_ERROR_DEG) above/below.
+    A line's ``band`` (output pixels: the glyph rows measured by glyph_band) replaces the OCR box's
+    vertical extent, its height sets the vertical pad; left/right pads still follow the OCR box.
     Test: (10, 10, 20, 30) at fx=fy=0.5 -> height 10 -> pad 3 -> (2, 2, 13, 18); with skew=3 a
     (0, 100, 1000, 140) line gains 12 px left/right and 9 px above/below.
     """
     x0, y0, x1, y1 = math.floor(box[0] * fx), math.floor(box[1] * fy), math.ceil(box[2] * fx), math.ceil(box[3] * fy)
-    pad = max(MIN_PAD_PX, math.ceil(LINE_PAD * (y1 - y0))) if line else MIN_PAD_PX
-    px = py = pad
+    box_height = y1 - y0
+    px = max(MIN_PAD_PX, math.ceil(LINE_PAD * box_height)) if line else MIN_PAD_PX
+    if line and band is not None:
+        y0, y1 = band
+    py = max(MIN_PAD_PX, math.ceil(LINE_PAD * (y1 - y0))) if line else MIN_PAD_PX
     if line and abs(skew) >= TILT_MIN_DEG:
-        px += math.ceil(TILT_END_PAD * (y1 - y0))
+        px += math.ceil(TILT_END_PAD * box_height)
         py += math.ceil((x1 - x0) / 2 * math.sin(math.radians(TILT_ERROR_DEG)))
     return max(0, x0 - px), max(0, y0 - py), min(width, x1 + px), min(height, y1 + py)
+
+
+def glyph_band(gray: np.ndarray, box: BBox) -> tuple[int, int]:
+    """Why: detector-based OCR boxes are ~1.7x the glyph height; covers that size fuse adjacent
+    lines into one slab (founder, ID-card sample 2026-11-10). Only rows proven empty may be dropped.
+    What: the rows of ``box`` (output pixels) holding ink, i.e. pixels at least INK_DELTA away
+    from the box's median (its background), plus one row of slack each side; the whole box when
+    nothing qualifies (faint text, busy background, ink touching an edge keeps that edge).
+    Test: a 40 px box with ink in rows 12-28 -> (11, 30); a blank box -> unchanged.
+    """
+    x0, y0, x1, y1 = box
+    crop = gray[y0:y1, x0:x1]
+    if crop.size == 0:
+        return y0, y1
+    rows = np.flatnonzero((np.abs(crop - np.median(crop)) >= INK_DELTA).any(axis=1))
+    if rows.size == 0:
+        return y0, y1
+    return y0 + max(0, int(rows[0]) - 1), y0 + min(crop.shape[0], int(rows[-1]) + 2)
 
 
 class ScannedPages:
@@ -308,37 +339,69 @@ def cover_pixels(cover: Sequence[Frac], width: int, height: int) -> list[BBox]:
     return out
 
 
+def text_runs(page: ScannedPage, edits: list[SegmentEdit], gray: np.ndarray, fx: float,
+              fy: float) -> tuple[list[Run], list[BBox]]:
+    """Why: text covers must hug the glyphs of each line (not the loose OCR box) and know which
+    visible words sit next to them. What: (one Run per edited line box: to_device-padded, tilt-aware,
+    vertical band = union of glyph_band over every word of that OCR line, labelled with the entity
+    type; output-pixel boxes of the words no edit touches). ``gray``: the ORIGINAL pixels.
+    Test: an edit over one word of a line whose OCR box is twice the glyph height -> the run's band
+    is the glyph rows plus padding, not the OCR box.
+    """
+    height, width = gray.shape
+
+    def scaled(box: BBox) -> BBox:
+        return (math.floor(box[0] * fx), math.floor(box[1] * fy),
+                min(width, math.ceil(box[2] * fx)), min(height, math.ceil(box[3] * fy)))
+
+    bands: dict[int, tuple[int, int]] = {}
+    runs = []
+    for edit in edits:
+        for line, box in page.line_boxes(edit.start, edit.end):
+            if line not in bands:
+                rows = [glyph_band(gray, scaled(span.bbox)) for span in page.spans if span.line == line]
+                bands[line] = (min(r[0] for r in rows), max(r[1] for r in rows))
+            x0, y0, x1, y1 = to_device(box, fx, fy, width, height, True, page.skew, bands[line])
+            if x1 > x0 and y1 > y0:
+                runs.append(Run(x0, y0, x1, y1, bands[line][1] - bands[line][0], label_for(edit.label)))
+    shown = [scaled(span.bbox) for span in page.spans
+             if not any(span.start < edit.end and span.end > edit.start for edit in edits)]
+    return runs, shown
+
+
 def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], review: list[BBox],
           face_style: str = FaceStyle.BLACK, cover: Sequence[Frac] = (),
           keep_visual: frozenset[int] = frozenset()) -> None:
     """Why: the only thing that hides PII in a scan is opaque pixels over the OCR boxes.
-    What: paints solid black over every edited span's line boxes, the given review regions, every
-    visual hit (faces, codes, plates, sure signatures and stamps: never optional) and the user's
-    ``cover`` areas (fractions of the page), scaled from the OCR'd image to ``image`` and padded
-    (to_device, tilt-aware for lines). With ``face_style`` pixelate/blur, FACE boxes are obscured
-    irreversibly instead (see obscure), from the original pixels and on top of review regions;
-    text PII, codes, plates, marks and user areas stay black on top. Mutates ``image`` (RGB).
-    Test: an edit over "Mario Rossi" -> mean pixel value in the word box < 20.
+    What: paints opaque covers (redaction_style: indigo pills/areas) over the given review regions,
+    every visual hit (faces, codes, plates, sure signatures and stamps: never optional), every
+    edited span (one pill per line run, see text_runs / pill_boxes) and the user's ``cover`` areas
+    (fractions of the page), scaled from the OCR'd image to ``image`` and padded (to_device,
+    tilt-aware for lines). With ``face_style`` pixelate/blur, FACE boxes are obscured irreversibly
+    instead (see obscure), from the original pixels and on top of review regions; text PII, codes,
+    plates, marks and user areas stay covered on top. Mutates ``image`` (RGB).
+    Test: an edit over "Mario Rossi" -> every pixel of the padded word box is cover fill.
     """
     fx, fy = image.width / page.width, image.height / page.height
-    draw = ImageDraw.Draw(image)
+    gray = np.asarray(image.convert("L"), dtype=np.int16)  # measured before any cover is painted
+    runs, shown = text_runs(page, edits, gray, fx, fy)
 
-    def fill(boxes: list[BBox], line: bool) -> None:
-        for box in boxes:
-            x0, y0, x1, y1 = to_device(box, fx, fy, image.width, image.height, line, page.skew)
-            if x1 > x0 and y1 > y0:
-                draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))
+    def device(box: BBox) -> BBox:
+        return to_device(box, fx, fy, image.width, image.height, False)
 
     visual = [hit for i, hit in enumerate(page.visual) if i not in keep_visual]
     styled = face_style != FaceStyle.BLACK
-    faces = [to_device(h.bbox, fx, fy, image.width, image.height, False) for h in visual if styled and h.type == "FACE"]
+    faces = [device(h.bbox) for h in visual if styled and h.type == "FACE"]
     # obscured from the ORIGINAL pixels, then pasted over the review regions (on photos the unread-ink
     # region usually overlaps the face): nothing readable survives inside a face box either way
     obscured = [obscure(image, box, face_style) for box in faces if box[2] > box[0] and box[3] > box[1]]
-    fill(review, False)
+    for box in review:
+        paint_area(image, device(box))
     for tile, mask, origin in obscured:
         image.paste(tile, origin, mask)
-    fill([hit.bbox for hit in visual if not (styled and hit.type == "FACE")], False)  # codes, plates, marks
-    fill([box for edit in edits for box in page.boxes(edit.start, edit.end)], True)  # text PII: always on top
-    for x0, y0, x1, y1 in cover_pixels(cover, image.width, image.height):
-        draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(0, 0, 0))
+    for hit in visual:  # codes, plates, marks (and faces, unless styled)
+        if not (styled and hit.type == "FACE"):
+            paint_area(image, device(hit.bbox), label_for(hit.type))
+    paint_pills(image, runs, shown)  # text PII: always on top
+    for box in cover_pixels(cover, image.width, image.height):
+        paint_area(image, box)

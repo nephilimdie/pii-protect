@@ -25,6 +25,7 @@ from reportlab.pdfgen import canvas
 
 from app.config import settings
 from app.documents import ocr_client as ocr_module
+from app.documents.redaction_style import cover_share, visible_ink
 from app.documents.ocr_client import OcrClient, OcrResult, OcrWord, parse_result
 from app.documents.ocr_layout import ScannedPage, to_device
 from app.routers import documents as documents_module
@@ -134,7 +135,7 @@ def _pages(payload: bytes, scale: float = SCAN_DPI / 72):
         for i in range(len(pdf)):
             page = pdf[i]
             out.append((page.get_rotation(), page.get_textpage().count_chars(),
-                        page.render(scale=scale).to_pil().convert("L")))
+                        page.render(scale=scale).to_pil().convert("RGB")))
         return out
     finally:
         pdf.close()
@@ -142,7 +143,19 @@ def _pages(payload: bytes, scale: float = SCAN_DPI / 72):
 
 def _mean(image: Image.Image, box) -> float:
     f = image.width / SCAN_SIZE[0]
-    return ImageStat.Stat(image.crop(tuple(round(v * f) for v in box))).mean[0]
+    return ImageStat.Stat(image.convert("L").crop(tuple(round(v * f) for v in box))).mean[0]
+
+
+def _covered(image: Image.Image, box) -> bool:
+    """Every pixel (bar JPEG fringes) of the scaled box is redaction-cover fill."""
+    f = image.width / SCAN_SIZE[0]
+    return cover_share(image, tuple(round(v * f) for v in box)) >= 0.97
+
+
+def _hidden(image: Image.Image, box) -> bool:
+    """No original ink shows inside the scaled box (text covers hug the glyphs)."""
+    f = image.width / SCAN_SIZE[0]
+    return visible_ink(image, tuple(round(v * f) for v in box)) <= 0.002
 
 
 def _word(token: str):
@@ -151,11 +164,11 @@ def _word(token: str):
 
 def _assert_scan_redacted(image: Image.Image, review_kept: tuple[int, ...] = ()) -> None:
     for token in ("Mario", "Rossi", FISCAL, IBAN):
-        assert _mean(image, _word(token)) < 20, token  # solid black box over each PII word
+        assert _hidden(image, _word(token)), token  # no glyph pixel shows over each PII word
     for token in ("Contratto", "Dipendente:", "fiscale:", "IBAN:", "Mansione:"):
         assert _mean(image, _word(token)) > 120, token  # surrounding text still readable
     for n, region in enumerate((LOW_CONF, INK)):
-        assert (_mean(image, region) > 120) if n in review_kept else (_mean(image, region) < 20), n
+        assert (_mean(image, region) > 120) if n in review_kept else _covered(image, region), n
 
 
 # ── units ────────────────────────────────────────────────────────────────────
@@ -369,10 +382,10 @@ def test_scanned_job_review_default_visible_and_user_area_on_text_page(ocr_jobs)
     assert rendered.status_code == 200, rendered.text
     pages = _pages(rendered.content)
     _assert_scan_redacted(pages[1][2], review_kept=(0, 1))  # page 2: both doubtful regions left visible
-    assert _mean(pages[2][2], LOW_CONF) > 120 and _mean(pages[2][2], INK) < 20  # page 3: the user covered id 3
+    assert _mean(pages[2][2], LOW_CONF) > 120 and _covered(pages[2][2], INK)  # page 3: the user covered id 3
     text_page = pages[0][2]
     w, h = text_page.size
-    assert ImageStat.Stat(text_page.crop((round(0.12 * w), round(0.12 * h), round(0.48 * w), round(0.18 * h)))).mean[0] < 20
+    assert cover_share(text_page, (round(0.12 * w), round(0.12 * h), round(0.48 * w), round(0.18 * h))) >= 0.97
 
 
 @pytest.mark.parametrize("rotation", [0, 90, 270])
@@ -383,7 +396,7 @@ def test_user_area_lands_where_the_user_saw_it_on_a_rotated_scan(ocr, rotation):
     [(_, _, image)] = _pages(r.content)
     w, h = image.size
     inner = (round(0.62 * w), round(0.06 * h), round(0.88 * w), round(0.11 * h))
-    assert ImageStat.Stat(image.crop(inner)).mean[0] < 20
+    assert cover_share(image, inner) >= 0.97
     _assert_scan_redacted(image)
 
 
@@ -419,4 +432,4 @@ def test_real_ocr_service_redacts_synthetic_scan(env, monkeypatch):  # noqa: F81
     [(_, chars, image)] = _pages(r.content)
     assert chars == 0
     for token in ("Mario", "Rossi", FISCAL, IBAN):
-        assert _mean(image, _word(token)) < 40, token
+        assert _hidden(image, _word(token)), token

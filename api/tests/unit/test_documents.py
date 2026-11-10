@@ -37,6 +37,7 @@ from app.anonymization.anonymizer import DetectionResult
 from app.config import settings
 from app.database import get_db
 from app.detection.entities import PiiEntity
+from app.documents.redaction_style import cover_share
 from app.documents.models import REDACTION_MARK, JoinedText
 from app.identity.dependencies import require_service
 from app.identity.tenant import get_tenant_id
@@ -337,7 +338,7 @@ def _render_output(payload: bytes):
     pdf = pdfium.PdfDocument(payload)
     try:
         chars = sum(pdf[i].get_textpage().count_chars() for i in range(len(pdf)))
-        image = pdf[0].render(scale=PDF_DPI / 72).to_pil().convert("L")
+        image = pdf[0].render(scale=PDF_DPI / 72).to_pil().convert("RGB")
         return len(pdf), chars, image
     finally:
         pdf.close()
@@ -355,7 +356,7 @@ def test_pdf_redact_rasterizes_and_boxes_entity(env):
     y_px = int((A4[1] - PDF_XY[1] - PDF_FONT[1] * 0.35) * scale)
     for fraction in (0.1, 0.5, 0.9):  # across the whole name
         x_px = int((PDF_XY[0] + label_w + name_w * fraction) * scale)
-        assert image.getpixel((x_px, y_px)) < 40, fraction
+        assert cover_share(image, (x_px, y_px, x_px + 1, y_px + 1)) == 1.0, fraction
     label_box = image.crop((int(PDF_XY[0] * scale), y_px - 10, int((PDF_XY[0] + label_w - 8) * scale), y_px + 10))
     assert ImageStat.Stat(label_box).mean[0] > 120  # label not blacked out
     assert r.headers["x-pii-entity-count"] == "2"
@@ -381,7 +382,7 @@ def test_pdf_user_area_is_painted_where_the_user_saw_it(env, rotation):
     assert r.status_code == 200, r.text
     _, _, after = _displayed(r.content)
     w, h = after.size
-    assert ImageStat.Stat(after.crop((round(0.57 * w), round(0.07 * h), round(0.88 * w), round(0.13 * h)))).mean[0] < 20
+    assert ImageStat.Stat(after.crop((round(0.57 * w), round(0.07 * h), round(0.88 * w), round(0.13 * h)))).mean[0] < 60  # cover fill: deep indigo, not paper
     assert ImageStat.Stat(after.crop((round(0.57 * w), round(0.8 * h), round(0.88 * w), round(0.9 * h)))).mean[0] > 240
     txt = _post(env, "redact", "Mario Rossi".encode(), filename="a.txt", cover_boxes=json.dumps([{"page": 1, "bbox": area}]))
     assert txt.status_code == 422 and txt.json()["error"] == "INVALID_COVER_BOXES"
