@@ -19,6 +19,8 @@ MIN_PAD_PX = 3
 LINE_PAD = 0.15  # of the line height, on every side
 REVIEW_REASONS = ("low_confidence", "unrecognized_ink")
 UNCERTAIN_MARK = "uncertain_mark"  # review reason of a signature/stamp the service is not sure about
+UNCERTAIN_CODE = "uncertain_code"  # invalid code whose locator covers too much of the image
+MAX_UNCERTAIN_CODE_SHARE = 0.5
 TILT_MIN_DEG = 0.5  # below this a page counts as straight
 TILT_ERROR_DEG = 1.0  # assumed error of the service's skew estimate
 TILT_END_PAD = 0.3  # of the line height, left/right: a first/last glyph clipped by a tilted word box
@@ -121,12 +123,17 @@ class ScannedPage:
         # would frame the blurred face in a black box (founder, 2026-11-09)
         marks = [hit.bbox for hit in result.marks]
         faces = [hit.bbox for hit in visual or () if hit.type == "FACE"]
+        large_codes = [hit for hit in visual or () if hit.type == "BARCODE" and hit.needs_review
+                       and (hit.bbox[2] - hit.bbox[0]) * (hit.bbox[3] - hit.bbox[1])
+                       >= MAX_UNCERTAIN_CODE_SHARE * result.width * result.height]
         review = tuple((reason, box) for reason, boxes in zip(REVIEW_REASONS, (result.low_conf_regions, result.ink_regions))
                        for box in boxes if not any(_inside(box, mark) for mark in marks)
                        and not any(_overlap(box, _grown(face, FACE_ABSORB)) >= 0.5 or _inside(face, box) for face in faces))
         review += tuple((UNCERTAIN_MARK, hit.bbox) for hit in result.marks if hit.needs_review)
+        review += tuple((UNCERTAIN_CODE, hit.bbox) for hit in large_codes)
         return cls(result.width, result.height, "".join(parts), tuple(spans), review,
-                   (*(visual or ()), *(hit for hit in result.marks if not hit.needs_review)), result.skew)
+                   (*(hit for hit in visual or () if hit not in large_codes),
+                    *(hit for hit in result.marks if not hit.needs_review)), result.skew)
 
     def boxes(self, start: int, end: int) -> list[BBox]:
         """Boxes of the text in [start, end) (see line_boxes), without their line ids."""

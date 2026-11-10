@@ -149,6 +149,18 @@ def test_image_preview_lists_visual_entities(vis):
     assert all("text" not in area for area in body["protected_areas"])
 
 
+def test_full_frame_uncertain_barcode_needs_review_instead_of_covering_the_image(vis):
+    vis.fake.boxes.append(("BARCODE", (0, 0, *image_tests.SCREENSHOT.size), True))
+    source = image_tests.png(image_tests.SCREENSHOT.image)
+    preview = _post(vis, "preview", source).json()
+    assert "uncertain_code" in [area["reason"] for area in preview["needs_review"]]
+    assert sum(area["type"] == "BARCODE" for area in preview["visual_entities"]) == 1
+    shown = Image.open(io.BytesIO(_post(vis, "redact", source, review_default="visible").content))
+    assert not _dark(shown, (550, 450, 650, 500))  # ordinary background remains visible
+    covered = Image.open(io.BytesIO(_post(vis, "redact", source).content))
+    assert _dark(covered, (550, 450, 650, 500))  # legacy clients remain fail-closed
+
+
 def test_visual_exclude_only_accepts_known_detection_ids(vis):
     source = image_tests.png(image_tests.SCREENSHOT.image)
     invalid = _post(vis, "redact", source, visual_exclude="[99]")
