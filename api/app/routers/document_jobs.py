@@ -27,6 +27,7 @@ from app.config import settings
 from app.database import get_db
 from app.documents.admission import DocumentAdmission
 from app.documents.chunking import DetectionCancelled
+from app.documents.identity_fields import supplement_identity_fields
 from app.documents.jobs import DocumentJob, DocumentJobStore, JobStatus, Owner, corrected_entities
 from app.documents.models import DocumentError, JoinedText
 from app.documents.service import MAX_USER_ENTITIES, UserEntity, load_document, parse_user_entities
@@ -147,6 +148,8 @@ async def _analyze(store: DocumentJobStore, job: DocumentJob, anonymizer: PiiAno
                 anonymizer, policy, text, str(uuid.uuid4()), job.context, job.language,
                 window=docs.detection_window(deadline),
                 executor=docs.window_executor(), progress=job.progress, should_stop=job.cancelled.is_set)
+            if job.doc is not None and job.joined is not None:
+                entities = supplement_identity_fields(job.doc, job.joined, entities)
     except DetectionCancelled:
         logger.info("document job cancelled during analysis")
         return
