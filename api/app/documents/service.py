@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from dataclasses import replace
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
@@ -81,7 +82,7 @@ def parse_user_entities(raw: str, text: str) -> list[PiiEntity]:
 
 
 def redaction_edits(joined: JoinedText, entities: list[PiiEntity]) -> list[SegmentEdit]:
-    return joined.edits([(e.start, e.end, REDACTION_MARK) for e in entities])
+    return [replace(edit, label=e.pii_type) for e in entities for edit in joined.edits([(e.start, e.end, REDACTION_MARK)])]
 
 
 def pseudonymization_edits(

@@ -13,19 +13,19 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops
 
 from app.documents.chunking import DetectionCancelled
 from app.documents.models import DocumentError, DocumentFormat, DocumentLimits, SegmentEdit
 from app.documents.ocr_client import OcrClient
 from app.documents.ocr_layout import Covers, FaceStyle, ScannedPage, ScannedPages, cover_pixels, paint
 from app.documents.pdf_writer import ImagePdfWriter, PageImage
+from app.documents.redaction_style import Run, label_for, paint_area, paint_pills
 
 # PDFium is not thread-safe: every call into it goes through this lock. It is taken
 # per page (not per document) so concurrent jobs interleave instead of queueing.
 PDFIUM_LOCK = threading.Lock()
 _BOX_PAD_PX = 2
-_BLACK = (0, 0, 0, 255)
 _JPEG_QUALITY = 85
 _FLATE_LEVEL = 6
 _GRAY_PROBE_REDUCE = 4  # colour check on a 1/16 thumbnail: cheap, and only decides the encoding
@@ -89,13 +89,20 @@ def plan_page(width_pt: float, height_pt: float, rotation: int, limits: Document
     return _PagePlan(rotation, frame, scale)
 
 
-def _encode(image) -> PageImage:
-    """Lossless Flate for grayscale pages (crisp text, ~half the JPEG size), JPEG for colour."""
-    probe = image.reduce(_GRAY_PROBE_REDUCE)
-    red, green, blue = probe.split()
-    if ImageChops.difference(red, green).getbbox() is None and ImageChops.difference(green, blue).getbbox() is None:
+def _is_gray(image) -> bool:
+    red, green, blue = image.reduce(_GRAY_PROBE_REDUCE).split()
+    return ImageChops.difference(red, green).getbbox() is None and ImageChops.difference(green, blue).getbbox() is None
+
+
+def _encode(image, lossless: bool = False) -> PageImage:
+    """Lossless Flate for grayscale pages (crisp text, ~half the JPEG size) and, with ``lossless``,
+    for colour too (a text page with covers), JPEG for other colour pages."""
+    if _is_gray(image):
         gray = image.convert("L")
         return PageImage(zlib.compress(gray.tobytes(), _FLATE_LEVEL), gray.width, gray.height, "DeviceGray", "FlateDecode")
+    if lossless:
+        rgb = image.convert("RGB")
+        return PageImage(zlib.compress(rgb.tobytes(), _FLATE_LEVEL), rgb.width, rgb.height, "DeviceRGB", "FlateDecode")
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=_JPEG_QUALITY)
     return PageImage(buffer.getvalue(), image.width, image.height, "DeviceRGB", "DCTDecode")
@@ -250,7 +257,7 @@ class PdfDocument(ScannedPages):
                       cover: Covers | None = None, keep_visual: frozenset[int] = frozenset()) -> Iterator[bytes]:
         """Yields the output PDF in pieces (header, one chunk per page, trailer ending in %%EOF).
         Any failure raises before the trailer, so an incomplete body never ends in %%EOF.
-        `keep_review`: ids of review_boxes() left visible; `cover`: user-drawn areas painted black
+        `keep_review`: ids of review_boxes() left visible; `cover`: user-drawn areas painted opaque
         (fractions of the displayed page, any page)."""
         cover = cover or {}
         if self.ocr_pending:
@@ -290,25 +297,23 @@ class PdfDocument(ScannedPages):
                 # never drawn: anything we cannot inspect must not reach the output.
                 bitmap = page.render(scale=plan.scale, rotation=undo, may_draw_forms=False,
                                      draw_annots=False, rev_byteorder=True)
-                for left, top, right, bottom in self._boxes(page, edits, bitmap.width, bitmap.height, undo // 90):
-                    left, top = max(0, left), max(0, top)
-                    right, bottom = min(bitmap.width, right), min(bitmap.height, bottom)
-                    if right > left and bottom > top:
-                        bitmap.fill_rect(_BLACK, left, top, right - left, bottom - top)
+                turned = plan.rotation in (90, 270)  # covers are laid out on the DISPLAYED page (text runs left to right)
+                runs = self._runs(page, edits, *((bitmap.height, bitmap.width) if turned else (bitmap.width, bitmap.height)))
             finally:
                 page.close()
         try:
-            image = bitmap.to_pil()  # PIL/zlib only: runs outside the PDFium lock
-            if cover:  # user areas are fractions of the DISPLAYED page; this bitmap is the /MediaBox frame
-                shown = image.transpose(_SHOW[plan.rotation]) if plan.rotation in _SHOW else image.copy()
-                draw = ImageDraw.Draw(shown)
-                for x0, y0, x1, y1 in cover_pixels(cover, shown.width, shown.height):
-                    draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill="black")
-                image = shown.transpose(_UNROTATE[plan.rotation]) if plan.rotation in _UNROTATE else shown
-            return _encode(image)
+            image = bitmap.to_pil().convert("RGB")  # PIL/zlib only: runs outside the PDFium lock
         finally:
             with PDFIUM_LOCK:
                 bitmap.close()
+        if not runs and not cover:
+            return _encode(image)
+        lossless = _is_gray(image)  # a text page stays crisp: lossless colour instead of JPEG
+        shown = image.transpose(_SHOW[plan.rotation]) if plan.rotation in _SHOW else image
+        paint_pills(shown, runs)
+        for box in cover_pixels(cover, shown.width, shown.height):  # fractions of the displayed page
+            paint_area(shown, box)
+        return _encode(shown.transpose(_UNROTATE[plan.rotation]) if plan.rotation in _UNROTATE else shown, lossless)
 
     def _render_scanned(self, source, index: int, plan: _PagePlan, edits: list[SegmentEdit],
                         review: list, face_style: str = "black", cover=(),
@@ -331,17 +336,18 @@ class PdfDocument(ScannedPages):
         return _encode(image)
 
     @staticmethod
-    def _boxes(page, edits: list[SegmentEdit], width: int, height: int, rotate: int) -> list[tuple[int, int, int, int]]:
+    def _runs(page, edits: list[SegmentEdit], width: int, height: int) -> list[Run]:
+        """One padded Run per text line of each edit, in pixels of the displayed page (``width`` x ``height``)."""
         if not edits:
             return []
         textpage = page.get_textpage()
         x, y = ctypes.c_int(), ctypes.c_int()
 
         def to_device(px: float, py: float) -> tuple[int, int]:
-            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, width, height, rotate, px, py, ctypes.byref(x), ctypes.byref(y))
+            pdfium_c.FPDF_PageToDevice(page.raw, 0, 0, width, height, 0, px, py, ctypes.byref(x), ctypes.byref(y))
             return x.value, y.value
 
-        rects = []
+        runs = []
         try:
             for edit in edits:
                 boxes = []
@@ -352,8 +358,10 @@ class PdfDocument(ScannedPages):
                     (x1, y1), (x2, y2) = to_device(left, top), to_device(right, bottom)
                     boxes.append((min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)))
                 for left, top, right, bottom in _line_boxes(boxes):
-                    rects.append((int(left) - _BOX_PAD_PX, int(top) - _BOX_PAD_PX,
-                                  int(right) + _BOX_PAD_PX, int(bottom) + _BOX_PAD_PX))
+                    x0, y0 = max(0, int(left) - _BOX_PAD_PX), max(0, int(top) - _BOX_PAD_PX)
+                    x1, y1 = min(width, int(right) + 1 + _BOX_PAD_PX), min(height, int(bottom) + 1 + _BOX_PAD_PX)
+                    if x1 > x0 and y1 > y0:
+                        runs.append(Run(x0, y0, x1, y1, bottom - top, label_for(edit.label)))
         finally:
             textpage.close()
-        return rects
+        return runs
