@@ -180,6 +180,20 @@ def _assert_no_metadata(payload: bytes) -> None:
         assert marker not in payload, marker
 
 
+def test_numbered_licence_fields_are_redacted_even_if_general_ner_misses_them(img):
+    lines = ["PATENTE DI GUIDA", "1.", "BRAMBILLA", "2.", "GIANFRANCO", "3.",
+             "14/03/1979 L0DI (LO)", "5.", "U1R7K4Q9Z2"]
+    card = Layout((1280, 720), lines, 22, (245, 246, 250),
+                  low=(950, 550, 1100, 590), ink=(80, 590, 420, 660))
+    img.fake = FakeOcr(card)
+    source = png(card.image)
+    preview = _post(img, "preview", source).json()
+    assert {entity["type"] for entity in preview["entities"]} >= {"PERSON", "DATE_OF_BIRTH", "DRIVER_LICENSE"}
+    protected = Image.open(io.BytesIO(_post(img, "redact", source, review_default="visible").content))
+    for token in ("BRAMBILLA", "GIANFRANCO", "14/03/1979", "L0DI", "U1R7K4Q9Z2"):
+        assert _hidden(protected, card.box(token)), token
+
+
 # ── format sniffing ──────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("head, expected", [

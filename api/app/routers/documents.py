@@ -29,6 +29,7 @@ from app.config import settings
 from app.database import get_db
 from app.documents.admission import AdmissionSlot, DocumentAdmission
 from app.documents.chunking import detection_executor
+from app.documents.identity_fields import supplement_identity_fields
 from app.documents.models import IMAGE_FORMATS, MEDIA_TYPES, DocumentError, DocumentFormat, DocumentLimits, JoinedText
 from app.documents.ocr_client import get_ocr_client
 from app.documents.ocr_layout import Covers, FaceStyle
@@ -304,6 +305,7 @@ async def _process(op: str, request: Request, fields: dict[str, str], payload: b
         entities = await detect_protected_entities(
             anonymizer, policy, joined.text, str(uuid.uuid4()), domain or context_type or "generic", language,
             window=detection_window(state["deadline"]), executor=window_executor())
+        entities = supplement_identity_fields(doc, joined, entities)
     entities = sorted(entities, key=lambda e: e.start)
     state["entities"] = entities
     if op == Operation.PREVIEW:
