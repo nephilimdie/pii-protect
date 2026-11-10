@@ -23,6 +23,7 @@ def supplement_identity_fields(doc: object, joined: JoinedText, detected: list[P
     """
     scanned = getattr(doc, "scanned", {})
     extra: list[PiiEntity] = []
+    normalized = list(detected)
     for page_index, page in scanned.items():
         if page_index >= len(joined.offsets) or not _TITLE.search(page.text[:160]):
             continue
@@ -65,7 +66,14 @@ def supplement_identity_fields(doc: object, joined: JoinedText, detected: list[P
         for value, start, pii_type in candidates:
             first = joined.offsets[page_index] + start
             last = first + len(value)
-            if any(first < entity.end and last > entity.start for entity in (*detected, *extra)):
+            exact = next((index for index, entity in enumerate(normalized)
+                          if entity.start == first and entity.end == last), None)
+            if exact is not None:
+                if pii_type in {"DATE_OF_BIRTH", "DRIVER_LICENSE"}:
+                    original = normalized[exact]
+                    normalized[exact] = PiiEntity(first, last, pii_type, value, original.score, original.source)
+                continue
+            if any(first < entity.end and last > entity.start for entity in (*normalized, *extra)):
                 continue
             extra.append(PiiEntity(first, last, pii_type, value, 0.95, "document_layout"))
-    return detected + extra
+    return normalized + extra
