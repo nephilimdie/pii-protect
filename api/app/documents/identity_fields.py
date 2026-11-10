@@ -22,6 +22,7 @@ _US_STREET = re.compile(
 _US_CITY_ZIP = re.compile(r"^[A-Z][A-Z .'-]+,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?$", re.IGNORECASE)
 _US_DD = re.compile(r"^\s*\d?\s*DD\s*:\s*(\d{8,20})\s*$", re.IGNORECASE)
 _US_APT = re.compile(r"APT\.?\s*\d+[A-Z]?", re.IGNORECASE)
+_SIGNATURE_WORD = re.compile(r"[A-Z][a-z]{2,30}")
 
 
 def _us_fields(text: str) -> list[tuple[str, int, str]]:
@@ -40,8 +41,14 @@ def _us_fields(text: str) -> list[tuple[str, int, str]]:
             add(line, "DRIVER_LICENSE")
         if dd := _US_DD.fullmatch(value):
             candidates.append((dd.group(1), line.start() + dd.start(1), "DRIVER_LICENSE"))
-            if index + 1 < len(lines) and re.fullmatch(r"\d{8,20}", lines[index + 1].group().strip()):
-                add(lines[index + 1], "DRIVER_LICENSE")
+            for continuation in lines[index + 1:index + 4]:
+                if re.fullmatch(r"\d{8,20}", continuation.group().strip()):
+                    add(continuation, "DRIVER_LICENSE")
+                    break
+            if index >= 2 and all(_SIGNATURE_WORD.fullmatch(item.group().strip())
+                                  for item in lines[index - 2:index]):
+                for signature_word in lines[index - 2:index]:
+                    add(signature_word, "PERSON")
         if _US_STREET.fullmatch(value):
             add(line, "LOCATION")
             for next_line in lines[index + 1:index + 3]:

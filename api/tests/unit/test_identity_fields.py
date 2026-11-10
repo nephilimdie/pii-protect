@@ -32,8 +32,11 @@ ANDREW JASON
 123MAINSTREET
 APT.1
 HARRISBURG,PA17101-0000
+Andrew
+Somple
 5DD:1234567890123
-ORGAN DONOR"""
+ORGAN DONOR
+456789012345"""
 
 
 def _doc(text):
@@ -92,7 +95,9 @@ def test_us_driving_licence_fields_cover_ocr_values_missed_by_ner():
     assert {("DRIVER_LICENSE", "99 999 999"), ("PERSON", "SAMPLE"),
             ("LOCATION", "123MAINSTREET"), ("LOCATION", "APT.1"),
             ("LOCATION", "HARRISBURG,PA17101-0000"),
-            ("DRIVER_LICENSE", "1234567890123")} <= values
+            ("DRIVER_LICENSE", "1234567890123"),
+            ("DRIVER_LICENSE", "456789012345"),
+            ("PERSON", "Andrew"), ("PERSON", "Somple")} <= values
     assert len([item for item in result if item.text == "ANDREW JASON"]) == 1
     assert all(joined.text[item.start:item.end] == item.text for item in result)
 
