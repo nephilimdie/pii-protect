@@ -27,9 +27,12 @@ from app.documents.ocr_layout import ScannedPage, glyph_band, paint
 from app.documents.pdf_handler import PdfDocument
 from app.documents.redaction_style import (
     BUCKET,
+    COVER_FILL,
+    LABEL_INK,
     Run,
     bucket_width,
     cover_share,
+    draw_cover,
     label_for,
     paint_area,
     pill_boxes,
@@ -185,6 +188,18 @@ def test_area_cover_is_opaque_over_the_whole_box_and_rounded_outside():
     assert cover_share(image, (50, 40, 250, 160)) == 1.0
 
 
+def test_export_can_omit_review_labels_without_changing_cover_opacity():
+    box = (20, 20, 280, 60)
+    review = Image.new("RGB", (300, 80), "white")
+    exported = Image.new("RGB", (300, 80), "white")
+    draw_cover(review, box, 3, "CODICE FISCALE", box, show_label=True)
+    draw_cover(exported, box, 3, "CODICE FISCALE", box, show_label=False)
+
+    assert np.any(np.asarray(review) != np.asarray(exported))
+    assert cover_share(exported, box) == 1.0
+    assert np.all(np.asarray(exported)[30:50, 40:260] == np.asarray(COVER_FILL))
+
+
 # ── real OCR: the output reads none of the hidden tokens ────────────────────
 
 SECRETS = ("BRAMBILLA", "BRMGFR79C14E648T", "3478129034")
@@ -237,6 +252,7 @@ def test_flattened_pdf_has_no_text_and_covers_every_redacted_word():
         page = rendered[0].render(scale=150 / 72).to_pil().convert("RGB")
     finally:
         rendered.close()
+    assert not np.any(np.all(np.asarray(page) == LABEL_INK, axis=2))  # labels stay in review, not export
     if shutil.which("pdftotext"):
         extracted = subprocess.run(["pdftotext", "-", "-"], input=out, capture_output=True, check=True).stdout
         assert extracted.strip() == b""

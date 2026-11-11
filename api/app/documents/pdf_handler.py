@@ -315,7 +315,7 @@ class PdfDocument(ScannedPages):
             paint_area(shown, box)
         if vertical:  # text runs top-bottom: lay the pills out on the transposed page
             shown = shown.transpose(Image.Transpose.TRANSPOSE)
-        paint_pills(shown, runs, shown_words)
+        paint_pills(shown, runs, shown_words, show_labels=False)
         if vertical:
             shown = shown.transpose(Image.Transpose.TRANSPOSE)
         return _encode(shown.transpose(_UNROTATE[plan.rotation]) if plan.rotation in _UNROTATE else shown, lossless)
@@ -335,7 +335,7 @@ class PdfDocument(ScannedPages):
                     bitmap.close()
             finally:
                 page.close()
-        paint(image, self.scanned[index], edits, review, face_style, cover, keep_visual)
+        paint(image, self.scanned[index], edits, review, face_style, cover, keep_visual, show_labels=False)
         if plan.rotation in _UNROTATE:
             image = image.transpose(_UNROTATE[plan.rotation])
         return _encode(image)
