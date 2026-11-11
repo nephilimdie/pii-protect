@@ -377,7 +377,7 @@ def text_runs(page: ScannedPage, edits: list[SegmentEdit], gray: np.ndarray, fx:
 
 def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], review: list[BBox],
           face_style: str = FaceStyle.BLACK, cover: Sequence[Frac] = (),
-          keep_visual: frozenset[int] = frozenset()) -> None:
+          keep_visual: frozenset[int] = frozenset(), show_labels: bool = True) -> None:
     """Why: the only thing that hides PII in a scan is opaque pixels over the OCR boxes.
     What: paints opaque covers (redaction_style: indigo pills/areas) over the given review regions,
     every visual hit (faces, codes, plates, sure signatures and stamps: never optional), every
@@ -407,7 +407,7 @@ def paint(image: Image.Image, page: ScannedPage, edits: list[SegmentEdit], revie
         image.paste(tile, origin, mask)
     for hit in visual:  # codes, plates, marks (and faces, unless styled)
         if not (styled and hit.type == "FACE"):
-            paint_area(image, device(hit.bbox), label_for(hit.type))
-    paint_pills(image, runs, shown)  # text PII: always on top
+            paint_area(image, device(hit.bbox), label_for(hit.type), show_labels)
+    paint_pills(image, runs, shown, show_labels)  # text PII: always on top
     for box in cover_pixels(cover, image.width, image.height):
         paint_area(image, box)

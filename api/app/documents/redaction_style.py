@@ -24,15 +24,12 @@ from PIL import Image, ImageDraw, ImageFont
 
 BBox = tuple[int, int, int, int]
 
-INK_TOP = (30, 27, 75)  # #1E1B4B deep indigo: top of the vertical gradient
-INK_BOTTOM = (15, 23, 41)  # #0F1729 brand ink (marketing --text): bottom of the gradient
-HATCH = (79, 70, 229)  # #4F46E5 brand indigo: 45-degree hatch lines, mixed at HATCH_MIX
-HATCH_MIX = 0.22
-RIM = (99, 102, 241)  # #6366F1: 1 px inner rim, keeps touching covers of adjacent lines apart
-RIM_MIX = 0.45
+COVER_FILL = (35, 34, 68)  # opaque, restrained indigo; also used by the cover audit
+RIM = (72, 70, 120)  # subtle edge separates adjacent covers without a striped texture
+RIM_MIX = 0.18
 LABEL_INK = (238, 240, 255)  # #EEF0FF: entity-type label
-PILL_RADIUS = 0.35  # of the pill height
-AREA_RADIUS = 0.12  # of an area's shorter side, at most AREA_RADIUS_MAX px
+PILL_RADIUS = 0.35  # keep established cover geometry; changing it affects merge/sizing rules
+AREA_RADIUS = 0.12
 AREA_RADIUS_MAX = 14
 BUCKET = 1.5  # pill widths are multiples of 1.5 x the line's glyph height
 JITTER = 0.2  # + up to 0.2 x glyph height, a function of the bucket only
@@ -182,21 +179,10 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default(size)
 
 
-def _texture(w: int, h: int, x0: int, y0: int, unit: float) -> np.ndarray:
-    """Gradient + 45-degree hatch, anchored to page coordinates (adjacent covers line up)."""
-    t = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None, None]
-    fill = np.asarray(INK_TOP, np.float32) * (1 - t) + np.asarray(INK_BOTTOM, np.float32) * t
-    fill = np.broadcast_to(fill, (h, w, 3)).copy()
-    period = max(5, round(unit / 3))
-    yy, xx = np.mgrid[y0:y0 + h, x0:x0 + w]
-    stripe = ((xx + yy) % period) < max(1, period // 3)
-    fill[stripe] = fill[stripe] * (1 - HATCH_MIX) + np.asarray(HATCH, np.float32) * HATCH_MIX
-    return fill
-
-
-def draw_cover(image: Image.Image, box: BBox, radius: int, label: str = "", solid: BBox | None = None) -> None:
+def draw_cover(image: Image.Image, box: BBox, radius: int, label: str = "", solid: BBox | None = None,
+               show_label: bool = True) -> None:
     """Why: one renderer for every cover keeps the look and the opacity guarantee in one place.
-    What: paints a rounded rectangle ``box`` (gradient + hatch + 1 px rim, anti-aliased corners)
+    What: paints a rounded rectangle ``box`` (uniform opaque fill + subtle rim, anti-aliased corners)
     on RGB ``image``; every pixel of ``solid`` (default: the box shrunk by the corner cut) is forced
     fully opaque; ``label`` is drawn centred, small caps, only if it fits inside the straight part.
     Test: every pixel of ``solid`` differs from the original and is within the fill palette.
@@ -212,7 +198,8 @@ def draw_cover(image: Image.Image, box: BBox, radius: int, label: str = "", soli
     alpha = np.asarray(big.resize((w, h), Image.Resampling.BOX), dtype=np.float32) / 255
     sx0, sy0, sx1, sy1 = solid if solid is not None else (x0 + radius // 3, y0, x1 - radius // 3, y1)
     alpha[max(0, sy0 - y0):max(0, sy1 - y0), max(0, sx0 - x0):max(0, sx1 - x0)] = 1.0  # opacity guarantee
-    fill = _texture(w, h, x0, y0, h)
+    fill = np.empty((h, w, 3), dtype=np.float32)
+    fill[:] = COVER_FILL
     inner = alpha >= 1.0
     padded = np.pad(inner, 1, constant_values=False)
     rim = inner & ~(padded[2:, 1:-1] & padded[:-2, 1:-1] & padded[1:-1, 2:] & padded[1:-1, :-2])
@@ -222,7 +209,7 @@ def draw_cover(image: Image.Image, box: BBox, radius: int, label: str = "", soli
     mixed = fill * alpha[..., None] + region * (1 - alpha[..., None])
     tile = Image.fromarray(np.clip(mixed + 0.5, 0, 255).astype(np.uint8), "RGB")
     size = round(LABEL_SIZE * h)
-    if label and size >= LABEL_MIN_PX:
+    if show_label and label and size >= LABEL_MIN_PX:
         font = _font(size)
         text = label.upper()
         left, top, right, bottom = ImageDraw.Draw(tile).textbbox((0, 0), text, font=font)
@@ -232,17 +219,18 @@ def draw_cover(image: Image.Image, box: BBox, radius: int, label: str = "", soli
     image.paste(tile, (x0, y0))
 
 
-def paint_pills(image: Image.Image, runs: Sequence[Run], neighbours: Sequence[BBox] = ()) -> None:
+def paint_pills(image: Image.Image, runs: Sequence[Run], neighbours: Sequence[BBox] = (),
+                show_labels: bool = True) -> None:
     """Text covers (see pill_boxes) painted on ``image``; each run's padded box is always fully opaque."""
     for box, radius, label, solid in pill_boxes(runs, image.width, image.height, neighbours):
-        draw_cover(image, box, radius, label, solid)
+        draw_cover(image, box, radius, label, solid, show_labels)
 
 
-def paint_area(image: Image.Image, box: BBox, label: str = "") -> None:
+def paint_area(image: Image.Image, box: BBox, label: str = "", show_label: bool = True) -> None:
     """An area cover (uncertain region, visual hit, user area): ``box`` fully opaque, rounded outside it."""
     if box[2] > box[0] and box[3] > box[1]:
         grown, radius = area_box(box, image.width, image.height)
-        draw_cover(image, grown, radius, label, box)
+        draw_cover(image, grown, radius, label, box, show_label)
 
 
 def _cover_mask(image: Image.Image, box: BBox) -> tuple[np.ndarray, np.ndarray]:
@@ -255,10 +243,10 @@ def _cover_mask(image: Image.Image, box: BBox) -> tuple[np.ndarray, np.ndarray]:
 def cover_share(image: Image.Image, box: BBox) -> float:
     """Why: tests and audits must tell "covered" from "dark" now that covers are not black.
     What: the share of ``box``'s pixels (clipped to the image; empty -> 1.0) that are cover fill:
-    blue at least COVER_BLUE above both red and green (gradient, hatch, rim and label all are;
-    black/grey ink, paper and white are not).
+    blue at least COVER_BLUE above both red and green (the indigo fill, edge and label all are;
+    neutral ink, paper and white are not).
     Test: a box fully inside a paint_area cover -> 1.0; the same box on the untouched page -> 0.0."""
-    rgb, cover = _cover_mask(image, box)
+    _, cover = _cover_mask(image, box)
     return float(cover.mean()) if cover.size else 1.0
 
 

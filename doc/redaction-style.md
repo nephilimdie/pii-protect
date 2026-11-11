@@ -8,12 +8,10 @@ areas, faces/codes/plates/signatures/stamps, user-drawn areas) uses one look, de
 
 | Token | Value | Use |
 |---|---|---|
-| Ink top | `#1E1B4B` | top of the vertical gradient (deep indigo) |
-| Ink bottom | `#0F1729` | bottom of the gradient (brand ink, marketing `--text`) |
-| Hatch | `#4F46E5` mixed at 22% | 45° diagonal lines, period = max(5 px, height / 3), line = period / 3 |
-| Rim | `#6366F1` mixed at 45% | 1 px inner border (keeps covers on adjacent lines visually apart) |
-| Label | `#EEF0FF` | entity-type tag, uppercase, font size 0.42 × cover height, only if ≥ 9 px and it fits |
-| Pill radius | 0.35 × cover height | text covers |
+| Fill | `#232244` | uniform opaque indigo, without gradients or patterns |
+| Rim | `#484678` mixed at 18% | subtle edge between adjacent covers |
+| Label | `#EEF0FF` | entity type in review previews only; omitted from exported PDFs |
+| Pill radius | 0.35 × cover height | text covers; kept unchanged to preserve established cover geometry |
 | Area radius | 0.12 × shorter side, max 14 px | areas; grown by radius / 2 so the corners still contain the box |
 
 All fills are fully opaque. Edges are anti-aliased (4× supersampling) only outside the box that
@@ -35,5 +33,10 @@ must be hidden; that box is always forced to 100% fill.
 - Label: the entity type only (NOME, CF, DATA, IBAN, INDIRIZZO, TEL, EMAIL, …), never content;
   omitted when the merged run mixes types, on vertical text, or when it does not fit.
 
-Face blur/pixelate and the uncertain-area behaviour are unchanged; only the fill style differs.
+Face blur/pixelate, uncertain-area selection and cover geometry are unchanged. Text widths remain
+padded and quantized to avoid exposing character counts; only the visual treatment is simplified.
 Use `cover_share()` / `visible_ink()` in tests to tell covered pixels from dark ink.
+
+PDF exports are clean deliverables: they keep opaque covers but omit entity labels, which belong
+in the review interface rather than in the shared document. The PDF remains image-only and carries
+no selectable text under a cover.
