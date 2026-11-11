@@ -109,6 +109,17 @@ def test_runs_of_one_line_share_one_height_and_lines_never_merge():
     assert all(b[3] <= 150 or b[1] >= 150 for b, *_ in boxes)  # no cover spans two lines
 
 
+def test_handwritten_signature_stays_separate_from_smaller_printed_number():
+    runs = [Run(125, 1043, 470, 1189, 112, "NOME"), Run(508, 1063, 784, 1197, 102, "NOME"),
+            Run(888, 1138, 1278, 1177, 30, "PATENTE")]
+    boxes = pill_boxes(runs, 2012, 1282)
+    assert len(boxes) == 2
+    signature, number = boxes
+    assert signature[0][0] <= 125 and signature[0][2] >= 784
+    assert signature[0][2] < number[0][0]
+    assert number[0][0] <= 888 and number[0][2] >= 1278
+
+
 def test_pill_clipped_to_image_grows_leftwards_and_never_past_edges():
     [(box, *_)] = pill_boxes([Run(960, 10, 998, 30, 20.0)], 1000, 1000)
     assert 0 <= box[0] <= 960 and box[2] == 1000

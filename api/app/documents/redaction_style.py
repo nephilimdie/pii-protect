@@ -41,6 +41,7 @@ LABEL_MIN_PX = 9  # smaller labels are not drawn
 SUPERSAMPLE = 4  # anti-aliased rounded edges
 COVER_BLUE = 8  # cover_share: every cover colour has blue >= 8 above red and green
 SAME_LINE = 0.5  # runs whose band centres are closer than half a glyph height share a line
+MAX_LINE_GLYPH_RATIO = 2.0  # handwriting must not join much smaller printed fields below it
 NEIGHBOUR_GAP = 0.25  # of the glyph height: room kept before a visible neighbouring word
 
 # entity type -> short Italian label; types not listed get no label (never the content)
@@ -99,7 +100,8 @@ def same_lines(runs: Sequence[Run]) -> list[Run]:
     for run in sorted(runs, key=lambda r: (r.y0 + r.y1) / 2):
         centre = (run.y0 + run.y1) / 2
         last = groups[-1] if groups else None
-        if last and abs(centre - (last[0].y0 + last[0].y1) / 2) < SAME_LINE * max(run.glyph, last[0].glyph):
+        if (last and max(run.glyph, last[0].glyph) <= MAX_LINE_GLYPH_RATIO * max(1, min(run.glyph, last[0].glyph))
+                and abs(centre - (last[0].y0 + last[0].y1) / 2) < SAME_LINE * max(run.glyph, last[0].glyph)):
             last.append(run)
         else:
             groups.append([run])
@@ -134,21 +136,28 @@ def pill_boxes(runs: Sequence[Run], width: int, height: int,
     """
     out = []
     lines: dict[tuple[int, int], list[Run]] = {}
-    for run in same_lines(runs):
+    normalized = same_lines(runs)
+    for run in normalized:
         lines.setdefault((run.y0, run.y1), []).append(run)
     for (y0, y1), line in lines.items():
         radius = max(1, round(PILL_RADIUS * (y1 - y0)))
         glyph = max(r.glyph for r in line)
         others = sorted(b for b in neighbours if abs((b[1] + b[3]) / 2 - (y0 + y1) / 2) < SAME_LINE * glyph)
         for run in _merged(line, 2 * radius):
+            barriers = [other for other in normalized if (other.y0, other.y1) != (y0, y1)
+                        and other.y0 < y1 and other.y1 > y0
+                        and max(other.glyph, glyph) > MAX_LINE_GLYPH_RATIO * max(1, min(other.glyph, glyph))]
+            nearby = others + [(other.x0, other.y0, other.x1, other.y1) for other in barriers]
             gap = NEIGHBOUR_GAP * glyph
             middle = (run.x0 + run.x1) / 2
-            right_edge = min((o[0] - gap for o in others if (o[0] + o[2]) / 2 > middle), default=width)
-            left_edge = max((o[2] + gap for o in others if (o[0] + o[2]) / 2 < middle), default=0)
+            right_edge = min((o[0] - gap for o in nearby if (o[0] + o[2]) / 2 > middle), default=width)
+            left_edge = max((o[2] + gap for o in nearby if (o[0] + o[2]) / 2 < middle), default=0)
             # rounded caps sit outside the padded run, but never over a visible neighbour (square corner then)
             a = max(0, run.x0 - min(radius, max(0, int(run.x0 - left_edge))))
             b = min(width, run.x1 + min(radius, max(0, int(right_edge - run.x1))))
             extra = min(width, bucket_width(b - a, glyph)) - (b - a)
+            if barriers:
+                extra = min(extra, max(0, int(right_edge - b)) + max(0, int(a - left_edge)))
             grow_right = min(extra, max(0, int(right_edge - b)))
             grow_left = min(extra - grow_right, max(0, int(a - left_edge)))
             rest = extra - grow_right - grow_left  # no free room left: overflow evenly, within the image
